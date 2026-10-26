@@ -96,5 +96,8 @@
 <script>
 document.addEventListener('click',function(e){var el=e.target&&e.target.closest&&e.target.closest('a,button,[role="link"],div');if(el&&/^Indicadores$/i.test((el.textContent||'').trim())){e.preventDefault();e.stopImmediatePropagation();window.location.href='/indicadores.html?v=1';}},true);
 </script>
+<script>
+(function(){function fix(){document.querySelectorAll('a,button,[role="link"]').forEach(function(el){if((el.textContent||'').trim()==='Indicadores'){el.setAttribute('href','/indicadores.html?v=2');el.onclick=function(e){e.preventDefault();location.href='/indicadores.html?v=2';};}})}new MutationObserver(fix).observe(document.documentElement,{childList:true,subtree:true});setTimeout(fix,200);})();
+</script>
 </body>
 </html>
