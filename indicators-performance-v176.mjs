@@ -332,7 +332,9 @@ export function mount() {
   if (typeof document === 'undefined') return;
   ensureNav();
   if (isMainPath()) {
-    go(true);
+    history.replaceState({ gaoIndicators: true }, '', performanceRoutes.main);
+    css();
+    render();
     return;
   }
   if (!isRoute()) {
