@@ -1,0 +1,13 @@
+PORTAL GAO V116 — LANÇAMENTO SEMANAL
+
+CAUSA CONFIRMADA
+O Portal concedia ao usuário comercial@gaolavanderia.com.br as permissões administrativas somente no frontend.
+O RPC save_chemical_week valida a permissão existente no Supabase. Por isso o banco retornava 42501 — Acesso não autorizado.
+
+CORREÇÃO
+1. Execute no Supabase SQL Editor o arquivo sql-v116-corrige-permissao-quimicos.sql UMA VEZ.
+2. Publique este pacote V116 no Cloudflare Pages.
+3. Saia do Portal e entre novamente para renovar a sessão/permissões.
+4. Salve a Semana 39 normalmente.
+
+O script é reexecutável, não apaga histórico e não altera estoque, compras, revenda ou rouparia.

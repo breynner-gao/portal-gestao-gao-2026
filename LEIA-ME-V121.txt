@@ -1,0 +1,6 @@
+Portal GAO V121
+Relave reorganizado em tela exclusiva.
+SLA geral: meta <= 2,50%.
+Análises: evolução semanal total, CHT x GAO, Lençol x Cirúrgico, Outros/Privativos e crescimento vs semana anterior.
+Histórico preserva os totais oficiais importados da planilha RELAVE GAO 2026 oficial.
+Sem SQL adicional.

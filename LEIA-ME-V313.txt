@@ -1,0 +1,5 @@
+V313 — Identificação da meta e semana de referência
+
+- O cartão de custo passa a informar explicitamente a meta aprovada (R$ 0,120/kg).
+- O cartão passa a informar a semana usada como referência do cálculo.
+- A informação aparece também no histórico oficial, sem substituir os filtros manuais.

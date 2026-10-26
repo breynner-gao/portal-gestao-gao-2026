@@ -1,0 +1,5 @@
+V127 — Relave reconstruído conforme croqui aprovado.
+- 11 blocos na mesma arquitetura do croqui.
+- Hover nos gráficos.
+- Seleção por tipo e séries interativas.
+- Sem alteração SQL.

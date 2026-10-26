@@ -1,0 +1,9 @@
+PORTAL GAO V117 — CORREÇÃO 42501 QUÍMICOS
+
+1. Execute no Supabase SQL Editor: sql-v117-corrige-autorizacao-definitiva-quimicos.sql
+2. O resultado final deve mostrar role_name = Administrador Geral e pode_lancar_quimicos = true.
+3. Saia e entre novamente no Portal.
+4. Salve o lançamento semanal.
+
+A correção alinha o banco à regra administrativa que o próprio Portal já aplica ao usuário comercial@gaolavanderia.com.br.
+Não apaga dados e não recria tabelas.

@@ -1,0 +1,6 @@
+PORTAL GAO V120 — CORREÇÃO DE ABERTURA DO RELAVE
+- Corrigido conflito do clique da aba Relave com o roteador SPA/React.
+- Clique capturado antes do roteador principal.
+- Relave é remontado automaticamente se a SPA reconstruir a tela.
+- Mantidos histórico 2026, painel, lançamento e cálculos CHT/GAO.
+- Sem alteração de banco/SQL.

@@ -1,0 +1,8 @@
+V311 — Correção do histórico semanal de químicos
+
+- Removidas as extensões antigas que escondiam a tela oficial e exibiam a base fixa até a semana 31.
+- O painel, lançamento e histórico de Químicos voltam a usar as consultas oficiais do Portal para `chemical_weeks` e `chemical_consumptions` no Supabase.
+- A gravação semanal continua sendo feita pela rotina oficial `save_chemical_week`.
+- Nenhum registro existente foi apagado ou alterado.
+
+Após publicar, entrar em Químicos > Histórico e selecionar o ano/período. Se um lançamento ainda não aparecer, a própria tela oficial permitirá confirmar se ele foi salvo no Supabase.

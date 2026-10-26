@@ -1,0 +1,10 @@
+PORTAL GAO V118 — RELAVE INTEGRADO AO MÓDULO QUÍMICOS
+
+- Nova aba Relave na área Químicos.
+- Histórico 2026 importado da aba "Relave do Dia" da planilha RELAVE GAO 2026 oficial.
+- Novo lançamento simplificado por causas.
+- CHT e GAO não são digitados: são calculados automaticamente pelas causas, seguindo a lógica da planilha oficial.
+- Relave total = CHT + GAO + Outros + Privativos.
+- Semana e percentuais calculados automaticamente.
+- Painel com % relave por semana, kg por semana, acumulado, CHT x GAO e principais causas.
+- Novos lançamentos persistem usando a estrutura Supabase já existente chemical_portal_state; não exige SQL novo.
