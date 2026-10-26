@@ -93,11 +93,22 @@
 <script>
 (()=>{const open=()=>{history.pushState({gaoIndicators:true},'', '/#indicadores-performance');import('/indicators-performance-v176.mjs?v=184').then(m=>m.mount?.()).catch(()=>{});};document.addEventListener('click',e=>{const el=e.target?.closest?.('a,button,[role="link"]');if(!el)return;const t=(el.textContent||'').trim();if(t==='Indicadores'||t.includes('Indicadores')){e.preventDefault();e.stopImmediatePropagation();open();}},true);if(location.hash==='#indicadores-performance')setTimeout(open,300);})();
 </script>
+
+
+
 <script>
-document.addEventListener('click',function(e){var el=e.target&&e.target.closest&&e.target.closest('a,button,[role="link"],div');if(el&&/^Indicadores$/i.test((el.textContent||'').trim())){e.preventDefault();e.stopImmediatePropagation();window.location.href='/indicadores.html?v=1';}},true);
-</script>
-<script>
-(function(){function fix(){document.querySelectorAll('a,button,[role="link"]').forEach(function(el){if((el.textContent||'').trim()==='Indicadores'){el.setAttribute('href','/indicadores.html?v=2');el.onclick=function(e){e.preventDefault();location.href='/indicadores.html?v=2';};}})}new MutationObserver(fix).observe(document.documentElement,{childList:true,subtree:true});setTimeout(fix,200);})();
+(()=>{
+  const openIndicators=()=>{
+    history.pushState({gaoIndicators:true},'', '/#indicadores-performance');
+    import('/indicators-performance-v176.mjs?v=185').then(m=>m.mount?.()).catch(err=>console.error('Indicadores GAO',err));
+  };
+  document.addEventListener('click',event=>{
+    const el=event.target?.closest?.('a,button,[role="link"]');
+    if(!el || (el.textContent||'').trim()!=='Indicadores') return;
+    event.preventDefault(); event.stopImmediatePropagation(); openIndicators();
+  }, true);
+  if(location.hash==='#indicadores-performance') setTimeout(openIndicators,200);
+})();
 </script>
 </body>
 </html>
