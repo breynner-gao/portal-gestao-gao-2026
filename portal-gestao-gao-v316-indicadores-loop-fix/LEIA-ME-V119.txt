@@ -1,0 +1,9 @@
+PORTAL GAO V119 — RELAVE VISÍVEL E INTEGRADO
+
+Correção estrutural da V118:
+- Aba Relave inserida diretamente após Histórico na navegação de Químicos.
+- Abertura do Relave sem trocar a rota do módulo.
+- Painel, Novo lançamento e Histórico do Relave visíveis dentro de Químicos.
+- Histórico 2026 preservado.
+- CHT e GAO calculados pelas causas conforme a planilha oficial.
+- Sem SQL novo.

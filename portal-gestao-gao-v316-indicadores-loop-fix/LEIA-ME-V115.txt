@@ -1,0 +1,12 @@
+PORTAL GAO V115 — DIAGNÓSTICO SEGURO DO LANÇAMENTO SEMANAL
+
+Objetivo:
+- Preservar o lançamento digitado em rascunho local antes da chamada ao Supabase.
+- Exibir na própria tela o código, mensagem, detalhes e dica reais retornados pelo Supabase/RPC save_chemical_week.
+- Não alterar Inventário, Compras, Revenda ou Rouparia.
+
+IMPORTANTE:
+Esta versão não mascara mais a falha como “Não foi possível salvar”.
+Se o Supabase rejeitar a gravação, a faixa vermelha mostrará o erro técnico real para corrigirmos a causa sem tentativa e erro.
+
+Não requer SQL para publicar esta versão de diagnóstico.

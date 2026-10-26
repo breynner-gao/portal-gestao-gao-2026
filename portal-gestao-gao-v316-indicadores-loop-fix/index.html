@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Portal de Gestão GAO</title>
+    <link rel="stylesheet" crossorigin href="/assets/index-CnNcFroc.css">
+    <link rel="stylesheet" href="/src/v614.css">
+  <!-- Portal GAO V60: escopo antes da renderização + entrega scoped -->
+  <meta name="gao-build" content="v112-20260925" />
+</head>
+  <body>
+    <div id="root"></div>
+    <script src="/src/laundry-access-bootstrap-v60.js"></script>
+    <script type="module" crossorigin src="/assets/index-BYjCR9wG.js?v=91"></script>
+    <script type="module" src="/src/admin-delete-addon.js"></script>
+    <script type="module" src="/src/laundry-structure-v45.js"></script>
+    <script type="module" src="/src/admin-scope-v48.js"></script>
+    <script type="module" src="/src/admin-clients-v51.js"></script>
+    <script type="module" src="/src/laundry-programming-v55.js"></script>
+    <script type="module" src="/src/laundry-sector-client-v53.js"></script>
+    <script src="/src/laundry-access-scope-v59.js"></script>
+    <script src="/src/laundry-delivery-v622.js?v=150"></script>
+    <script src="/src/laundry-collection-v97.js?v=104"></script>
+    
+    <script src="/src/login-premium-v614.js"></script>
+    <script src="/src/security-session-v614.js"></script>
+    <script src="/src/branding-quality-v615.js"></script>
+  <script src="/src/dashboard-period-fix-v310.js?v=310"></script>
+  <script src="/src/laundry-route-isolation-v63.js?v=65"></script>
+  <script src="/src/laundry-managerial-v93.js?v=92"></script>
+      <script src="/src/contingency-v66.js?v=66"></script>
+  <script src="/src/laundry-dashboard-v97.js?v=105"></script>
+  <script src="/src/chemicals-supabase-persistence-v106.js?v=145"></script>
+  <!-- As telas de histórico e painel de químicos usam o módulo oficial do Portal,
+       que lê chemical_weeks/chemical_consumptions no Supabase. As extensões
+       v70-v73 foram removidas porque substituíam os dados atuais por um JSON
+       histórico encerrado na semana 31. -->
+  <script src="/src/chemicals-master-v82.js?v=108"></script>
+  <script src="/src/chemicals-principle-map-v84.js?v=108"></script>
+  <script src="/src/chemicals-inventory-v106.js?v=108"></script>
+  <script src="/src/chemicals-purchase-v86.js?v=87"></script>
+  <script src="/src/chemicals-master-single-v108.js?v=108"></script>
+  <script src="/src/chemicals-resale-v109.js?v=113"></script>
+  <script src="/src/chemicals-ui-stability-v112.js?v=112"></script>
+  <script src="/src/chemicals-relave-v123.js?v=310"></script>
+  <script src="/src/chemicals-previous-week-v1.js?v=1"></script>
+  <script src="/src/chemicals-reference-v1.js?v=1"></script>
+  <script src="/src/quality-management-v142.js?v=145"></script>
+  <script src="/src/quality-activities-v2.js?v=304"></script>
+  <script type="module" src="/src/quality-indicator-analysis-v1.mjs?v=1"></script>
+  <script type="module" src="/src/quality-indicator-rules-v1.mjs?v=1"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script type="module" src="/src/linen-risk-panel-v150.js?v=214"></script>
+  <script src="/src/fabric-purchase-addon-v1.js?v=28"></script>
+  <script type="module" src="/src/indicators-performance-v176.mjs?v=180"></script>
+<script>window.GAO_BUILD="V314";</script>
+<script>
+(()=>{
+  const started=Date.now(), key='gao-auth-recovery-once';
+  const check=()=>{
+    const loading=[...document.querySelectorAll('.route-loading')].find(x=>/Carregando acesso/i.test(x.textContent||''));
+    if(!loading)return;
+    if(Date.now()-started<12000)return;
+    if(!sessionStorage.getItem(key)){sessionStorage.setItem(key,'1');}
+    if(!document.getElementById('gao-auth-timeout')){
+      const box=document.createElement('div');box.id='gao-auth-timeout';box.style='position:fixed;z-index:99999;inset:0;display:grid;place-items:center;background:rgba(8,45,82,.18);font-family:inherit';box.innerHTML='<div style="max-width:420px;padding:24px;border-radius:14px;background:#fff;box-shadow:0 20px 60px rgba(8,45,82,.25);color:#082f55;text-align:center"><h2 style="margin:0 0 8px">Não foi possível atualizar a sessão</h2><p style="margin:0 0 16px;color:#54708e">O acesso ao Portal demorou mais que o esperado. Tente novamente.</p><button type="button" style="border:0;border-radius:8px;padding:10px 16px;background:#3188cc;color:#fff;font-weight:800;cursor:pointer">Tentar novamente</button></div>';box.querySelector('button').onclick=()=>{sessionStorage.removeItem(key);location.reload()};document.body.appendChild(box);
+    }
+  };
+  setInterval(check,1000);
+})();
+</script>
+</body>
+</html>

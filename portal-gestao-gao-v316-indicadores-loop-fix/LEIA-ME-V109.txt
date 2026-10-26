@@ -1,0 +1,6 @@
+V109 — Revenda de Químicos
+- Ambiente separado da Operação Lavanderia.
+- Usa a tabela chemical_portal_state já existente (criada no SQL V102).
+- NÃO executar novo SQL se a V102 já foi executada.
+- Chave independente: gao.chemicals.resale.v109
+- Estoques da lavanderia e da revenda não se misturam.

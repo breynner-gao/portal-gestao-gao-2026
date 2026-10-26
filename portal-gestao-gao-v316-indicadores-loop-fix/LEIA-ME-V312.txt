@@ -1,0 +1,6 @@
+V312 — Regra de período encerrado em Químicos
+
+- Ao abrir o Histórico semanal, o Portal identifica a última semana gravada e seleciona automaticamente a semana imediatamente anterior.
+- A semana em andamento não é usada automaticamente no custo ou na comparação.
+- Os filtros continuam editáveis para consulta de qualquer período.
+- A correção funciona junto com a V311, que removeu a base fixa antiga até a semana 31.

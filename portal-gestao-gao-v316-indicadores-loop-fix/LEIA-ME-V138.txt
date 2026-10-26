@@ -1,0 +1,17 @@
+PORTAL GAO V138 — ERRO 42501 NO LANCAMENTO DE QUIMICOS
+
+O erro "Falha Supabase ao salvar lancamento semanal: 42501 Acesso nao autorizado"
+e permissao do banco de dados.
+
+ANTES OU JUNTO DA PUBLICACAO:
+1. Abra o Supabase.
+2. Acesse SQL Editor.
+3. Execute o arquivo:
+   sql-v138-corrige-42501-lancamento-quimico.sql
+4. Publique o ZIP V138.
+5. Entre novamente no portal e salve o lancamento semanal.
+
+Esta versao preserva as correcoes da V137:
+- Relave nao mistura aba Historico + Relave.
+- Relave nao escolhe semana inconsistente automaticamente.
+- Relave bloqueia lancamento quando o relave total e maior que o total triado.

@@ -1,0 +1,7 @@
+V123 — Relave interativo corrigido.
+- Tendência identificada como RELAVE GERAL.
+- Tooltip real por ponto com semana, série, valor/percentual e total triado.
+- Legendas interativas isoladas por gráfico.
+- Botão Todos liga/desliga todas as séries do gráfico.
+- Abas de causas continuam interativas.
+- Sem alteração de banco/SQL.
