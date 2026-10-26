@@ -90,5 +90,8 @@
 })();
 </script>
   <script src="/chemical-history-stable-v2.js?v=1"></script>
+<script>
+(()=>{const open=()=>{history.pushState({gaoIndicators:true},'', '/#indicadores-performance');import('/indicators-performance-v176.mjs?v=183').then(m=>m.mount?.()).catch(()=>{});};document.addEventListener('click',e=>{const el=e.target?.closest?.('a,button,[role="link"]');if(!el)return;const t=(el.textContent||'').trim();if(t==='Indicadores'||t.includes('Indicadores')){e.preventDefault();e.stopImmediatePropagation();open();}},true);if(location.hash==='#indicadores-performance')setTimeout(open,300);})();
+</script>
 </body>
 </html>
