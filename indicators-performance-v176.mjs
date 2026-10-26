@@ -357,13 +357,16 @@ if (typeof window !== 'undefined') {
     event.preventDefault();
     go(false);
   });
+  // O shell do portal sofre mutações frequentes. Observar cada alteração e
+  // manter um setInterval fazia a tela piscar e deixava a navegação lenta.
+  // Um observador com debounce é suficiente para instalar o menu uma única vez.
+  let mountTimer;
   new MutationObserver(() => {
-    ensureNav();
-    if (isRoute() && !document.getElementById('ip176')) mount();
+    clearTimeout(mountTimer);
+    mountTimer = setTimeout(() => {
+      ensureNav();
+      if (isRoute() && !document.getElementById('ip176')) mount();
+    }, 120);
   }).observe(document.documentElement, { childList: true, subtree: true });
-  setInterval(() => {
-    ensureNav();
-    if (isRoute() && !document.getElementById('ip176')) mount();
-  }, 900);
   setTimeout(mount, 400);
 }
