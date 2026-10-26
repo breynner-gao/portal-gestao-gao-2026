@@ -243,14 +243,17 @@ function kpiCard(item) {
 }
 
 function executive() {
-  return `<div class="ip176-grid">${indicatorCatalog.map(kpiCard).join('')}</div>
+  const available = sourceSnapshot().filter(x => x.available).length;
+  const missing = sourceSnapshot().filter(x => !x.available).length;
+  return `<div class="ip176-section-title"><div><h2 style="margin:0">Resumo executivo</h2><small>Comparação do período atual com o período anterior</small></div><span class="ip176-pill gray">Atualização por fonte</span></div>
+  <div class="ip176-grid">${indicatorCatalog.map(kpiCard).join('')}</div>
   <div class="ip176-two">
-    <article class="ip176-card"><div class="ip176-section-title"><h2>Evolução dos KPIs</h2><span class="ip176-pill gray">Aguardando diagnóstico</span></div><div class="ip176-empty">Os gráficos serão liberados após validação das fontes de dados e metas aprovadas.</div></article>
-    <article class="ip176-card"><div class="ip176-section-title"><h2>Status dos dados</h2></div><table class="ip176-table"><tbody><tr><td>Fontes encontradas</td><td><b>${sourceSnapshot().filter(x=>x.available).length}</b></td></tr><tr><td>Validação pendente</td><td><b>${sourceSnapshot().filter(x=>x.available).length}</b></td></tr><tr><td>Sem fonte vinculada</td><td><b>${sourceSnapshot().filter(x=>!x.available).length}</b></td></tr></tbody></table></article>
+    <article class="ip176-card"><div class="ip176-section-title"><h2>Tendência dos indicadores</h2><span class="ip176-pill gray">Período atual × anterior</span></div><div class="ip176-empty">A linha de tendência será preenchida conforme cada fonte validada. Nenhum resultado é criado quando a fonte não está disponível.</div></article>
+    <article class="ip176-card"><div class="ip176-section-title"><h2>Qualidade dos dados</h2></div><table class="ip176-table"><tbody><tr><td>Fontes disponíveis</td><td><b>${available}</b></td></tr><tr><td>Validação pendente</td><td><b>${available}</b></td></tr><tr><td>Sem fonte vinculada</td><td><b>${missing}</b></td></tr></tbody></table></article>
   </div>
   <div class="ip176-two">
-    <article class="ip176-card"><h2>Principais desvios</h2><div class="ip176-empty">Sem desvio consolidado enquanto as integrações não forem validadas.</div></article>
-    <article class="ip176-card"><h2>Planos de ação</h2><div class="ip176-empty">Planos serão vinculados às não conformidades, auditorias e ações gerenciais.</div></article>
+    <article class="ip176-card"><h2>Principais desvios</h2><div class="ip176-empty">Exibir somente desvios calculados contra a meta aprovada.</div></article>
+    <article class="ip176-card"><h2>Planos de ação</h2><div class="ip176-empty">Vincular responsáveis, prazo e evidência ao indicador em desvio.</div></article>
   </div>`;
 }
 
