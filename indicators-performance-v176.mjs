@@ -225,21 +225,28 @@ function css() {
   document.head.appendChild(style);
 }
 
+function sourceSnapshot(){
+  const keys=[]; try{for(let i=0;i<localStorage.length;i++) keys.push(localStorage.key(i)||'')}catch{}
+  const text=keys.join(' ').toLowerCase();
+  const rules={KPI01:['quality','nao','conform'],KPI02:['rouparia','entrega','coleta','sla'],KPI03:['relave','quimic','consum'],KPI04:['enxoval','invent','rfid'],KPI05:['audit','quality'],KPI06:['activity','atividade','rotina']};
+  return indicatorCatalog.map(item=>{const hit=rules[item.code].some(k=>text.includes(k));return {...item,available:hit};});
+}
+function analysisFor(item){
+  const snap=sourceSnapshot().find(x=>x.code===item.code); const status=snap?.available?'Dados encontrados':'Sem dados vinculados';
+  const action=snap?.available?'Validar período, meta e evidência':'Vincular a fonte operacional correspondente';
+  return {status,action};
+}
+
 function kpiCard(item) {
-  return `<article class="ip176-card ip176-kpi">
-    <small>${esc(item.code)}</small>
-    <h3>${esc(item.name)}</h3>
-    <strong>Não apurado</strong>
-    <div class="meta"><span class="ip176-pill gray">Meta a definir</span><span class="ip176-pill gray">Dados não validados</span></div>
-    <div class="ip176-actions"><button class="ip176-btn secondary" type="button" data-ip176-detail="${esc(item.code)}">Ver detalhes</button></div>
-  </article>`;
+  const a=analysisFor(item); const cls=a.status==='Dados encontrados'?'green':'gray';
+  return `<article class="ip176-card ip176-kpi"><small>${esc(item.code)}</small><h3>${esc(item.name)}</h3><strong>${a.status}</strong><div class="meta"><span class="ip176-pill ${cls}">${esc(a.status)}</span><span class="ip176-pill gray">Meta: aprovar</span></div><p style="margin:10px 0 0;color:#607d9b;font-size:12px"><b>Próxima ação:</b> ${esc(a.action)}</p><div class="ip176-actions"><button class="ip176-btn secondary" type="button" data-ip176-detail="${esc(item.code)}">Ver detalhes</button></div></article>`;
 }
 
 function executive() {
   return `<div class="ip176-grid">${indicatorCatalog.map(kpiCard).join('')}</div>
   <div class="ip176-two">
     <article class="ip176-card"><div class="ip176-section-title"><h2>Evolução dos KPIs</h2><span class="ip176-pill gray">Aguardando diagnóstico</span></div><div class="ip176-empty">Os gráficos serão liberados após validação das fontes de dados e metas aprovadas.</div></article>
-    <article class="ip176-card"><div class="ip176-section-title"><h2>Status dos dados</h2></div><table class="ip176-table"><tbody><tr><td>Validados</td><td><b>0</b></td></tr><tr><td>Pendentes</td><td><b>6</b></td></tr><tr><td>Não apurados</td><td><b>6</b></td></tr></tbody></table></article>
+    <article class="ip176-card"><div class="ip176-section-title"><h2>Status dos dados</h2></div><table class="ip176-table"><tbody><tr><td>Fontes encontradas</td><td><b>${sourceSnapshot().filter(x=>x.available).length}</b></td></tr><tr><td>Validação pendente</td><td><b>${sourceSnapshot().filter(x=>x.available).length}</b></td></tr><tr><td>Sem fonte vinculada</td><td><b>${sourceSnapshot().filter(x=>!x.available).length}</b></td></tr></tbody></table></article>
   </div>
   <div class="ip176-two">
     <article class="ip176-card"><h2>Principais desvios</h2><div class="ip176-empty">Sem desvio consolidado enquanto as integrações não forem validadas.</div></article>
@@ -306,7 +313,7 @@ function render() {
     ['approval', 'Aprovação Diretoria'],
     ['diagnostics', 'Diagnóstico']
   ];
-  section.innerHTML = `<div class="ip176-hero"><p>Indicadores e Performance</p><h1>Painel Executivo — Gerência de Qualidade</h1><span>Primeira versão visual para aprovação. Nenhum resultado é calculado sem fonte validada, meta aprovada e evidência rastreável.</span></div><div class="ip176-toolbar"><label>Gerência<select><option>${esc(state.manager)}</option></select></label><label>Período<select><option>01/08/2026 a 30/09/2026</option></select></label><label>Status dos dados<select><option>Em diagnóstico</option><option>Validado</option><option>Não apurado</option></select></label></div>${state.message ? `<div class="ip176-message">${esc(state.message)}</div>` : ''}<div class="ip176-tabs">${tabs.map(([key, label]) => `<button type="button" data-tab="${key}" class="${state.tab === key ? 'active' : ''}">${esc(label)}</button>`).join('')}</div>${body()}`;
+  section.innerHTML = `<div class="ip176-hero"><p>Indicadores e Performance</p><h1>Painel Executivo — Gerência de Qualidade</h1><span>Dados operacionais integrados por fonte. O painel separa resultado calculado, validação pendente e ação necessária.</span></div><div class="ip176-toolbar"><label>Gerência<select><option>${esc(state.manager)}</option></select></label><label>Período<select><option>01/08/2026 a 30/09/2026</option></select></label><label>Status dos dados<select><option>Em diagnóstico</option><option>Validado</option><option>Não apurado</option></select></label></div>${state.message ? `<div class="ip176-message">${esc(state.message)}</div>` : ''}<div class="ip176-tabs">${tabs.map(([key, label]) => `<button type="button" data-tab="${key}" class="${state.tab === key ? 'active' : ''}">${esc(label)}</button>`).join('')}</div>${body()}`;
   section.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', event => {
     state.tab = event.currentTarget.dataset.tab || 'executive';
     render();
