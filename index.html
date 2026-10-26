@@ -71,5 +71,24 @@
   setInterval(check,1000);
 })();
 </script>
+
+<script>
+(()=>{
+  const TARGET='#indicadores-performance';
+  const SELECTOR='a[href="/#indicadores-performance"],a[href="/indicadores-performance"],[data-indicators-link]';
+  const load=()=>import('/indicators-performance-v176.mjs?v=182').then(m=>m.mount?.()).catch(()=>{});
+  const open=(ev)=>{
+    const link=ev.target?.closest?.(SELECTOR);
+    if(!link)return;
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    history.pushState({gaoIndicators:true},'',TARGET);
+    load();
+  };
+  document.addEventListener('click',open,true);
+  window.addEventListener('hashchange',()=>{if(location.hash===TARGET)load();});
+  if(location.hash===TARGET) setTimeout(load,0);
+})();
+</script>
 </body>
 </html>
