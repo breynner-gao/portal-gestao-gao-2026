@@ -40,36 +40,14 @@ const TOLERANCIA_EXCEDENTE_CIRCULACAO = 30;
 
 // Fallback operacional: garante que a facção não volte a zero quando o
 // navegador tiver uma base antiga salva ou a planilha online estiver indisponível.
-const BUILTIN_FACTION = {
-  'LENCOL PADRAO 190X280': 11000,
-  'CAMPO SIMPLES VERDE 160X160': 800,
-  'CAMISA PRI AZUL CLARO GG': 330,
-  'CALCA PRI AZUL CLARO GG': 350,
-  'CAMISA PRI AZUL CLARO M': 325,
-  'CAMISA PRI AZUL CLARO P': 30,
-  'CALCA PRI AZUL CLARO G': 215,
-  'CAMISA PRI P53 M': 225,
-  'CALCA PRI P53 M': 370,
-  'CAMISA PRI P53 P': 130,
-  'CAMISA PRI VERDE M': 280,
-  'CAMISA PRI VERDE GG': 400,
-  'CALCA PRI VERDE G': 760,
-  'CALCA PRI VERDE GG': 470,
-  'CALCA PRI VERDE P': 105,
-  'CALCA PRI VERMELHO G': 30,
-  'CAMISA PRI VERDE G': 150,
-  'CALCA PRI VERDE M': 600,
-  'CAMPO SIMPLES VERDE 120X120': 490,
-  'CAMPO FENESTRADO VERDE BANDEIRA': 5,
-  'CAMISA PRI AZUL CLARO': 102,
-  'CAMISA PRI AZUL CLARO M': 325
-};
+
 
 export function buildFactionMap(rows) {
   const map = {};
   (rows || []).forEach(row => {
-    const status = String(pick(row, 'Status', 'status', 'STATUS') || '').trim().toUpperCase();
-    if (status === 'CONCLUIDO' || status === 'CONCLUÍDO') return;
+    const status = String(pick(row, 'Status', 'status', 'STATUS', 'Situação', 'Situacao', 'Status da produção', 'Status da producao') || '')
+      .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^A-Z0-9]+/gi, '').toUpperCase();
+    if (['CONCLUIDO', 'FINALIZADO', 'ENTREGUE', 'PRODUZIDO', 'ENCERRADO', 'CANCELADO'].includes(status)) return;
     const product = pick(row, 'PRODUTO', 'produto', 'produto_nome', 'Produto', 'Item');
     const quantity = n(pick(row, 'QUANTIDADE', 'quantidade', 'Quantidade', 'ENTREGA', 'entrega'));
     const key = normalizeItemKey(product);
@@ -90,8 +68,7 @@ export function factionQuantityFor(row, map = {}) {
   ].filter(Boolean);
   const key = keys.find(candidate => map[candidate] !== undefined && n(map[candidate]) > 0);
   if (key) return n(map[key]);
-  const fallback = keys.find(candidate => BUILTIN_FACTION[candidate] !== undefined);
-  return fallback ? n(BUILTIN_FACTION[fallback]) : 0;
+  return 0;
 }
 
 export function applyFactionToRows(rows, map = {}) {
