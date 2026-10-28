@@ -47,7 +47,7 @@ export function buildFactionMap(rows) {
   (rows || []).forEach(row => {
     const status = String(pick(row, 'Status', 'status', 'STATUS', 'Situação', 'Situacao', 'Status da produção', 'Status da producao') || '')
       .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^A-Z0-9]+/gi, '').toUpperCase();
-    if (['CONCLUIDO', 'FINALIZADO', 'ENTREGUE', 'PRODUZIDO', 'ENCERRADO', 'CANCELADO'].includes(status)) return;
+    if (['CONCLUIDO', 'CONCLUDO', 'CONCLUIDA', 'CONCLUDA', 'FINALIZADO', 'ENTREGUE', 'PRODUZIDO', 'ENCERRADO', 'CANCELADO'].includes(status)) return;
     const product = pick(row, 'PRODUTO', 'produto', 'produto_nome', 'Produto', 'Item');
     const quantity = n(pick(row, 'QUANTIDADE', 'quantidade', 'Quantidade', 'QUANTIDADE DE', 'Quantidade de', 'ENTREGA', 'entrega'));
     const key = normalizeItemKey(product);
