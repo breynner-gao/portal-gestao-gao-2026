@@ -92,8 +92,9 @@ async function load() {
     ]);
     const current = readCurrent();
     const summary = current?.baseRows?.length ? { rows: current.baseRows } : summarizeRows(data.rows || []);
-    const bundledFactionMap = faction?.byProduct || buildFactionMap(faction?.items || []);
-    const activeFactionMap = { ...bundledFactionMap };
+    // A facção oficial vem exclusivamente da planilha online atual.
+    // A base estática antiga não pode reintroduzir peças já concluídas.
+    const activeFactionMap = {};
     state = {
       ...state,
       loaded: true,
