@@ -1,8 +1,8 @@
-import { applyFactionToRows, buildFactionMap, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, updateIdealReference } from './linen-risk-rules-v150.mjs?v=219';
+import { applyFactionToRows, buildFactionMap, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, updateIdealReference } from './linen-risk-rules-v150.mjs?v=220';
 
 const DATA = '/assets/linen-rfid-report-2026-10-13.json';
 const FACTION_DATA = '/assets/linen-production-pending-2026-10-13.json';
-const ONLINE_FACTION = 'https://docs.google.com/spreadsheets/d/1YnQBgAJRQWMAu9zzw8FYKmS2g2oyoeJb/export?format=xlsx';
+const ONLINE_FACTION = 'https://docs.google.com/spreadsheets/d/1a8DJIkoxqbzNCz8O1BHmBEJFUpIukhILclCk5sv53i0/export?format=xlsx';
 const HISTORY_KEY = 'gao-linen-history-v1';
 const CURRENT_KEY = 'gao-linen-current-v1';
 const route = () => location.pathname.replace(/\/+$/, '') === '/enxoval-tecidos';
