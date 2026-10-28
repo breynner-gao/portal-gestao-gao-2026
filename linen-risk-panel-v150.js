@@ -2,7 +2,7 @@ import { applyFactionToRows, buildFactionMap, listDecisionItems, listMovementIte
 
 const DATA = '/assets/linen-rfid-report-2026-10-13.json';
 const FACTION_DATA = '/assets/linen-production-pending-2026-10-13.json';
-const ONLINE_FACTION = 'https://docs.google.com/spreadsheets/d/1YnQBgAJRQWMAu9zzw8FYKmS2g2oyoeJb/export?format=csv';
+const ONLINE_FACTION = 'https://drive.google.com/uc?export=download&id=1YnQBgAJRQWMAu9zzw8FYKmS2g2oyoeJb';
 const HISTORY_KEY = 'gao-linen-history-v1';
 const CURRENT_KEY = 'gao-linen-current-v1';
 const route = () => location.pathname.replace(/\/+$/, '') === '/enxoval-tecidos';
@@ -77,7 +77,16 @@ function editIdealReference(event) {
 function deleteSelectedHistory() { const id = document.querySelector('#lr150-history-select')?.value; if (!id) return; const next = readHistory().filter(item => item.id !== id); localStorage.setItem(HISTORY_KEY, JSON.stringify(next)); render(); }
 function deleteAllHistory() { localStorage.removeItem(HISTORY_KEY); render(); }
 async function fetchOnlineFaction() {
-  try { const text = await fetch(ONLINE_FACTION, { cache: 'no-store' }).then(r => { if (!r.ok) throw Error(`HTTP ${r.status}`); return r.text(); }); const rows = parseDelimitedRows(text); if (!rows.length) throw Error('planilha vazia'); applyUploadedFaction(rows, 'Google Sheets — controle produção'); saveHistory(); } catch (e) { state = { ...state, uploadMessage: `Facção online não atualizada: ${e.message || e}` }; render(); }
+  try {
+    if (!window.XLSX) throw Error('Leitor Excel indisponível');
+    const buffer = await fetch(ONLINE_FACTION, { cache: 'no-store' }).then(r => { if (!r.ok) throw Error(`HTTP ${r.status}`); return r.arrayBuffer(); });
+    const book = window.XLSX.read(buffer, { type: 'array', cellDates: true });
+    const sheetName = book.SheetNames.find(name => /base|produção|producao/i.test(name)) || book.SheetNames[0];
+    const rows = window.XLSX.utils.sheet_to_json(book.Sheets[sheetName], { defval: '', raw: false });
+    if (!rows.length) throw Error('planilha vazia');
+    applyUploadedFaction(rows, 'controle produção (3).xlsx');
+    saveHistory();
+  } catch (e) { state = { ...state, uploadMessage: `Facção online não atualizada: ${e.message || e}` }; render(); }
 }
 
 async function load() {
