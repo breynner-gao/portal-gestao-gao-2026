@@ -82,7 +82,11 @@ async function fetchOnlineFaction() {
     const buffer = await fetch(ONLINE_FACTION, { cache: 'no-store' }).then(r => { if (!r.ok) throw Error(`HTTP ${r.status}`); return r.arrayBuffer(); });
     const book = window.XLSX.read(buffer, { type: 'array', cellDates: true });
     const sheetName = book.SheetNames.find(name => /base|produção|producao/i.test(name)) || book.SheetNames[0];
-    const rows = window.XLSX.utils.sheet_to_json(book.Sheets[sheetName], { defval: '', raw: false });
+    const sheet = book.Sheets[sheetName];
+    const matrix = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+    const headerIndex = matrix.findIndex(row => row.some(cell => String(cell || '').trim().toUpperCase() === 'PRODUTO'));
+    if (headerIndex < 0) throw Error('cabeçalho PRODUTO não encontrado');
+    const rows = window.XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false, range: headerIndex });
     if (!rows.length) throw Error('planilha vazia');
     applyUploadedFaction(rows, 'controle produção (3).xlsx');
     saveHistory();
