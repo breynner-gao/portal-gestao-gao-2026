@@ -1,4 +1,4 @@
-import { applyFactionToRows, buildFactionMap, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, updateIdealReference } from './linen-risk-rules-v150.mjs?v=222';
+import { applyFactionToRows, buildFactionMap, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, updateIdealReference } from './linen-risk-rules-v150.mjs?v=223';
 
 const DATA = '/assets/linen-rfid-report-2026-10-13.json';
 const FACTION_DATA = '/assets/linen-production-pending-2026-10-13.json';
@@ -87,8 +87,8 @@ async function fetchOnlineFaction() {
     const headerIndex = matrix.findIndex(row => row.some(cell => String(cell || '').trim().toUpperCase() === 'PRODUTO'));
     if (headerIndex < 0) throw Error('cabeçalho PRODUTO não encontrado');
     const rows = window.XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false, range: headerIndex });
-    const statusOf = row => String(row.Status ?? row.status ?? row.STATUS ?? row['Status da produção'] ?? row['Situação'] ?? '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, '');
-    const pending = rows.filter(row => !['CONCLUIDO','CONCLUDO','CONCLUIDA','CONCLUDA','FINALIZADO','ENTREGUE','PRODUZIDO','ENCERRADO','CANCELADO'].includes(statusOf(row)));
+    const statusOf = row => String(row.Status ?? row.status ?? row.STATUS ?? row['Status da produção'] ?? row['Situação'] ?? '').trim();
+    const pending = rows.filter(row => /pendente|aguardando|em produção|em producao|em corte|em costura/i.test(statusOf(row)));
     const statusSummary = [...new Set(rows.map(statusOf).filter(Boolean))].join(', ');
     if (!pending.length) throw Error(`nenhum pendente encontrado; status lidos: ${statusSummary || 'vazio'}`);
     applyUploadedFaction(pending, 'controle produção facção');
