@@ -1,4 +1,4 @@
-import { applyFactionToRows, buildFactionMap, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, updateIdealReference } from './linen-risk-rules-v150.mjs?v=220';
+import { applyFactionToRows, buildFactionMap, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, updateIdealReference } from './linen-risk-rules-v150.mjs?v=221';
 
 const DATA = '/assets/linen-rfid-report-2026-10-13.json';
 const FACTION_DATA = '/assets/linen-production-pending-2026-10-13.json';
@@ -88,7 +88,7 @@ async function fetchOnlineFaction() {
     if (headerIndex < 0) throw Error('cabeçalho PRODUTO não encontrado');
     const rows = window.XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false, range: headerIndex });
     if (!rows.length) throw Error('planilha vazia');
-    applyUploadedFaction(rows, 'controle produção (3).xlsx');
+    applyUploadedFaction(rows, 'controle produção facção');
     saveHistory();
   } catch (e) { state = { ...state, uploadMessage: `Facção online não atualizada: ${e.message || e}` }; render(); }
 }
