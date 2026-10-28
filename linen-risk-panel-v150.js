@@ -1,5 +1,4 @@
 import { applyFactionToRows, buildFactionMap, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, updateIdealReference } from './linen-risk-rules-v150.mjs?v=214';
-import { BUNDLED_FACTION_MAP } from './linen-faction-bundled-v1.mjs?v=1';
 
 const DATA = '/assets/linen-rfid-report-2026-10-13.json';
 const FACTION_DATA = '/assets/linen-production-pending-2026-10-13.json';
@@ -42,7 +41,7 @@ let state = {
   movementListOpen: true,
   movementDirection: 'supply',
   openFilter: '',
-  factionMap: { ...BUNDLED_FACTION_MAP },
+  factionMap: {},
   factionSource: ''
 };
 
@@ -95,18 +94,17 @@ async function load() {
     const summary = current?.baseRows?.length ? { rows: current.baseRows } : summarizeRows(data.rows || []);
     const bundledFactionMap = faction?.byProduct || buildFactionMap(faction?.items || []);
     const activeFactionMap = { ...bundledFactionMap };
-    Object.entries(current?.factionMap || {}).forEach(([key, value]) => { activeFactionMap[key] = Math.max(Number(activeFactionMap[key] || 0), Number(value || 0)); });
     state = {
       ...state,
       loaded: true,
       baseRows: summary.rows,
-      rows: applyFactionToRows(summary.rows, { ...BUNDLED_FACTION_MAP, ...activeFactionMap }),
+      rows: applyFactionToRows(summary.rows, activeFactionMap),
       asOf: current?.asOf || data.asOf || '',
       informedAt: current?.informedAt || data.informedAt || data.asOf || '',
       sourceSheet: current?.sourceSheet || data.sheet || '',
       sourceRule: current?.sourceRule || data.rule || '',
       fileName: current?.fileName || data.source || state.fileName,
-      factionMap: { ...BUNDLED_FACTION_MAP, ...activeFactionMap },
+      factionMap: activeFactionMap,
       factionSource: current?.factionSource || faction?.source || 'Base incorporada do controle de produção'
     };
     saveCurrent();
@@ -211,7 +209,7 @@ function applyUploadedRows(rows, fileName) {
     ...state,
     loaded: true,
     baseRows: summary.rows,
-    rows: applyFactionToRows(summary.rows, Object.keys(factionMap || {}).length ? factionMap : BUNDLED_FACTION_MAP),
+    rows: applyFactionToRows(summary.rows, factionMap || {}),
     fileName,
     asOf: new Date().toISOString().slice(0, 10),
     informedAt: new Date().toISOString().slice(0, 10),
