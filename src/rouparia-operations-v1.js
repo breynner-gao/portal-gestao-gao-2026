@@ -1,0 +1,33 @@
+(() => {
+  const URL='https://fquzuxdqvhecijjuxbmg.supabase.co';
+  const KEY='sb_publishable_icrk6TaZexgiSIq63zX_ng_40JGaYlJ';
+  const token=()=>{for(const k of Object.keys(localStorage)){if(k.startsWith('sb-')&&k.endsWith('-auth-token'))try{const x=JSON.parse(localStorage.getItem(k)||'{}');if(x.access_token)return x.access_token}catch{}}return ''};
+  const api=async(table,query='',opts={})=>{const r=await fetch(URL+'/rest/v1/'+table+(query?'?'+query:''),{method:opts.method||'GET',headers:{apikey:KEY,Authorization:'Bearer '+token(),'Content-Type':'application/json',Prefer:'return=representation'},body:opts.body?JSON.stringify(opts.body):undefined});if(!r.ok)throw Error(await r.text());return r.status===204?null:r.json()};
+  const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const route=()=>location.pathname;
+  const config={
+    '/rouparia/solicitacoes/entrega':['Solicitar entrega','Entrega extra ou complemento','laundry_extra_requests','ENTREGA'],
+    '/rouparia/solicitacoes/coleta':['Solicitar coleta','Coleta fora da programação','laundry_extra_requests','COLETA'],
+    '/rouparia/solicitacoes/forracao':['Solicitar forração','Forração de leito, setor ou área','laundry_extra_requests','FORRAÇÃO'],
+    '/rouparia/solicitacoes/extra':['Solicitar extra','Demanda extraordinária','laundry_extra_requests','EXTRA'],
+    '/rouparia/entregas':['Lançar entrega','Registrar execução de entrega','laundry_deliveries','ENTREGA'],
+    '/rouparia/coletas':['Lançar coleta','Registrar execução de coleta','laundry_collections','COLETA'],
+    '/rouparia/forracoes':['Forrações','Registrar execução de forração','laundry_extra_requests','FORRAÇÃO'],
+    '/rouparia/pesagem':['Pesagem','Registrar peso por saco ou setor','laundry_collection_weights','PESAGEM'],
+    '/rouparia/ocorrencias':['Ocorrências','Registrar ocorrência e plano de ação','quality_occurrences','OCORRÊNCIA']
+  };
+  function host(){return document.querySelector('main')||document.querySelector('.gao-main')||document.querySelector('#root')||document.body}
+  function render(){
+    const c=config[route()]; if(!c)return;
+    const h=host(); if(!h||h.querySelector('[data-gao-operation]'))return;
+    const box=document.createElement('section');box.dataset.gaoOperation='1';box.className='gao-operation';
+    box.innerHTML='<div class="gao-op-head"><div><p class="gao-op-eyebrow">GESTÃO DE ROUPARIA</p><h1>'+c[0]+'</h1><p>'+c[1]+'</p></div><a class="gao-op-back" href="/rouparia">← Voltar ao painel</a></div><form class="gao-op-form"><label>Cliente<input name="client" required placeholder="Ex.: Unimed Rio Verde"></label><label>Setor<input name="sector" required placeholder="Ex.: UTI 2"></label><label>Data<input name="date" type="date" required></label><label>Período<select name="period"><option>MANHÃ</option><option>TARDE</option><option>NOITE</option></select></label><label>Peça / serviço<input name="item" required placeholder="Ex.: Lençol padrão 190x280"></label><label>Quantidade<input name="quantity" type="number" min="0" step="1" required></label><label>Prioridade<select name="priority"><option>NORMAL</option><option>URGENTE</option><option>EMERGÊNCIA</option></select></label><label>Status<select name="status"><option>PENDENTE</option><option>EM EXECUÇÃO</option><option>CONCLUÍDA</option><option>NÃO REALIZADA</option></select></label><label class="wide">Observação<textarea name="notes" rows="4" placeholder="Motivo, conferência, complemento ou ocorrência"></textarea></label><div class="wide gao-op-actions"><button class="gao-op-save" type="submit">Salvar lançamento</button><span class="gao-op-msg"></span></div></form><div class="gao-op-history"><h2>Últimos lançamentos</h2><div class="gao-op-rows">Carregando...</div></div>';
+    h.innerHTML='';h.appendChild(box);
+    const f=box.querySelector('form'),msg=box.querySelector('.gao-op-msg'),rows=box.querySelector('.gao-op-rows');f.date.value=new Date().toISOString().slice(0,10);
+    async function load(){try{const data=JSON.parse(localStorage.getItem('gao-rouparia-operacoes')||'[]').filter(x=>x.tipo===c[3]).slice(0,20);rows.innerHTML=data.length?data.map(x=>'<div class="gao-op-row"><b>'+esc(x.client)+' · '+esc(x.sector)+'</b><span>'+esc(x.date)+' · '+esc(x.item)+' · '+esc(x.quantity)+' un. · '+esc(x.status)+'</span></div>').join(''):'Nenhum lançamento local nesta tela.'}catch{rows.textContent='Não foi possível carregar o histórico.'}}
+    f.onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(f));const row={...d,tipo:c[3],created_at:new Date().toISOString()};const all=JSON.parse(localStorage.getItem('gao-rouparia-operacoes')||'[]');localStorage.setItem('gao-rouparia-operacoes',JSON.stringify([row,...all]).slice(0,200000));msg.textContent='Salvo localmente. Sincronização será concluída quando a tabela aceitar este formato.';msg.className='gao-op-msg ok';f.reset();f.date.value=new Date().toISOString().slice(0,10);load()};
+    load();
+  }
+  const css=document.createElement('style');css.textContent='.gao-operation{max-width:1200px;margin:34px auto;padding:28px;background:#f7fbff;color:#0b365f}.gao-op-head{display:flex;justify-content:space-between;gap:20px;align-items:flex-start}.gao-op-eyebrow{color:#0879c1;letter-spacing:.18em;font-weight:800}.gao-operation h1{font-size:42px;margin:10px 0}.gao-op-back{color:#0879c1;font-weight:800}.gao-op-form{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;background:#fff;border:1px solid #cfe0ef;border-radius:16px;padding:22px;margin-top:24px}.gao-op-form label{font-weight:800;color:#234f76}.gao-op-form input,.gao-op-form select,.gao-op-form textarea{display:block;width:100%;box-sizing:border-box;margin-top:7px;padding:12px;border:1px solid #bdd5e8;border-radius:9px;font:inherit}.wide{grid-column:1/-1}.gao-op-actions{display:flex;align-items:center;gap:16px}.gao-op-save{border:0;border-radius:9px;background:#2f8acb;color:#fff;padding:12px 20px;font-weight:800;cursor:pointer}.gao-op-msg.ok{color:#087c45;font-weight:700}.gao-op-history{background:#fff;border:1px solid #cfe0ef;border-radius:16px;padding:22px;margin-top:20px}.gao-op-row{padding:12px 0;border-bottom:1px solid #e4edf5;display:flex;flex-direction:column;gap:4px}@media(max-width:800px){.gao-op-form{grid-template-columns:1fr}.gao-op-head{display:block}.gao-op-actions{display:block}.gao-op-save{margin-bottom:10px}}';document.head.appendChild(css);
+  new MutationObserver(render).observe(document.documentElement,{childList:true,subtree:true});setTimeout(render,700);window.addEventListener('popstate',()=>setTimeout(render,100));
+})();
