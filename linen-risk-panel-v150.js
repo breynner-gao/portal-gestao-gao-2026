@@ -227,6 +227,7 @@ function applyUploadedRows(rows, fileName) {
   state = {
     ...state,
     loaded: true,
+    error: '',
     baseRows: summary.rows,
     rows: applyFactionToRows(summary.rows, factionMap || {}),
     fileName,
