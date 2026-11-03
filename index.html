@@ -130,5 +130,24 @@
 })();
 </script>
   <script src="/portal-sgq-core.js?v=1"></script>
+  <script>
+(()=>{
+  const apply=()=>{
+    const shell=document.querySelector('.gao-shell');
+    const side=document.querySelector('.gao-sidebar');
+    if(!shell||!side)return;
+    shell.style.setProperty('display','flex','important');
+    side.style.setProperty('display','block','important');
+    side.style.setProperty('visibility','visible','important');
+    side.style.setProperty('opacity','1','important');
+    side.style.setProperty('transform','none','important');
+    side.style.setProperty('width','344px','important');
+    side.style.setProperty('flex','0 0 344px','important');
+  };
+  apply();
+  new MutationObserver(apply).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['class','style']});
+  window.addEventListener('resize',apply);
+})();
+</script>
 </body>
 </html>
