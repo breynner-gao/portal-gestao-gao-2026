@@ -100,6 +100,25 @@ async function fetchOnlineFaction() {
 
 async function load() {
   if (state.loaded || state.error) return;
+  const current = readCurrent();
+  if (current?.baseRows?.length) {
+    state = {
+      ...state,
+      loaded: true,
+      error: '',
+      baseRows: current.baseRows,
+      rows: applyFactionToRows(current.baseRows, current.factionMap || {}),
+      asOf: current.asOf || '',
+      informedAt: current.informedAt || current.asOf || '',
+      sourceSheet: current.sourceSheet || 'Arquivo importado',
+      sourceRule: current.sourceRule || 'Base recuperada do armazenamento local deste navegador.',
+      fileName: current.fileName || state.fileName,
+      factionMap: current.factionMap || {},
+      factionSource: current.factionSource || ''
+    };
+    fetchOnlineFaction();
+    return;
+  }
   try {
     const [data, faction] = await Promise.all([
       fetch(DATA).then(r => {
