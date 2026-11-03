@@ -403,7 +403,7 @@ function dashboardView(s, totals, movementItems, asOf) {
 }
 
 function panel() {
-  if (state.error) return `<div class="lr150-shell error">Curva RFID indisponível: ${esc(state.error)}</div>`;
+  if (state.error) return `<div class="lr150-shell error"><strong>Curva RFID indisponível</strong><p>${esc(state.error)}</p><p>Os arquivos-base do RFID não estão publicados neste endereço. Para recuperar os dados sem inventar números, envie o relatório RFID original em CSV, JSON ou Excel:</p><label class="lr150-upload"><input id="lr150-file" type="file" accept=".csv,.txt,.json,.xlsx,.xls"><span>Selecionar relatório RFID</span></label>${state.uploadMessage ? `<div class="lr150-message">${esc(state.uploadMessage)}</div>` : ''}<small style="display:block;margin-top:10px;color:#54708e">A planilha de produção da facção é separada e não substitui o relatório RFID.</small></div>`;
   if (!state.loaded) return '<div class="lr150-shell">Carregando curva RFID...</div>';
   const s = summary();
   const totals = sourceTotals();
