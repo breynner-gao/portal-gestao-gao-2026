@@ -6,7 +6,7 @@ const SUPABASE_URL='https://fquzuxdqvhecijjuxbmg.supabase.co';
 const ANON_KEY='sb_publishable_icrk6TaZexgiSIq63zX_ng_40JGaYlJ';
 const authHeaders=()=>{let token='';try{const raw=localStorage.getItem('sb-fquzuxdqvhecijjuxbmg-auth-token');const obj=raw?JSON.parse(raw):null;token=obj?.access_token||obj?.currentSession?.access_token||''}catch{}return{apikey:ANON_KEY,Authorization:`Bearer ${token||ANON_KEY}`}};
 async function rest(table,select='*',order='name.asc'){const q=new URLSearchParams({select});if(order)q.set('order',order);const r=await fetch(`${SUPABASE_URL}/rest/v1/${table}?${q}`,{headers:authHeaders()});if(!r.ok)throw new Error(await r.text());return r.json()}
-let selectedClient='';let scheduleClient=new Map();let observer=null;let applying=false;let relationRefreshTimer=null;let saveHooked=false;
+let selectedClient='';let scheduleClient=new Map();let relationData={clients:[],units:[],sectors:[],schedules:[],sectorClient:new Map()};let observer=null;let applying=false;let relationRefreshTimer=null;let saveHooked=false;
 function lockBulk(table){
   const head=table?.querySelector('thead th.schedule-check-col'); if(head){head.style.visibility='hidden';head.querySelector('input')?.setAttribute('disabled','disabled')}
   document.querySelectorAll('.schedule-bulk-bar').forEach(x=>x.style.display='none');
@@ -14,7 +14,7 @@ function lockBulk(table){
 function applyFilter(){
   if(applying||location.pathname!='/rouparia/contratos')return; applying=true;
   try{
-    const wrap=document.querySelector('.laundry-schedule-table'),table=wrap?.querySelector('table'),filters=document.querySelector('.laundry-schedule-filters');if(!table)return;
+    const wrap=document.querySelector('.laundry-schedule-table'),table=wrap?.querySelector('table'),filters=document.querySelector('.laundry-schedule-filters');if(!table){renderScheduleList(document.querySelector('#gao-program-client-accordion'));return;}
     const visible=!!selectedClient;wrap.style.display=visible?'':'none';if(filters)filters.style.display=visible?'':'none';lockBulk(table);
     let count=0;
     table.querySelectorAll('tbody tr').forEach(tr=>{
@@ -32,12 +32,13 @@ async function loadRelations(){
   ]);
   const unitClient=new Map(units.map(u=>[u.id,u.client_id]));const sectorClient=new Map(sectors.map(s=>[s.id,unitClient.get(s.unit_id)||'']));
   scheduleClient=new Map(schedules.map(s=>[s.id,sectorClient.get(s.sector_id)||'']));
-  return {clients,units,sectors,schedules,sectorClient};
+  relationData={clients,units,sectors,schedules,sectorClient};
+  return relationData;
 }
 async function refreshRelationsAndFilter(){
   try{
     await loadRelations();
-    applyFilter();
+    applyFilter();renderScheduleList(document.querySelector('#gao-program-client-accordion'));
     const info=document.querySelector('#gao-client-program-count');
     // Atualiza também os contadores dos cartões sem desmontar a seleção atual.
     const host=document.querySelector('#gao-program-client-accordion');
@@ -52,6 +53,24 @@ async function refreshRelationsAndFilter(){
       });
     }
   }catch(e){console.error('[GAO V55 refresh]',e)}
+}
+function renderScheduleList(host){
+  const panel=host?.querySelector('#gao-program-schedule-list'); if(!panel)return;
+  if(!document.getElementById('gao-program-schedule-style')){
+    const st=document.createElement('style');st.id='gao-program-schedule-style';st.textContent='.gao-program-schedule{margin-top:18px;background:#fff;border:1px solid #d5e3ee;border-radius:12px;padding:16px}.gao-program-schedule-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px}.gao-program-schedule h3{margin:0;color:#082d52}.gao-program-schedule table{width:100%;border-collapse:collapse;font-size:13px}.gao-program-schedule th{background:#205987;color:#fff;text-align:left;padding:10px}.gao-program-schedule td{padding:10px;border-bottom:1px solid #e5edf4;color:#315675}.gao-program-schedule .empty{padding:18px;color:#6a8298}.gao-program-schedule .status{color:#14824b;font-weight:800}';document.head.appendChild(st);
+  }
+  if(!selectedClient){panel.innerHTML='';return}
+  const clean=v=>String(v??'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+  const sectorMap=new Map((relationData.sectors||[]).map(s=>[s.id,s]));
+  const rows=(relationData.schedules||[]).filter(s=>scheduleClient.get(s.id)===selectedClient&&s.active!==false);
+  const day=['','Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
+  const html=rows.map(s=>{
+    const sec=sectorMap.get(s.sector_id);
+    const time=String(s.scheduled_time||'').slice(0,5);
+    const end=String(s.window_end||'').slice(0,5);
+    return '<tr><td>'+clean(sec?.name||'Setor não identificado')+'</td><td>'+clean(day[Number(s.weekday)]||s.weekday||'—')+'</td><td>'+clean(s.shift||'—')+'</td><td>'+clean(end?time+'–'+end:time||'—')+'</td><td class="status">Ativa</td></tr>';
+  }).join('');
+  panel.innerHTML='<div class="gao-program-schedule"><div class="gao-program-schedule-head"><h3>Programações cadastradas</h3><span>'+rows.length+' programação(ões)</span></div>'+(rows.length?'<table><thead><tr><th>Setor</th><th>Dia</th><th>Período</th><th>Horário</th><th>Status</th></tr></thead><tbody>'+html+'</tbody></table>':'<div class="empty">Nenhuma programação ativa encontrada para este cliente.</div>')+'</div>';
 }
 function findButton(text){return [...document.querySelectorAll('button')].find(b=>(b.textContent||'').trim().toLowerCase()===text.toLowerCase())}
 function hookAutoRefresh(){
@@ -85,10 +104,10 @@ async function mount(){
       const programCount=schedules.filter(s=>sectorIds.has(s.sector_id)).length;
       const btn=document.createElement('button');btn.type='button';btn.className='gao-program-client-card';btn.dataset.clientId=c.id;
       btn.innerHTML=`<span><small>${c.code||''}</small><strong>${c.name||'Cliente'}</strong><em>${sectorIds.size} setor(es) • ${programCount} programação(ões)</em></span><b>⌄</b>`;
-      btn.onclick=()=>{const same=selectedClient===c.id;selectedClient=same?'':c.id;list.querySelectorAll('.gao-program-client-card').forEach(x=>x.classList.remove('active'));if(!same)btn.classList.add('active');host.querySelector('#gao-collapse-programs').style.display=same?'none':'';applyFilter()};list.appendChild(btn)
+      btn.onclick=()=>{const same=selectedClient===c.id;selectedClient=same?'':c.id;list.querySelectorAll('.gao-program-client-card').forEach(x=>x.classList.remove('active'));if(!same)btn.classList.add('active');host.querySelector('#gao-collapse-programs').style.display=same?'none':'';applyFilter();renderScheduleList(host)};list.appendChild(btn)
     });
-    host.querySelector('#gao-collapse-programs').onclick=()=>{selectedClient='';list.querySelectorAll('.gao-program-client-card').forEach(x=>x.classList.remove('active'));host.querySelector('#gao-collapse-programs').style.display='none';applyFilter()};
-    applyFilter();const tbody=document.querySelector('.laundry-schedule-table tbody');if(tbody){observer?.disconnect();observer=new MutationObserver(()=>{clearTimeout(relationRefreshTimer);relationRefreshTimer=setTimeout(refreshRelationsAndFilter,180)});observer.observe(tbody,{childList:true})}
+    host.querySelector('#gao-collapse-programs').onclick=()=>{selectedClient='';list.querySelectorAll('.gao-program-client-card').forEach(x=>x.classList.remove('active'));host.querySelector('#gao-collapse-programs').style.display='none';applyFilter();renderScheduleList(host)};
+    applyFilter();renderScheduleList(host);const tbody=document.querySelector('.laundry-schedule-table tbody');if(tbody){observer?.disconnect();observer=new MutationObserver(()=>{clearTimeout(relationRefreshTimer);relationRefreshTimer=setTimeout(refreshRelationsAndFilter,180)});observer.observe(tbody,{childList:true})}
   }catch(e){console.error('[GAO V55]',e);host.querySelector('#gao-program-client-list').innerHTML='<span>Não foi possível carregar os clientes/programações.</span>'}
 }
 let last='';setInterval(()=>{if(location.pathname!==last){last=location.pathname;selectedClient='';scheduleClient.clear();observer?.disconnect();observer=null}if(location.pathname==='/rouparia/contratos'){mount();hookAutoRefresh()}},500);
