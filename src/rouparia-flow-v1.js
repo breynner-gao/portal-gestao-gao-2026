@@ -1,7 +1,7 @@
 (() => {
   const items = [
     ['Painel operacional', '/rouparia'],
-    ['Programação', '/rouparia/programacao'],
+    ['Programação', '/rouparia/contratos'],
     ['Solicitar entrega', '/rouparia/solicitacoes/entrega'],
     ['Solicitar coleta', '/rouparia/solicitacoes/coleta'],
     ['Solicitar forração', '/rouparia/solicitacoes/forracao'],
