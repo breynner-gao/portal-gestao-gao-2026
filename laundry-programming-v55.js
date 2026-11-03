@@ -6,7 +6,7 @@ const SUPABASE_URL='https://fquzuxdqvhecijjuxbmg.supabase.co';
 const ANON_KEY='sb_publishable_icrk6TaZexgiSIq63zX_ng_40JGaYlJ';
 const authHeaders=()=>{let token='';try{const raw=localStorage.getItem('sb-fquzuxdqvhecijjuxbmg-auth-token');const obj=raw?JSON.parse(raw):null;token=obj?.access_token||obj?.currentSession?.access_token||''}catch{}return{apikey:ANON_KEY,Authorization:`Bearer ${token||ANON_KEY}`}};
 async function rest(table,select='*',order='name.asc'){const q=new URLSearchParams({select});if(order)q.set('order',order);const r=await fetch(`${SUPABASE_URL}/rest/v1/${table}?${q}`,{headers:authHeaders()});if(!r.ok)throw new Error(await r.text());return r.json()}
-let selectedClient='';let scheduleClient=new Map();let relationData={clients:[],units:[],sectors:[],schedules:[],sectorClient:new Map()};let observer=null;let applying=false;let relationRefreshTimer=null;let saveHooked=false;
+let selectedClient='';let scheduleClient=new Map();let relationData={clients:[],units:[],sectors:[],schedules:[],scheduleItems:[],products:[],sectorClient:new Map()};let observer=null;let applying=false;let relationRefreshTimer=null;let saveHooked=false;
 function lockBulk(table){
   const head=table?.querySelector('thead th.schedule-check-col'); if(head){head.style.visibility='hidden';head.querySelector('input')?.setAttribute('disabled','disabled')}
   document.querySelectorAll('.schedule-bulk-bar').forEach(x=>x.style.display='none');
@@ -27,12 +27,12 @@ function applyFilter(){
   }finally{applying=false}
 }
 async function loadRelations(){
-  const [clients,units,sectors,schedules]=await Promise.all([
-    rest('laundry_clients','id,code,name,active'),rest('laundry_units','id,client_id,name,active'),rest('laundry_sectors','id,unit_id,name,active'),rest('laundry_delivery_schedules','id,sector_id,active,weekday,shift,scheduled_time,window_end','weekday.asc')
+  const [clients,units,sectors,schedules,scheduleItems,products]=await Promise.all([
+    rest('laundry_clients','id,code,name,active'),rest('laundry_units','id,client_id,name,active'),rest('laundry_sectors','id,unit_id,name,active'),rest('laundry_delivery_schedules','id,sector_id,active,weekday,shift,scheduled_time,window_end','weekday.asc'),rest('laundry_delivery_schedule_items','id,schedule_id,product_id,quantity','id.asc'),rest('laundry_products','id,code,name,category,active','name.asc')
   ]);
   const unitClient=new Map(units.map(u=>[u.id,u.client_id]));const sectorClient=new Map(sectors.map(s=>[s.id,unitClient.get(s.unit_id)||'']));
   scheduleClient=new Map(schedules.map(s=>[s.id,sectorClient.get(s.sector_id)||'']));
-  relationData={clients,units,sectors,schedules,sectorClient};
+  relationData={clients,units,sectors,schedules,scheduleItems,products,sectorClient};
   return relationData;
 }
 async function refreshRelationsAndFilter(){
@@ -57,20 +57,26 @@ async function refreshRelationsAndFilter(){
 function renderScheduleList(host){
   const panel=host?.querySelector('#gao-program-schedule-list'); if(!panel)return;
   if(!document.getElementById('gao-program-schedule-style')){
-    const st=document.createElement('style');st.id='gao-program-schedule-style';st.textContent='.gao-program-schedule{margin-top:18px;background:#fff;border:1px solid #d5e3ee;border-radius:12px;padding:16px}.gao-program-schedule-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px}.gao-program-schedule h3{margin:0;color:#082d52}.gao-program-schedule table{width:100%;border-collapse:collapse;font-size:13px}.gao-program-schedule th{background:#205987;color:#fff;text-align:left;padding:10px}.gao-program-schedule td{padding:10px;border-bottom:1px solid #e5edf4;color:#315675}.gao-program-schedule .empty{padding:18px;color:#6a8298}.gao-program-schedule .status{color:#14824b;font-weight:800}';document.head.appendChild(st);
+    const st=document.createElement('style');st.id='gao-program-schedule-style';st.textContent='.gao-program-schedule{margin-top:18px;background:#fff;border:1px solid #d5e3ee;border-radius:12px;padding:16px}.gao-program-schedule-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px}.gao-program-schedule h3{margin:0;color:#082d52}.gao-program-schedule table{width:100%;border-collapse:collapse;font-size:13px}.gao-program-schedule th{background:#205987;color:#fff;text-align:left;padding:10px}.gao-program-schedule td{padding:10px;border-bottom:1px solid #e5edf4;color:#315675;vertical-align:top}.gao-program-schedule .pieces{color:#315675;line-height:1.45}.gao-program-schedule .pieces strong{display:block;color:#082d52}.gao-program-schedule .total{font-weight:900;color:#082d52;white-space:nowrap}.gao-program-schedule .empty{padding:18px;color:#6a8298}.gao-program-schedule .status{color:#14824b;font-weight:800}';document.head.appendChild(st);
   }
   if(!selectedClient){panel.innerHTML='';return}
   const clean=v=>String(v??'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
   const sectorMap=new Map((relationData.sectors||[]).map(s=>[s.id,s]));
+  const productMap=new Map((relationData.products||[]).map(p=>[p.id,p]));
+  const itemsBySchedule=new Map();
+  (relationData.scheduleItems||[]).forEach(item=>{if(!itemsBySchedule.has(item.schedule_id))itemsBySchedule.set(item.schedule_id,[]);itemsBySchedule.get(item.schedule_id).push(item)});
   const rows=(relationData.schedules||[]).filter(s=>scheduleClient.get(s.id)===selectedClient&&s.active!==false);
   const day=['','Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
   const html=rows.map(s=>{
     const sec=sectorMap.get(s.sector_id);
+    const items=itemsBySchedule.get(s.id)||[];
+    const total=items.reduce((sum,i)=>sum+Number(i.quantity||0),0);
+    const pieces=items.length?items.map(i=>{const p=productMap.get(i.product_id);return '<span><strong>'+clean(p?.name||p?.code||'Peça não identificada')+'</strong> '+clean(Number(i.quantity||0).toLocaleString('pt-BR'))+' un.</span>'}).join('<br>'):'<span>Sem peças cadastradas</span>';
     const time=String(s.scheduled_time||'').slice(0,5);
     const end=String(s.window_end||'').slice(0,5);
-    return '<tr><td>'+clean(sec?.name||'Setor não identificado')+'</td><td>'+clean(day[Number(s.weekday)]||s.weekday||'—')+'</td><td>'+clean(s.shift||'—')+'</td><td>'+clean(end?time+'–'+end:time||'—')+'</td><td class="status">Ativa</td></tr>';
+    return '<tr><td>'+clean(sec?.name||'Setor não identificado')+'</td><td>'+clean(day[Number(s.weekday)]||s.weekday||'—')+'</td><td>'+clean(s.shift||'—')+'</td><td>'+clean(end?time+'–'+end:time||'—')+'</td><td class="pieces">'+pieces+'</td><td class="total">'+clean(total.toLocaleString('pt-BR'))+' un.</td><td class="status">Ativa</td></tr>';
   }).join('');
-  panel.innerHTML='<div class="gao-program-schedule"><div class="gao-program-schedule-head"><h3>Programações cadastradas</h3><span>'+rows.length+' programação(ões)</span></div>'+(rows.length?'<table><thead><tr><th>Setor</th><th>Dia</th><th>Período</th><th>Horário</th><th>Status</th></tr></thead><tbody>'+html+'</tbody></table>':'<div class="empty">Nenhuma programação ativa encontrada para este cliente.</div>')+'</div>';
+  panel.innerHTML='<div class="gao-program-schedule"><div class="gao-program-schedule-head"><div><h3>Programações cadastradas</h3><span>Itens previstos para entrega e base do SLA</span></div><span>'+rows.length+' programação(ões)</span></div>'+(rows.length?'<div style="overflow:auto"><table><thead><tr><th>Setor</th><th>Dia</th><th>Período</th><th>Horário</th><th>Peças previstas</th><th>Total</th><th>Status</th></tr></thead><tbody>'+html+'</tbody></table></div>':'<div class="empty">Nenhuma programação ativa encontrada para este cliente.</div>')+'</div>';
 }
 function findButton(text){return [...document.querySelectorAll('button')].find(b=>(b.textContent||'').trim().toLowerCase()===text.toLowerCase())}
 function hookAutoRefresh(){
