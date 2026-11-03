@@ -28,7 +28,7 @@ function applyFilter(){
 }
 async function loadRelations(){
   const [clients,units,sectors,schedules]=await Promise.all([
-    rest('laundry_clients','id,code,name,active'),rest('laundry_units','id,client_id,name,active'),rest('laundry_sectors','id,unit_id,name,active'),rest('laundry_delivery_schedules','id,sector_id,active','weekday.asc')
+    rest('laundry_clients','id,code,name,active'),rest('laundry_units','id,client_id,name,active'),rest('laundry_sectors','id,unit_id,name,active'),rest('laundry_delivery_schedules','id,sector_id,active,weekday,shift,scheduled_time,window_end','weekday.asc')
   ]);
   const unitClient=new Map(units.map(u=>[u.id,u.client_id]));const sectorClient=new Map(sectors.map(s=>[s.id,unitClient.get(s.unit_id)||'']));
   scheduleClient=new Map(schedules.map(s=>[s.id,sectorClient.get(s.sector_id)||'']));
@@ -94,7 +94,7 @@ async function mount(){
   const h=[...document.querySelectorAll('h2')].find(x=>x.textContent.trim()==='Programações cadastradas');if(!h)return;
   const sectionHeading=h.closest('.section-heading');if(!sectionHeading)return;
   const host=document.createElement('div');host.id='gao-program-client-accordion';host.className='gao-client-programming';
-  host.innerHTML=`<div class="gao-client-programming-head"><div><p class="eyebrow">VISUALIZAÇÃO POR CLIENTE</p><h3>Programações por cliente</h3><p id="gao-client-program-count">Selecione um cliente para visualizar as programações.</p></div><button type="button" id="gao-collapse-programs" class="secondary-button compact" style="display:none">Recolher</button></div><div id="gao-program-client-list" class="gao-program-client-list"><span>Carregando clientes...</span></div>`;
+  host.innerHTML=`<div class="gao-client-programming-head"><div><p class="eyebrow">VISUALIZAÇÃO POR CLIENTE</p><h3>Programações por cliente</h3><p id="gao-client-program-count">Selecione um cliente para visualizar as programações.</p></div><button type="button" id="gao-collapse-programs" class="secondary-button compact" style="display:none">Recolher</button></div><div id="gao-program-client-list" class="gao-program-client-list"><span>Carregando clientes...</span></div><div id="gao-program-schedule-list"></div>`;
   sectionHeading.parentNode.insertBefore(host,sectionHeading);const desc=sectionHeading.querySelector('.section-description');if(desc)desc.style.display='none';
   try{
     const {clients,sectors,schedules,sectorClient}=await loadRelations();const list=host.querySelector('#gao-program-client-list');list.innerHTML='';
