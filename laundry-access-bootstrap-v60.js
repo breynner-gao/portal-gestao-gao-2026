@@ -7,7 +7,8 @@
   const post=async(path,body={})=>{const r=await fetch(`${SB}/rest/v1/${path}`,{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw Error(await r.text());return r.json()};
   const inList=(ids)=>ids.map(encodeURIComponent).join(',');
 
-  window.GAO_SCOPE_READY_V60=(async()=>{\n    await (window.GAO_AUTH_READY||Promise.resolve(null));
+  window.GAO_SCOPE_READY_V60=(async()=>{
+    await (window.GAO_AUTH_READY||Promise.resolve(null));
     const scope=await post('rpc/gao_my_laundry_scope');
     const clientIds=(Array.isArray(scope)?scope:[]).map(x=>x.client_id).filter(Boolean);
     if(!clientIds.length){
