@@ -52,7 +52,7 @@
   function ensureBrand(side){
     const brand=side.querySelector('.gao-brand');if(!brand)return;
     if(!brand.querySelector('.gao-logo'))brand.insertAdjacentHTML('afterbegin','<svg class="gao-logo" viewBox="0 0 72 48" aria-label="GAO"><path fill="#fff" d="M4 9h29c8 0 12 4 12 10v20H4z"/><path fill="#8ec5e8" d="M33 9h28c6 0 9 4 9 9v21H33z"/><path fill="#154a78" d="M18 30 44 9v20c0 4-3 7-7 7H18z"/></svg>');
-    const span=brand.querySelector('span');if(span)span.textContent='GAO Lavanderia';
+    const span=brand.querySelector('span');if(span&&span.textContent!=='GAO Lavanderia')span.textContent='GAO Lavanderia';
   }
   function setup(){
     injectStyle();
