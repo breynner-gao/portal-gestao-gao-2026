@@ -30,7 +30,6 @@
     .gao-rouparia-flow-menu{display:none!important}
     @media(max-width:900px){
       .gao-sidebar{width:100%!important;flex-basis:auto!important}
-      .gao-sidebar-toggle{right:16px}
     }
   `;
   function injectStyle(){
