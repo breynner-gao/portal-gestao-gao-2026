@@ -125,16 +125,17 @@
     ["EM_PRODUCAO","Concluir","CONCLUIDA","completed_at"]
   ];
   function parseDetails(s) { try { return JSON.parse(s||"{}"); } catch { return {detalhes:s||""}; } }
-  async function mountQueue() {
+  async function mountQueue(typeFilter = "") {
     const c = await context();
-    const box = shell("Fila de solicitações", "Acompanhe os pedidos extras por setor e o tempo de atendimento.", '<div class="r2-toolbar"><label>Cliente<select id="r2-qclient"><option value="">Todos os clientes autorizados</option>'+clients(c).map(x=>'<option value="'+esc(x.id)+'">'+esc((x.code?x.code+" — ":"")+x.name)+'</option>').join("")+'</select></label><label>Status<select id="r2-qstatus"><option value="">Todos</option><option>PENDENTE</option><option>ACEITA</option><option>EM_DESLOCAMENTO</option><option>EM_PRODUCAO</option><option>CONCLUIDA</option><option>RECUSADA</option></select></label><button id="r2-qrefresh" type="button">Atualizar</button></div><div class="r2-message"></div><div id="r2-qrows">Carregando...</div>');
+    const queueTitle = typeFilter === "FORRACAO" ? "Forrações" : "Fila de solicitações";
+    const box = shell(queueTitle, "Acompanhe os pedidos por setor e o tempo de atendimento.", '<div class="r2-toolbar"><label>Cliente<select id="r2-qclient"><option value="">Todos os clientes autorizados</option>'+clients(c).map(x=>'<option value="'+esc(x.id)+'">'+esc((x.code?x.code+" — ":"")+x.name)+'</option>').join("")+'</select></label><label>Status<select id="r2-qstatus"><option value="">Todos</option><option>PENDENTE</option><option>ACEITA</option><option>EM_DESLOCAMENTO</option><option>EM_PRODUCAO</option><option>CONCLUIDA</option><option>RECUSADA</option></select></label><button id="r2-qrefresh" type="button">Atualizar</button></div><div class="r2-message"></div><div id="r2-qrows">Carregando...</div>');
     if (!box) return;
     async function load() {
       const ids = [...c.sectorClient].filter(([sid,cid])=>!$("#r2-qclient",box).value||cid===$("#r2-qclient",box).value).map(([sid])=>sid);
       if (!ids.length) { $("#r2-qrows",box).textContent="Nenhum setor autorizado."; return; }
       try {
         const rows = await api("laundry_extra_requests",{select:"*",sector_id:"in.("+ids.join(",")+")",order:"requested_at.desc",limit:"300"});
-        const f = $("#r2-qstatus",box).value, list = rows.filter(x=>!f||x.status===f);
+        const f = $("#r2-qstatus",box).value, list = rows.filter(x=>(!typeFilter||x.request_type===typeFilter)&&(!f||x.status===f));
         const names = new Map((c.sectors||[]).map(x=>[x.id,x.name]));
         $("#r2-qrows",box).innerHTML = list.length ? list.map(x=>{
           const details=parseDetails(x.observation), next=statusFlow.find(s=>s[0]===x.status);
@@ -219,6 +220,7 @@
     const p=route();
     if(routes[p])return mountRequest(routes[p][1]);
     if(p==="/rouparia/solicitacoes")return mountQueue().catch(e=>shell("Fila de solicitações",e.message,""));
+    if(p==="/rouparia/forracoes")return mountQueue("FORRACAO").catch(e=>shell("Forrações",e.message,""));
     if(p==="/rouparia/ocorrencias")return mountOccurrence().catch(e=>shell("Ocorrências",e.message,""));
     if(p==="/rouparia/historico")return mountHistory().catch(e=>shell("Histórico",e.message,""));
   }
