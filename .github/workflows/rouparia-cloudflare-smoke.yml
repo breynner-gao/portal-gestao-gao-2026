@@ -90,9 +90,11 @@ jobs:
           set -euo pipefail
           base="https://portal-sgq-gao.pages.dev"
           expected_hash="$(sha256sum src/rouparia-operations-v2.js | awk '{print $1}')"
+          expected_fabric_hash="$(sha256sum fabric-workflow-ui-v1.js | awk '{print $1}')"
           script_ref="$(grep -oE '/src/rouparia-operations-v2\.js\?v=[0-9]+' index.html | head -n 1)"
-          if [ -z "$script_ref" ]; then
-            echo "Não encontrei a referência versionada do módulo em index.html."
+          fabric_ref="$(grep -oE '/fabric-workflow-ui-v1\.js\?v=[0-9]+' index.html | head -n 1)"
+          if [ -z "$script_ref" ] || [ -z "$fabric_ref" ]; then
+            echo "Não encontrei as referências versionadas dos módulos no index.html."
             exit 1
           fi
 
@@ -100,12 +102,17 @@ jobs:
             if curl --fail --silent --show-error --location --max-time 20 \
               "$base/?ci=$COMMIT_SHA" -o "$RUNNER_TEMP/live-index.html" \
               && grep --fixed-strings --quiet "$script_ref" "$RUNNER_TEMP/live-index.html" \
+              && grep --fixed-strings --quiet "$fabric_ref" "$RUNNER_TEMP/live-index.html" \
               && curl --fail --silent --show-error --location --max-time 20 \
                 "$base/src/rouparia-operations-v2.js?ci=$COMMIT_SHA" \
-                -o "$RUNNER_TEMP/live-rouparia.js"; then
+                -o "$RUNNER_TEMP/live-rouparia.js" \
+              && curl --fail --silent --show-error --location --max-time 20 \
+                "$base/fabric-workflow-ui-v1.js?ci=$COMMIT_SHA" \
+                -o "$RUNNER_TEMP/live-fabric.js"; then
               live_hash="$(sha256sum "$RUNNER_TEMP/live-rouparia.js" | awk '{print $1}')"
-              if [ "$live_hash" = "$expected_hash" ]; then
-                echo "Cloudflare serve o módulo Rouparia correspondente ao commit $COMMIT_SHA."
+              live_fabric_hash="$(sha256sum "$RUNNER_TEMP/live-fabric.js" | awk '{print $1}')"
+              if [ "$live_hash" = "$expected_hash" ] && [ "$live_fabric_hash" = "$expected_fabric_hash" ]; then
+                echo "Cloudflare serve os módulos Rouparia e tecido/facção correspondentes ao commit $COMMIT_SHA."
                 exit 0
               fi
             fi
@@ -113,5 +120,5 @@ jobs:
             sleep 15
           done
 
-          echo "O módulo publicado não corresponde ao arquivo deste commit."
+          echo "Os módulos publicados não correspondem aos arquivos deste commit."
           exit 1
