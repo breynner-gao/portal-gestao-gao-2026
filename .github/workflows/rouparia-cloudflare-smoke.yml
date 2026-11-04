@@ -1,0 +1,96 @@
+name: Rouparia CI and Cloudflare smoke check
+
+on:
+  push:
+    branches:
+      - portal-sgq
+    paths:
+      - "index.html"
+      - "src/rouparia-operations-v2.js"
+      - ".github/workflows/rouparia-cloudflare-smoke.yml"
+  pull_request:
+    branches:
+      - portal-sgq
+    paths:
+      - "index.html"
+      - "src/rouparia-operations-v2.js"
+      - ".github/workflows/rouparia-cloudflare-smoke.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: rouparia-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  source-check:
+    name: Validate Rouparia source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+
+      - name: Check JavaScript syntax
+        run: node --check src/rouparia-operations-v2.js
+
+      - name: Check request types against Supabase constraint
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const source = fs.readFileSync('src/rouparia-operations-v2.js', 'utf8');
+          const index = fs.readFileSync('index.html', 'utf8');
+          const expected = [
+            ['"/rouparia/solicitacoes/entrega": ["Solicitar entrega", "ROUPA_EXTRA"]', 'ROUPA_EXTRA'],
+            ['"/rouparia/solicitacoes/coleta": ["Solicitar coleta", "COLETA_EXTRA"]', 'COLETA_EXTRA'],
+            ['"/rouparia/solicitacoes/forracao": ["Solicitar forração", "FORRACAO_LEITO"]', 'FORRACAO_LEITO'],
+            ['"/rouparia/solicitacoes/extra": ["Solicitar extra", "ROUPA_EXTRA"]', 'ROUPA_EXTRA'],
+          ];
+          const allowed = new Set(['ROUPA_EXTRA', 'COLETA_EXTRA', 'FORRACAO_LEITO']);
+          for (const [mapping, type] of expected) {
+            if (!source.includes(mapping)) throw new Error('Solicitação com tipo divergente: ' + mapping);
+            if (!allowed.has(type)) throw new Error('Tipo não aceito pelo banco: ' + type);
+          }
+          if (!source.includes('mountQueue("FORRACAO_LEITO")')) {
+            throw new Error('A fila de forrações não usa o tipo persistido no banco.');
+          }
+          if (!/\/src\/rouparia-operations-v2\.js\?v=\d+/.test(index)) {
+            throw new Error('index.html não referencia a versão do módulo Rouparia.');
+          }
+          console.log('Sintaxe, tipos Supabase e referência do módulo conferidos.');
+          NODE
+
+      - name: Wait for Cloudflare Pages and compare the published module
+        if: github.event_name == 'push'
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          base="https://portal-sgq-gao.pages.dev"
+          expected_hash="$(sha256sum src/rouparia-operations-v2.js | awk '{print $1}')"
+          script_ref="$(grep -oE '/src/rouparia-operations-v2\.js\?v=[0-9]+' index.html | head -n 1)"
+          if [ -z "$script_ref" ]; then
+            echo "Não encontrei a referência versionada do módulo em index.html."
+            exit 1
+          fi
+
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent --show-error --location --max-time 20 \
+              "$base/?ci=$COMMIT_SHA" -o "$RUNNER_TEMP/live-index.html" \
+              && grep --fixed-strings --quiet "$script_ref" "$RUNNER_TEMP/live-index.html" \
+              && curl --fail --silent --show-error --location --max-time 20 \
+                "$base/src/rouparia-operations-v2.js?ci=$COMMIT_SHA" \
+                -o "$RUNNER_TEMP/live-rouparia.js"; then
+              live_hash="$(sha256sum "$RUNNER_TEMP/live-rouparia.js" | awk '{print $1}')"
+              if [ "$live_hash" = "$expected_hash" ]; then
+                echo "Cloudflare serve o módulo Rouparia correspondente ao commit $COMMIT_SHA."
+                exit 0
+              fi
+            fi
+            echo "Aguardando publicação Cloudflare ($attempt/40)..."
+            sleep 15
+          done
+
+          echo "O módulo publicado não corresponde ao arquivo deste commit."
+          exit 1
