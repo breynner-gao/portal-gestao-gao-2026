@@ -195,10 +195,10 @@
       $("#r2-history",box).textContent="Carregando...";
       try{
         const jobs=[
-          api("laundry_deliveries",{select:"id,sector_id,service_date,status,created_at,completed_at",sector_id:"in.("+sectorIds.join(",")+")",service_date:"gte."+from,order:"service_date.desc",limit:"300"}),
+          api("laundry_deliveries",{select:"id,sector_id,service_date,status,created_at,completed_at",sector_id:"in.("+sectorIds.join(",")+")",service_date:"gte."+from,service_date_lte:"lte."+to,order:"service_date.desc",limit:"300"}),
           api("laundry_collection_runs_v2",{select:"id,client_id,sector_id,service_date,shift,status,created_at,completed_at",client_id:"in.("+clientIds.join(",")+")",service_date:"gte."+from,order:"service_date.desc",limit:"300"}),
-          api("laundry_extra_requests",{select:"id,sector_id,request_type,requested_at,status,requester_name,observation",sector_id:"in.("+sectorIds.join(",")+")",requested_at:"gte."+from+"T00:00:00",order:"requested_at.desc",limit:"300"}),
-          api("quality_occurrences",{select:"id,client_id,occurrence_date,damage_type,status,description,created_at",client_id:"in.("+clientIds.join(",")+")",occurrence_date:"gte."+from,order:"occurrence_date.desc",limit:"300"})
+          api("laundry_extra_requests",{select:"id,sector_id,request_type,requested_at,status,requester_name,observation",sector_id:"in.("+sectorIds.join(",")+")",requested_at:"gte."+from+"T00:00:00",requested_at_lte:"lte."+to+"T23:59:59",order:"requested_at.desc",limit:"300"}),
+          api("quality_occurrences",{select:"id,client_id,occurrence_date,damage_type,status,description,created_at",client_id:"in.("+clientIds.join(",")+")",occurrence_date:"gte."+from,occurrence_date_lte:"lte."+to,order:"occurrence_date.desc",limit:"300"})
         ];
         const [del,col,extra,occ]=await Promise.all(jobs);
         const sm=new Map((c.sectors||[]).map(x=>[x.id,x.name])),cm=new Map(clients(c).map(x=>[x.id,x.name]));
