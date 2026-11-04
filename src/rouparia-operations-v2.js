@@ -11,10 +11,10 @@
   };
   const route = () => location.pathname;
   const routes = {
-    "/rouparia/solicitacoes/entrega": ["Solicitar entrega", "ENTREGA"],
-    "/rouparia/solicitacoes/coleta": ["Solicitar coleta", "COLETA"],
-    "/rouparia/solicitacoes/forracao": ["Solicitar forração", "FORRACAO"],
-    "/rouparia/solicitacoes/extra": ["Solicitar extra", "EXTRA"]
+    "/rouparia/solicitacoes/entrega": ["Solicitar entrega", "ROUPA_EXTRA"],
+    "/rouparia/solicitacoes/coleta": ["Solicitar coleta", "COLETA_EXTRA"],
+    "/rouparia/solicitacoes/forracao": ["Solicitar forração", "FORRACAO_LEITO"],
+    "/rouparia/solicitacoes/extra": ["Solicitar extra", "ROUPA_EXTRA"]
   };
   function token() {
     for (const k of Object.keys(localStorage)) {
@@ -220,7 +220,7 @@
     const p=route();
     if(routes[p])return mountRequest(routes[p][1]);
     if(p==="/rouparia/solicitacoes")return mountQueue().catch(e=>shell("Fila de solicitações",e.message,""));
-    if(p==="/rouparia/forracoes")return mountQueue("FORRACAO").catch(e=>shell("Forrações",e.message,""));
+    if(p==="/rouparia/forracoes")return mountQueue("FORRACAO_LEITO").catch(e=>shell("Forrações",e.message,""));
     if(p==="/rouparia/ocorrencias")return mountOccurrence().catch(e=>shell("Ocorrências",e.message,""));
     if(p==="/rouparia/historico")return mountHistory().catch(e=>shell("Histórico",e.message,""));
   }
