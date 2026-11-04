@@ -1,19 +1,10 @@
 (() => {
   const items = [
     ['Painel operacional', '/rouparia'],
-    ['Programação', '/rouparia/contratos'],
-    ['Solicitar entrega', '/rouparia/solicitacoes/entrega'],
-    ['Solicitar coleta', '/rouparia/solicitacoes/coleta'],
-    ['Solicitar forração', '/rouparia/solicitacoes/forracao'],
-    ['Solicitar extra', '/rouparia/solicitacoes/extra'],
-    ['Lançar entregas', '/rouparia/entregas'],
-    ['Lançar coletas', '/rouparia/coletas'],
-    ['Forrações', '/rouparia/forracoes'],
-    ['Pesagem', '/rouparia/pesagem'],
-    ['Ocorrências', '/rouparia/ocorrencias'],
-    ['Cadastros', '/rouparia/cadastros'],
-    ['Histórico', '/rouparia/historico'],
-    ['SLA e indicadores', '/rouparia/sla']
+    ['Programação de entregas', '/rouparia/contratos'],
+    ['Fila de entregas', '/rouparia/rotas'],
+    ['Coletas e pesagem', '/rouparia/coletas'],
+    ['Cadastros da Rouparia', '/rouparia/cadastros']
   ];
   const clean = s => String(s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   function mount() {
