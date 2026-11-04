@@ -706,6 +706,7 @@ function render() {
   }
   const activeId = document.activeElement?.id || '';
   const activeStart = document.activeElement?.selectionStart;
+  window.GAO_LINEN_NEED_SNAPSHOT = state.rows.map(row => ({ produtoId: row.produtoId, produtoNome: row.produtoNome, pedidoReal: row.pedidoReal, asOf: state.asOf }));
   shell.innerHTML = panel();
   bind();
   if (activeId.startsWith('lr150-')) {
