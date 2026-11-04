@@ -24,25 +24,13 @@
     .gao-subnav:has(a.active){display:grid!important}
     .gao-subnav a{color:#dceefa!important;padding:10px 12px!important;border-radius:9px!important;font-size:15px!important}
     .gao-subnav a:hover,.gao-subnav a.active{background:#2f6f9e!important;color:#fff!important}
-    .gao-sidebar-toggle{position:absolute;top:16px;right:-14px;width:38px;height:38px;border:1px solid rgba(255,255,255,.28);border-radius:11px;background:#2d6b99;color:#fff;font-size:20px;font-weight:900;z-index:5;cursor:pointer;box-shadow:0 5px 14px rgba(4,28,51,.18)}
-    .gao-sidebar-toggle:hover{background:#3b84b8}
     .gao-body{min-width:0!important}
     .gao-header{background:#fff!important;border-bottom:1px solid var(--gao-border)!important}
     .gao-main{background:var(--gao-bg)!important}
     .gao-rouparia-flow-menu{display:none!important}
-    .gao-sidebar.gao-collapsed{width:88px!important;flex-basis:88px!important;padding-left:12px!important;padding-right:12px!important}
-    .gao-sidebar.gao-collapsed .gao-brand{margin-left:3px!important;margin-right:3px!important;justify-content:center!important}
-    .gao-sidebar.gao-collapsed .gao-brand>span,.gao-sidebar.gao-collapsed .gao-caption,.gao-sidebar.gao-collapsed .gao-nav>a:not([href="/rouparia"]){display:none!important}
-    .gao-sidebar.gao-collapsed .gao-nav>a[href="/rouparia"]{font-size:0!important;text-align:center!important;padding:13px 5px!important}
-    .gao-sidebar.gao-collapsed .gao-nav>a[href="/rouparia"]::before{content:'R';font-size:18px!important}
-    .gao-sidebar.gao-collapsed .gao-subnav{display:none!important}
     @media(max-width:900px){
       .gao-sidebar{width:100%!important;flex-basis:auto!important}
       .gao-sidebar-toggle{right:16px}
-      .gao-sidebar.gao-collapsed{width:100%!important;padding:12px 16px!important}
-      .gao-sidebar.gao-collapsed .gao-caption,.gao-sidebar.gao-collapsed .gao-nav>a:not([href="/rouparia"]){display:none!important}
-      .gao-sidebar.gao-collapsed .gao-brand>span{display:block!important}
-      .gao-sidebar.gao-collapsed .gao-nav{display:none!important}
     }
   `;
   function injectStyle(){
@@ -58,17 +46,6 @@
     injectStyle();
     const side=document.querySelector('.gao-sidebar');if(!side)return;
     ensureBrand(side);
-    let toggle=side.querySelector('.gao-sidebar-toggle');
-    if(!toggle){
-      toggle=document.createElement('button');toggle.type='button';toggle.className='gao-sidebar-toggle';toggle.setAttribute('aria-label','Recolher menu');toggle.textContent='«';side.appendChild(toggle);
-      toggle.addEventListener('click',()=>{
-        const collapsed=side.classList.toggle('gao-collapsed');
-        toggle.textContent=collapsed?'»':'«';
-        toggle.setAttribute('aria-label',collapsed?'Expandir menu':'Recolher menu');
-        localStorage.setItem('gao-sidebar-collapsed',collapsed?'1':'0');
-      });
-    }
-    if(localStorage.getItem('gao-sidebar-collapsed')==='1')side.classList.add('gao-collapsed');
     const link=side.querySelector('.gao-nav>a[href="/rouparia"]');
     const sub=side.querySelector('.gao-subnav');
     if(link&&sub&&!link.dataset.gaoMenuFix){
