@@ -1,4 +1,4 @@
-name: Rouparia CI and Cloudflare smoke check
+name: Portal Rouparia and Enxoval CI with Cloudflare smoke check
 
 on:
   push:
@@ -7,6 +7,12 @@ on:
     paths:
       - "index.html"
       - "src/rouparia-operations-v2.js"
+      - "linen-risk-panel-v150.js"
+      - "linen-risk-rules-v150.mjs"
+      - "fabric-purchase-addon-v1.js"
+      - "fabric-workflow-*.mjs"
+      - "tests/fabric-workflow-*.test.mjs"
+      - "supabase/migrations/**"
       - ".github/workflows/rouparia-cloudflare-smoke.yml"
   pull_request:
     branches:
@@ -14,6 +20,12 @@ on:
     paths:
       - "index.html"
       - "src/rouparia-operations-v2.js"
+      - "linen-risk-panel-v150.js"
+      - "linen-risk-rules-v150.mjs"
+      - "fabric-purchase-addon-v1.js"
+      - "fabric-workflow-*.mjs"
+      - "tests/fabric-workflow-*.test.mjs"
+      - "supabase/migrations/**"
       - ".github/workflows/rouparia-cloudflare-smoke.yml"
   workflow_dispatch:
 
@@ -26,14 +38,21 @@ permissions:
 
 jobs:
   source-check:
-    name: Validate Rouparia source
+    name: Validate Rouparia and Enxoval source
     runs-on: ubuntu-latest
     steps:
       - name: Check out branch
         uses: actions/checkout@v4
 
       - name: Check JavaScript syntax
-        run: node --check src/rouparia-operations-v2.js
+        run: |
+          node --check src/rouparia-operations-v2.js
+          node --check linen-risk-panel-v150.js
+          node --check fabric-purchase-addon-v1.js
+          node --check fabric-workflow-rules-v1.mjs
+
+      - name: Check fabric workflow calculations
+        run: node --test tests/fabric-workflow-rules.test.mjs
 
       - name: Check request types against Supabase constraint
         run: |
@@ -61,7 +80,7 @@ jobs:
           console.log('Sintaxe, tipos Supabase e referência do módulo conferidos.');
           NODE
 
-      - name: Wait for Cloudflare Pages and compare the published module
+      - name: Wait for Cloudflare Pages and compare the published Rouparia module
         if: github.event_name == 'push'
         env:
           COMMIT_SHA: ${{ github.sha }}
