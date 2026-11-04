@@ -160,7 +160,7 @@ using (
 with check (
   exists (
     select 1 from public.laundry_deliveries d
-    join public.laundry_sectors s on s.id=d.unit_id
+    join public.laundry_sectors s on s.id=d.sector_id
     join public.laundry_units u on u.id=s.unit_id
     where d.id=laundry_delivery_items.delivery_id
       and public.gao_can_access_laundry_client(u.client_id)
