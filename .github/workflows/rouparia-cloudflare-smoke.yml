@@ -10,6 +10,7 @@ on:
       - "linen-risk-panel-v150.js"
       - "linen-risk-rules-v150.mjs"
       - "fabric-purchase-addon-v1.js"
+      - "fabric-workflow-ui-v1.js"
       - "fabric-workflow-*.mjs"
       - "tests/fabric-workflow-*.test.mjs"
       - "supabase/migrations/**"
@@ -49,6 +50,7 @@ jobs:
           node --check src/rouparia-operations-v2.js
           node --check linen-risk-panel-v150.js
           node --check fabric-purchase-addon-v1.js
+          node --check fabric-workflow-ui-v1.js
           node --check fabric-workflow-rules-v1.mjs
 
       - name: Check fabric workflow calculations
