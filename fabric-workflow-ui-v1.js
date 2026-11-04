@@ -35,9 +35,11 @@ function orderStats(item){
  const issued=ms.reduce((a,m)=>a+n(m.quantity_m),0),fabricCost=ms.reduce((a,m)=>a+n(m.quantity_m)*n(m.unit_cost_per_m),0);
  const rs=state.returns.filter(r=>r.order_item_id===item.id),accepted=rs.reduce((a,r)=>a+n(r.accepted_pieces),0),rejected=rs.reduce((a,r)=>a+n(r.rejected_pieces),0);
  const returned=rs.reduce((a,r)=>a+n(r.returned_m),0),faction=rs.reduce((a,r)=>a+n(r.faction_cost_amount),0),extras=rs.reduce((a,r)=>a+n(r.extras_cost_amount),0);
+ const returnCost=rs.reduce((a,r)=>a+n(r.returned_m)*n(state.lots.find(l=>l.id===r.lot_id)?.effective_price_per_m),0);
  const theoretical=(accepted+rejected)*n(item.consumption_m_per_piece),loss=Math.max(0,issued-returned-theoretical);
- const totalCost=Math.max(0,fabricCost-returned*(issued?fabricCost/issued:0))+faction+extras;
- return {issued,accepted,rejected,returned,faction,extras,theoretical,loss,lossCost:loss*(issued?fabricCost/issued:0),unit:accepted?totalCost/accepted:null,remaining:Math.max(0,n(item.ordered_pieces)-accepted-rejected)};
+ const usedFabricCost=Math.max(0,fabricCost-returnCost),unitCost=issued?fabricCost/issued:0;
+ const totalCost=usedFabricCost+faction+extras;
+ return {issued,accepted,rejected,returned,faction,extras,theoretical,loss,lossCost:loss*unitCost,unit:accepted?totalCost/accepted:null,remaining:Math.max(0,n(item.ordered_pieces)-accepted-rejected)};
 }
 function render(){
  const host=document.querySelector('#gao-fabric-flow');if(!host)return;host.hidden=!state.mode;
@@ -67,7 +69,7 @@ function stockView(){
  return '<div class="fw-panel"><h3>Cadastro de tecido</h3><form data-fw-form="fabric"><input name="code" placeholder="Código" required><input name="name" placeholder="Nome do tecido" required><input name="fabric_type" placeholder="Tipo"><input name="composition" placeholder="Composição"><input name="width_m" type="number" step=".001" placeholder="Largura (m)"><button>Cadastrar tecido</button></form></div><div class="fw-panel"><h3>Fornecedor</h3><form data-fw-form="supplier"><input name="legal_name" placeholder="Razão social" required><input name="trade_name" placeholder="Nome fantasia"><input name="cnpj" placeholder="CNPJ"><input name="lead_days" type="number" placeholder="Prazo (dias)"><button>Cadastrar fornecedor</button></form></div><div class="fw-panel"><h3>Registrar compra recebida / lote</h3><p>A gravação cria lote e entrada de estoque numa única operação. Registre apenas material fisicamente recebido.</p><form data-fw-form="receipt"><select name="fabric_id" required><option value="">Tecido</option>'+state.fabric.map(f=>'<option value="'+f.id+'">'+esc(f.code+' • '+f.name)+'</option>').join('')+'</select><select name="supplier_id"><option value="">Fornecedor (opcional)</option>'+state.suppliers.map(s=>'<option value="'+s.id+'">'+esc(s.trade_name||s.legal_name)+'</option>').join('')+'</select><input name="lot_code" placeholder="Lote" required><input name="invoice_number" placeholder="NF"><input name="quantity_m" type="number" min=".001" step=".001" placeholder="Quantidade (m)" required><input name="purchase_price_per_m" type="number" min="0" step=".0001" placeholder="R$/m" required><input name="freight_cost" type="number" min="0" step=".01" placeholder="Frete R$"><input name="other_cost" type="number" min="0" step=".01" placeholder="Outros custos R$"><input name="received_date" type="date"><button>Registrar recebimento</button></form></div><div class="fw-panel"><h3>Saldo e valor por tecido</h3><table><thead><tr><th>Tecido</th><th>Em estoque</th><th>Reservado</th><th>Valor em estoque</th></tr></thead><tbody>'+ (stock||'<tr><td colspan="4">Cadastre os tecidos para iniciar.</td></tr>')+'</tbody></table></div>';
 }
 function recipeView(){return '<div class="fw-panel"><h3>Ficha técnica por peça</h3><p>Cadastre quantos metros entram no custo previsto, o custo previsto da facção e dos aviamentos por unidade.</p><form data-fw-form="recipe"><select name="fabric_id" required><option value="">Tecido padrão</option>'+state.fabric.map(f=>'<option value="'+f.id+'">'+esc(f.code+' • '+f.name)+'</option>').join('')+'</select><input name="product_reference" placeholder="Código da peça" required><input name="product_name" placeholder="Nome igual à demanda RFID" required><input name="consumption_m_per_piece" type="number" min=".0001" step=".0001" placeholder="Consumo (m/peça)" required><input name="faction_cost_per_piece" type="number" min="0" step=".01" placeholder="Facção prevista R$/peça"><input name="extras_cost_per_piece" type="number" min="0" step=".01" placeholder="Aviamentos R$/peça"><button>Salvar ficha técnica</button></form><table><thead><tr><th>Peça</th><th>Tecido</th><th>Consumo</th><th>Facção prevista</th><th>Extras previstos</th></tr></thead><tbody>'+state.recipes.map(r=>'<tr><td>'+esc(r.product_reference)+' • '+esc(r.product_name)+'</td><td>'+esc(state.fabric.find(f=>f.id===r.fabric_id)?.name||'—')+'</td><td>'+br(r.consumption_m_per_piece,4)+' m</td><td>R$ '+br(r.faction_cost_per_piece)+'</td><td>R$ '+br(r.extras_cost_per_piece)+'</td></tr>').join('')+'</tbody></table></div>'}
-function costView(){return '<div class="fw-panel"><h3>Custo real e perda por ordem</h3><p>Custo de tecido consumido, facção e extras dividido pelas peças aceitas. Perda em metros = tecido enviado − sobra retornada − consumo teórico das peças produzidas.</p><table><thead><tr><th>Peça / ordem</th><th>Peças aceitas</th><th>Custo previsto/peça</th><th>Custo real/peça</th><th>Perda de tecido</th><th>Custo da perda</th></tr></thead><tbody>'+state.items.map(i=>{const s=orderStats(i),f=state.fabric.find(x=>x.id===i.fabric_id),lot=state.lots.filter(l=>l.fabric_id===i.fabric_id),price=lot.length?lot.reduce((a,l)=>a+n(l.effective_price_per_m),0)/lot.length:n(i.planned_price_per_m);const planned=n(i.consumption_m_per_piece)*price+n(i.faction_cost_per_piece)+n(i.extras_cost_per_piece);const o=state.orders.find(x=>x.id===i.order_id);return '<tr><td>#'+esc(o?.order_number)+' • '+esc(i.product_name)+'</td><td>'+br(s.accepted,0)+'</td><td>R$ '+br(planned)+'</td><td>'+(s.unit===null?'Aguardando retorno':'R$ '+br(s.unit))+'</td><td>'+br(s.loss,3)+' m</td><td>R$ '+br(s.lossCost)+'</td></tr>'}).join('')||'<tr><td colspan="6">Os custos aparecerão após registrar uma ordem e o retorno da facção.</td></tr>')+'</tbody></table></div>'}
+function costView(){return '<div class="fw-panel"><h3>Custo real e perda por ordem</h3><p>Custo real considera o tecido consumido, facção e aviamentos dividido pelas peças aceitas. Perda em metros = tecido enviado − sobra retornada − consumo teórico das peças produzidas.</p><div class="fw-table-scroll"><table><thead><tr><th>Peça / ordem</th><th>Peças aceitas</th><th>Custo previsto/peça</th><th>Custo real/peça</th><th>Perda de tecido</th><th>Custo da perda</th></tr></thead><tbody>'+state.items.map(i=>{const s=orderStats(i),lots=state.lots.filter(l=>l.fabric_id===i.fabric_id),weighted=lots.reduce((a,l)=>a+n(l.effective_price_per_m)*n(l.quantity_received_m),0)/(lots.reduce((a,l)=>a+n(l.quantity_received_m),0)||1),price=weighted||n(i.planned_price_per_m),planned=n(i.consumption_m_per_piece)*price+n(i.faction_cost_per_piece)+n(i.extras_cost_per_piece),o=state.orders.find(x=>x.id===i.order_id);return '<tr><td>#'+esc(o?.order_number)+' • '+esc(i.product_name)+'</td><td>'+br(s.accepted,0)+'</td><td>R$ '+br(planned)+'</td><td>'+(s.unit===null?'Aguardando retorno':'R$ '+br(s.unit))+'</td><td>'+br(s.loss,3)+' m</td><td>R$ '+br(s.lossCost)+'</td></tr>'}).join('')||'<tr><td colspan="6">Os custos aparecerão após registrar uma ordem e o retorno da facção.</td></tr>'+'</tbody></table></div></div>'}
 function formData(form){return Object.fromEntries(new FormData(form).entries())}
 function val(d,k){return d[k]===''||d[k]===undefined?null:n(d[k])}
 async function createOrder(){
@@ -92,14 +94,28 @@ async function ship(id){
  if(remaining>0.0005)throw Error('Falha ao concluir envio integral; verifique os movimentos antes de tentar novamente.');
 }
 async function returnForm(id){
- const i=state.items.find(x=>x.id===id),m=state.moves.filter(x=>x.order_item_id===id&&x.movement_type==='ENVIO_FACCAO'),lot=m[0]?.lot_id||null;
+ const item=state.items.find(x=>x.id===id);
+ const shipments=state.moves.filter(x=>x.order_item_id===id&&x.movement_type==='ENVIO_FACCAO');
  const accepted=prompt('Peças aceitas nesta entrega da facção:', '0');if(accepted===null)return;
  const rejected=prompt('Peças rejeitadas:', '0');if(rejected===null)return;
  const returned=prompt('Metros de tecido que voltaram ao estoque:', '0');if(returned===null)return;
- const faction=prompt('Custo da facção desta entrega (R$):', String(n(accepted)*n(i.faction_cost_per_piece)));if(faction===null)return;
- const extras=prompt('Custo de aviamentos desta entrega (R$):', String(n(accepted)*n(i.extras_cost_per_piece)));if(extras===null)return;
+ const faction=prompt('Custo da facção desta entrega (R$):', String(n(accepted)*n(item.faction_cost_per_piece)));if(faction===null)return;
+ const extras=prompt('Custo de aviamentos desta entrega (R$):', String(n(accepted)*n(item.extras_cost_per_piece)));if(extras===null)return;
  const notes=prompt('Observação (opcional):','')||'';
- return rpc('fabric_record_faction_return',{p_organization_id:state.org,p_order_item_id:id,p_lot_id:lot,p_accepted_pieces:n(accepted),p_rejected_pieces:n(rejected),p_returned_m:n(returned),p_faction_cost_amount:n(faction),p_extras_cost_amount:n(extras),p_notes:notes,p_idempotency_key:'fabric-return-'+uid()})
+ const prior=state.returns.filter(x=>x.order_item_id===id);
+ let returnLeft=n(returned);
+ const lots=shipments.map(m=>({lot_id:m.lot_id,remaining:n(m.quantity_m)-prior.filter(r=>r.lot_id===m.lot_id).reduce((s,r)=>s+n(r.returned_m),0)})).filter(x=>x.remaining>0);
+ const allocations=[];
+ for(const lot of lots){const qty=Math.min(returnLeft,lot.remaining);if(qty>0){allocations.push({...lot,qty});returnLeft-=qty}if(returnLeft<=0.0005)break}
+ if(returnLeft>0.0005)throw Error('A sobra informada excede o tecido ainda enviado à facção.');
+ if(n(returned)>0&&!allocations.length)throw Error('Não há lote disponível para registrar a sobra.');
+ const entries=allocations.length?allocations:[{lot_id:null,qty:0}];
+ let result;
+ for(let index=0;index<entries.length;index++){
+  const x=entries[index];
+  result=await rpc('fabric_record_faction_return',{p_organization_id:state.org,p_order_item_id:id,p_lot_id:x.lot_id,p_accepted_pieces:index===0?n(accepted):0,p_rejected_pieces:index===0?n(rejected):0,p_returned_m:x.qty,p_faction_cost_amount:index===0?n(faction):0,p_extras_cost_amount:index===0?n(extras):0,p_notes:notes,p_idempotency_key:'fabric-return-'+uid()})
+ }
+ return result;
 }
 document.addEventListener('click',async e=>{
  const tab=e.target.closest('[data-fw-tab]');if(tab){state.tab=tab.dataset.fwTab;render();return}
