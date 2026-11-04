@@ -35,8 +35,8 @@
     return {apikey:KEY,Authorization:"Bearer "+(token() || KEY),"Content-Type":"application/json",...extra};
   }
   async function api(table, params = {}, method = "GET", body = null) {
-    const qs = new URLSearchParams(params).toString();
-    const res = await fetch(SB + "/rest/v1/" + table + (qs ? "?" + qs : ""), {
+    const qs = new URLSearchParams();\n    for (const [key, value] of Object.entries(params)) qs.append(key.endsWith("_lte") ? key.slice(0,-4) : key, value);\n    const query = qs.toString();
+    const res = await fetch(SB + "/rest/v1/" + table + (query ? "?" + query : ""), {
       method, headers:headers(method === "GET" ? {} : {Prefer:"return=representation"}),
       body:body ? JSON.stringify(body) : undefined
     });
