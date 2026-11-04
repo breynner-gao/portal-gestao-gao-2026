@@ -6,7 +6,8 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const n=v=>{const x=Number(String(v??'').trim().replace(/\.(?=\d{3}(?:\D|$))/g,'').replace(',','.'));return Number.isFinite(x)?x:0};
 const br=(v,d=2)=>n(v).toLocaleString('pt-BR',{maximumFractionDigits:d});
 const uid=()=>crypto.randomUUID();
-const state={org:null,session:null,tab:'demand',fabric:[],suppliers:[],recipes:[],lots:[],orders:[],items:[],moves:[],returns:[],busy:false,error:'',snapshot:[]};
+const state={org:null,session:null,tab:'demand',fabric:[],suppliers:[],recipes:[],lots:[],orders:[],items:[],moves:[],returns:[],busy:false,error:'',snapshot:[],mode:false};
+const style=document.createElement('style');style.textContent='.fw-shell{margin:14px 0;color:#082d52}.fw-head,.fw-panel{background:#fff;border:1px solid #d5e2ef;border-radius:12px;padding:16px;margin:10px 0}.fw-head{display:flex;justify-content:space-between;align-items:center;background:#eef7ff}.fw-head small{font-weight:900;letter-spacing:.12em;color:#0879c9}.fw-head h2{margin:5px 0}.fw-head p,.fw-panel p{color:#54708e;margin:6px 0 12px}.fw-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.fw-tabs button,.fw-panel button{border:0;border-radius:8px;background:#3188cc;color:white;padding:9px 12px;font-weight:800}.fw-tabs button{background:#fff;color:#174a78;border:1px solid #b9d1e8}.fw-tabs button.active{background:#3188cc;color:white}.fw-panel h3{margin:0 0 10px}.fw-panel table{width:100%;border-collapse:collapse;min-width:780px;font-size:13px}.fw-panel th,.fw-panel td{text-align:left;padding:9px;border-bottom:1px solid #e7eef5;vertical-align:top}.fw-panel th{background:#f3f8fd;color:#54708e}.fw-panel td small{display:block;color:#7890a8;margin-top:4px}.fw-panel form{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.fw-panel input,.fw-panel select{padding:9px;border:1px solid #b9d1e8;border-radius:8px;min-width:150px}.fw-panel form button{min-height:38px}.fw-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.fw-cards article{background:#fff;border:1px solid #d5e2ef;border-radius:10px;padding:14px}.fw-cards small,.fw-cards b{display:block}.fw-cards small{color:#54708e}.fw-cards b{font-size:22px;margin-top:7px}.fw-error{background:#fff0f0;border:1px solid #f4bcbc;color:#9b1c1c;padding:10px;border-radius:8px}.fw-note{padding:10px;color:#54708e}.fw-table-scroll{overflow:auto}#gao-linen-risk-shell.fw-mode>.lr150-shell>:not(.lr150-top):not(.lr150-dimension-nav){display:none!important}#gao-linen-risk-shell.fw-mode>#gao-fabric-flow{display:block!important}@media(max-width:760px){.fw-cards{grid-template-columns:1fr}.fw-panel form input,.fw-panel form select{width:100%}.fw-head{align-items:start;gap:8px;flex-direction:column}}';document.head.appendChild(style);
 const headers=()=>({apikey:KEY,Authorization:'Bearer '+state.session.access_token,'Content-Type':'application/json',Prefer:'return=representation'});
 async function api(path,opts={}){const r=await fetch(SB+path,{...opts,headers:{...headers(),...(opts.headers||{})}});const t=await r.text();let d;try{d=t?JSON.parse(t):null}catch{d=t}if(!r.ok)throw Error(d?.message||d?.details||d?.hint||String(d||'Falha no Supabase'));return d}
 async function rpc(name,args){return api('/rest/v1/rpc/'+name,{method:'POST',body:JSON.stringify(args)})}
@@ -35,11 +36,11 @@ function orderStats(item){
  const rs=state.returns.filter(r=>r.order_item_id===item.id),accepted=rs.reduce((a,r)=>a+n(r.accepted_pieces),0),rejected=rs.reduce((a,r)=>a+n(r.rejected_pieces),0);
  const returned=rs.reduce((a,r)=>a+n(r.returned_m),0),faction=rs.reduce((a,r)=>a+n(r.faction_cost_amount),0),extras=rs.reduce((a,r)=>a+n(r.extras_cost_amount),0);
  const theoretical=(accepted+rejected)*n(item.consumption_m_per_piece),loss=Math.max(0,issued-returned-theoretical);
- const totalCost=Math.max(0,fabricCost-returned*(ms.length?fabricCost/issued:0))+faction+extras;
+ const totalCost=Math.max(0,fabricCost-returned*(issued?fabricCost/issued:0))+faction+extras;
  return {issued,accepted,rejected,returned,faction,extras,theoretical,loss,lossCost:loss*(issued?fabricCost/issued:0),unit:accepted?totalCost/accepted:null,remaining:Math.max(0,n(item.ordered_pieces)-accepted-rejected)};
 }
 function render(){
- const host=document.querySelector('#gao-fabric-flow');if(!host)return;
+ const host=document.querySelector('#gao-fabric-flow');if(!host)return;host.hidden=!state.mode;
  const tabs=[['demand','Necessidade e facção'],['stock','Tecido e compras'],['recipes','Ficha técnica'],['cost','Custos e perdas']];
  const buttons=tabs.map(([id,label])=>'<button type="button" data-fw-tab="'+id+'" class="'+(state.tab===id?'active':'')+'">'+label+'</button>').join('');
  const body=state.tab==='demand'?demandView():state.tab==='stock'?stockView():state.tab==='recipes'?recipeView():costView();
@@ -54,7 +55,7 @@ function demandView(){
   const cov=state.items.filter(i=>i.source_item_key===String(x.produtoId||x.produtoNome)&&['ABERTA','PARCIAL','ENVIADA'].includes(state.orders.find(o=>o.id===i.order_id)?.status)).reduce((a,i)=>a+n(i.ordered_pieces),0);
   const missing=Math.max(0,n(x.pedidoReal)-cov);
   const meters=missing*n(rec?.consumption_m_per_piece);
-  const bal=rec?balances.filter(b=>b.fabric_id===rec.fabric_id).reduce((a,b)=>a+b.onhand-b.reserved,0):0;
+  const bal=rec?balances.filter(b=>b.fabric_id===rec.fabric_id&&b.quality_status==='APROVADO').reduce((a,b)=>a+b.onhand-b.reserved,0):0;
   return '<tr><td><b>'+esc(x.produtoNome)+'</b><small>'+esc(x.produtoId||'sem código')+'</small></td><td>'+br(x.pedidoReal,0)+' pç</td><td>'+esc(rec?br(rec.consumption_m_per_piece,3)+' m/peça':'Sem ficha técnica')+'</td><td>'+br(cov,0)+' pç</td><td>'+br(missing,0)+' pç</td><td>'+br(meters,2)+' m</td><td>'+br(bal,2)+' m</td><td>'+(missing&&rec?'<input class="fw-check" type="checkbox" data-fw-demand="'+esc(x.produtoId||x.produtoNome)+'" checked>':'—')+'</td></tr>'
  }).join('');
  return '<div class="fw-cards"><article><small>Peças pedidas</small><b>'+br(snap.reduce((a,x)=>a+n(x.pedidoReal),0),0)+'</b></article><article><small>Peças em produção</small><b>'+br(pending,0)+'</b></article><article><small>Tecidos cadastrados</small><b>'+state.fabric.length+'</b></article></div><div class="fw-panel"><h3>Gerar ordem sem duplicar pedido de peça</h3><p>O saldo de pedidos ativos é abatido da necessidade; o cálculo de tecido usa o consumo cadastrado por peça.</p><table><thead><tr><th>Peça</th><th>Necessidade</th><th>Consumo padrão</th><th>Já coberto</th><th>Falta pedir</th><th>Tecido estimado</th><th>Saldo tecido</th><th>Incluir</th></tr></thead><tbody>'+ (rows||'<tr><td colspan="8">Sem demanda de peças carregada. Abra o painel de Enxoval e atualize a base RFID.</td></tr>')+'</tbody></table><button type="button" data-fw-create-order>Gerar ordem de facção para selecionados</button></div><div class="fw-panel"><h3>Ordens abertas</h3>'+ordersTable()+'</div>';
@@ -71,7 +72,7 @@ function formData(form){return Object.fromEntries(new FormData(form).entries())}
 function val(d,k){return d[k]===''||d[k]===undefined?null:n(d[k])}
 async function createOrder(){
  const picks=[...document.querySelectorAll('[data-fw-demand]:checked')],snap=window.GAO_LINEN_NEED_SNAPSHOT||[];
- const lines=picks.map(p=>{const x=snap.find(i=>String(i.produtoId||i.produtoNome)===p.dataset.fwDemand),r=state.recipes.find(q=>q.active&&q.product_reference===String(x?.produtoId||x?.produtoNome));if(!x||!r)throw Error('Cadastre ficha técnica ativa para todas as peças selecionadas.');return {source_item_key:String(x.produtoId||x.produtoNome),product_reference:String(x.produtoId||''),product_name:String(x.produtoNome||''),requested_pieces:n(x.pedidoReal),recipe_id:r.id}});
+ const lines=picks.map(p=>{const x=snap.find(i=>String(i.produtoId||i.produtoNome)===p.dataset.fwDemand),r=state.recipes.find(q=>q.active&&q.product_reference===String(x?.produtoId||x?.produtoNome));if(!x||!r)throw Error('Cadastre ficha técnica ativa para todas as peças selecionadas.');const lots=state.lots.filter(l=>l.fabric_id===r.fabric_id);const planned=lots.reduce((a,l)=>a+n(l.effective_price_per_m)*n(l.quantity_received_m),0)/(lots.reduce((a,l)=>a+n(l.quantity_received_m),0)||1);return {source_item_key:String(x.produtoId||x.produtoNome),product_reference:String(x.produtoId||''),product_name:String(x.produtoNome||''),requested_pieces:n(x.pedidoReal),recipe_id:r.id,planned_price_per_m:planned}});
  if(!lines.length)throw Error('Marque pelo menos uma peça com demanda e ficha técnica.');
  return rpc('fabric_create_orders_for_demand',{p_organization_id:state.org,p_demand_as_of:(window.GAO_LINEN_NEED_SNAPSHOT||[])[0]?.asOf||new Date().toISOString().slice(0,10),p_lines:lines,p_idempotency_key:'fabric-demand-'+uid()})
 }
@@ -84,10 +85,11 @@ async function submit(form){
 }
 async function ship(id){
  const item=state.items.find(i=>i.id===id),rec=state.recipes.find(r=>r.id===item.recipe_id),needed=n(item.ordered_pieces)*n(item.consumption_m_per_piece);
- const lots=liveBalances().filter(l=>l.fabric_id===item.fabric_id&&l.onhand-l.reserved>0).sort((a,b)=>a.received_date.localeCompare(b.received_date));
+ const lots=liveBalances().filter(l=>l.fabric_id===item.fabric_id&&l.quality_status==='APROVADO'&&l.onhand-l.reserved>0).sort((a,b)=>a.received_date.localeCompare(b.received_date));
+ const available=lots.reduce((a,l)=>a+l.onhand-l.reserved,0);if(available+0.0005<needed)throw Error('Saldo aprovado insuficiente. Disponível: '+br(available,3)+' m; necessário: '+br(needed,3)+' m.');
  let remaining=needed;
  for(const lot of lots){const qty=Math.min(remaining,lot.onhand-lot.reserved);if(qty<=0)continue;await rpc('fabric_post_stock_movement',{p_organization_id:state.org,p_lot_id:lot.id,p_movement_type:'ENVIO_FACCAO',p_quantity_m:qty,p_order_item_id:item.id,p_idempotency_key:'fabric-ship-'+item.id+'-'+lot.id,p_notes:'Envio para facção • '+item.product_name});remaining-=qty;if(remaining<=0.0005)break}
- if(remaining>0.0005)throw Error('Estoque insuficiente. Faltam '+br(remaining,3)+' m; nenhum envio parcial foi concluído. Solicite ajuste para envio parcial.');
+ if(remaining>0.0005)throw Error('Falha ao concluir envio integral; verifique os movimentos antes de tentar novamente.');
 }
 async function returnForm(id){
  const i=state.items.find(x=>x.id===id),m=state.moves.filter(x=>x.order_item_id===id&&x.movement_type==='ENVIO_FACCAO'),lot=m[0]?.lot_id||null;
@@ -101,6 +103,8 @@ async function returnForm(id){
 }
 document.addEventListener('click',async e=>{
  const tab=e.target.closest('[data-fw-tab]');if(tab){state.tab=tab.dataset.fwTab;render();return}
+ if(e.target.closest('[data-fw-open]')){state.mode=true;document.querySelector('#gao-linen-risk-shell')?.classList.add('fw-mode');const host=document.querySelector('#gao-fabric-flow');if(host)host.hidden=false;render();return}
+ if(e.target.closest('[data-dimension-view]')){state.mode=false;document.querySelector('#gao-linen-risk-shell')?.classList.remove('fw-mode')}
  if(e.target.closest('[data-fw-refresh]')){await run(()=>reload());return}
  if(e.target.closest('[data-fw-create-order]')){await run(createOrder);return}
  const shipBtn=e.target.closest('[data-fw-ship]');if(shipBtn){await run(()=>ship(shipBtn.dataset.fwShip));return}
@@ -112,8 +116,8 @@ function mount(){
  const route=location.pathname.replace(/\/+$/,'')==='/enxoval-tecidos';if(!route){document.querySelector('#gao-fabric-flow')?.remove();return}
  const shell=document.querySelector('#gao-linen-risk-shell');if(!shell)return;
  let nav=shell.querySelector('.lr150-dimension-nav');if(!nav)return;
- if(!nav.querySelector('[data-fw-open]')){const b=document.createElement('button');b.type='button';b.dataset.fwOpen='';b.textContent='Fluxo tecido e facção';b.onclick=()=>{document.querySelectorAll('#gao-linen-risk-shell .lr150-dashboard,#gao-linen-risk-shell .lr150-grid,#gao-linen-risk-shell .lr150-category-report,#gao-linen-risk-shell .lr150-table-wrap,#gao-linen-risk-shell .lr150-order-head,#gao-linen-risk-shell .lr150-movement-flags,#gao-linen-risk-shell .lr150-movement-rule').forEach(x=>x.hidden=true);document.querySelectorAll('#gao-linen-risk-shell [data-dimension-view]').forEach(x=>x.classList.remove('active'));};nav.appendChild(b)}
- if(!shell.querySelector('#gao-fabric-flow')){const host=document.createElement('div');host.id='gao-fabric-flow';shell.appendChild(host);render();if(!state.org){init().then(render).catch(err=>{state.error=err.message;render()})}}
+ if(!nav.querySelector('[data-fw-open]')){const b=document.createElement('button');b.type='button';b.dataset.fwOpen='';b.textContent='Fluxo tecido e facção';b.onclick=()=>{state.mode=true;document.querySelector('#gao-linen-risk-shell')?.classList.add('fw-mode');const host=document.querySelector('#gao-fabric-flow');if(host)host.hidden=false;};nav.appendChild(b)}
+ if(!shell.querySelector('#gao-fabric-flow')){const host=document.createElement('div');host.id='gao-fabric-flow';host.hidden=!state.mode;shell.appendChild(host);render();if(!state.org){init().then(render).catch(err=>{state.error=err.message;render()})}}
 }
 new MutationObserver(mount).observe(document.documentElement,{childList:true,subtree:true});
 setInterval(mount,900);
