@@ -178,7 +178,8 @@ async function run(fn){if(state.busy)return;state.busy=true;state.error='';rende
 function mount(){
  const route=location.pathname.replace(/\/+$/,'')==='/enxoval-tecidos';if(!route){document.querySelector('#gao-fabric-flow')?.remove();return}
  const shell=document.querySelector('#gao-linen-risk-shell');if(!shell)return;
- let nav=shell.querySelector('.lr150-dimension-nav');if(!nav)return;
+ let nav=shell.querySelector('.lr150-dimension-nav');
+ if(!nav){nav=document.createElement('div');nav.className='lr150-dimension-nav';shell.appendChild(nav)}
  if(!nav.querySelector('[data-fw-open]')){const b=document.createElement('button');b.type='button';b.dataset.fwOpen='';b.textContent='Fluxo tecido e facção';b.onclick=()=>{state.mode=true;document.querySelector('#gao-linen-risk-shell')?.classList.add('fw-mode');const host=document.querySelector('#gao-fabric-flow');if(host)host.hidden=false;};nav.appendChild(b)}
  if(!shell.querySelector('#gao-fabric-flow')){const host=document.createElement('div');host.id='gao-fabric-flow';host.hidden=!state.mode;shell.appendChild(host);render();if(!state.org){init().then(render).catch(err=>{state.error=err.message;render()})}}
 }
