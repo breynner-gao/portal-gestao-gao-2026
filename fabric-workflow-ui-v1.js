@@ -22,8 +22,12 @@ async function init(){
  await reload();
 }
 async function reload(){
- const tables=['fabric_catalog','fabric_suppliers','fabric_product_recipes','fabric_lots','fabric_production_orders','fabric_production_order_items','fabric_stock_movements','fabric_faction_returns'];
- const [fabric,suppliers,recipes,lots,orders,items,moves,returns]=await Promise.all(tables.map(t=>api('/rest/v1/'+t+'?select=*&organization_id=eq.'+state.org+'&order=created_at.desc')));
+ const tables=[
+  ['fabric_catalog','created_at'],['fabric_suppliers','created_at'],['fabric_product_recipes','created_at'],
+  ['fabric_lots','created_at'],['fabric_production_orders','created_at'],
+  ['fabric_production_order_items','created_at'],['fabric_stock_movements','created_at'],['fabric_faction_returns','returned_at']
+ ];
+ const [fabric,suppliers,recipes,lots,orders,items,moves,returns]=await Promise.all(tables.map(([t,order])=>api('/rest/v1/'+t+'?select=*&organization_id=eq.'+state.org+'&order='+order+'.desc')));
  Object.assign(state,{fabric,suppliers,recipes,lots,orders,items,moves,returns});
  state.snapshot=window.GAO_LINEN_NEED_SNAPSHOT||state.snapshot||[];
 }
