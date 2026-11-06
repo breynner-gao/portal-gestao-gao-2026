@@ -202,7 +202,7 @@ async function load() {
     const context = await cloudContext();
     state = { ...state, cloudReady: true, cloudCanWrite: context.canWrite, cloudOrgId: context.organizationId };
     shared = await loadSharedSnapshot(context);
-    if (shared?.rows?.length) {
+    if (shared?.rows?.length && !current?.needsCloudSync) {
       state = {
         ...state,
         loaded: true,
