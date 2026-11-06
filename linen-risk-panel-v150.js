@@ -91,8 +91,17 @@ async function fetchOnlineFaction() {
     const pending = rows.filter(row => /pendente|aguardando|em produção|em producao|em corte|em costura/i.test(statusOf(row)));
     const statusSummary = [...new Set(rows.map(statusOf).filter(Boolean))].join(', ');
     if (!pending.length) throw Error(`nenhum pendente encontrado; status lidos: ${statusSummary || 'vazio'}`);
+    const qty = value => {
+      const normalized = String(value ?? '0').trim().replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
+      const parsed = Number(normalized);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+    const planned = pending.reduce((sum, row) => sum + qty(row.QUANTIDADE ?? row.quantidade), 0);
+    const delivered = pending.reduce((sum, row) => sum + qty(row.ENTREGA ?? row.entrega), 0);
+    const factionBalance = pending.reduce((sum, row) => sum + Math.max(0, qty(row.QUANTIDADE ?? row.quantidade) - qty(row.ENTREGA ?? row.entrega)), 0);
+    const cutCompleteRows = pending.filter(row => /conclu/i.test(String(row.CORTE ?? row.corte ?? ''))).length;
     applyUploadedFaction(pending, 'controle produção facção');
-    state = { ...state, uploadMessage: `${pending.length} linhas pendentes lidas da planilha online; status: ${statusSummary}; facção atualizada sem concluídos.` };
+    state = { ...state, uploadMessage: `Planilha online lida: ${pending.length} linhas pendentes; ${br(planned)} pç previstas; ${br(cutCompleteRows)} linhas com corte concluído; ${br(delivered)} pç entregues; saldo calculado na facção: ${br(factionBalance)} pç.` };
     saveHistory();
     render();
   } catch (e) { state = { ...state, uploadMessage: `Facção online não atualizada: ${e.message || e}` }; render(); }
