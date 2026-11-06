@@ -4,6 +4,9 @@ const DATA = '/assets/linen-rfid-report-2026-10-13.json';
 const FACTION_DATA = '/assets/linen-production-pending-2026-10-13.json';
 const ONLINE_FACTION = 'https://docs.google.com/spreadsheets/d/1a8DJIkoxqbzNCz8O1BHmBEJFUpIukhILclCk5sv53i0/export?format=xlsx';
 const HISTORY_KEY = 'gao-linen-history-v1';
+const SUPABASE_URL = 'https://fquzuxdqvhecijjuxbmg.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_icrk6TaZexgiSIq63zX_ng_40JGaYl';
+const LINEN_SNAPSHOT_TABLE = 'linen_rfid_snapshots';
 const CURRENT_KEY = 'gao-linen-current-v1';
 const route = () => location.pathname.replace(/\/+$/, '') === '/enxoval-tecidos';
 const br = (v, d = 0) => Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: d, minimumFractionDigits: d });
@@ -42,12 +45,19 @@ let state = {
   movementDirection: 'supply',
   openFilter: '',
   factionMap: {},
-  factionSource: ''
+  factionSource: '',
+  cloudReady: false,
+  cloudCanWrite: false,
+  cloudOrgId: '',
+  cloudStatus: '',
+  cloudUpdatedAt: '',
+  needsCloudSync: false,
+  cloudBusy: false
 };
 
 function readHistory() { try { const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); const seen = new Set(); return raw.filter(item => { const key = `${item.asOf}|${item.label}|${item.estoque}|${item.pedidoReal}|${item.faccao}`; if (seen.has(key)) return false; seen.add(key); return true; }); } catch { return []; } }
 function readCurrent() { try { return JSON.parse(localStorage.getItem(CURRENT_KEY) || 'null'); } catch { return null; } }
-function saveCurrent() { try { localStorage.setItem(CURRENT_KEY, JSON.stringify({ baseRows: state.baseRows, factionMap: state.factionMap, rows: state.rows, asOf: state.asOf, informedAt: state.informedAt, sourceSheet: state.sourceSheet, sourceRule: state.sourceRule, fileName: state.fileName, factionSource: state.factionSource })); } catch {} }
+function saveCurrent() { try { localStorage.setItem(CURRENT_KEY, JSON.stringify({ baseRows: state.baseRows, factionMap: state.factionMap, rows: state.rows, asOf: state.asOf, informedAt: state.informedAt, sourceSheet: state.sourceSheet, sourceRule: state.sourceRule, fileName: state.fileName, factionSource: state.factionSource, cloudUpdatedAt: state.cloudUpdatedAt, needsCloudSync: state.needsCloudSync })); } catch {} }
 function snapshot(label = state.fileName) {
   const s = summary(); const t = sourceTotals();
   return { id: `${Date.now()}`, label, asOf: state.asOf || new Date().toISOString().slice(0, 10), informedAt: state.informedAt || state.asOf, source: state.factionSource || '', total: s.total, red: s.red, yellow: s.yellow, pedido: s.pedido, pedidoReal: s.pedidoReal, faccao: s.faccao, estoque: t.total, supply: listMovementItems(state.rows).filter(x=>x.direcao==='supply').reduce((a,x)=>a+x.quantidade,0), returns: listMovementItems(state.rows).filter(x=>x.direcao==='return').reduce((a,x)=>a+x.quantidade,0) };
@@ -69,6 +79,7 @@ function editIdealReference(event) {
     ...state,
     baseRows: state.baseRows.map(update),
     rows: state.rows.map(update),
+    needsCloudSync: true,
     uploadMessage: `Troca ideal de ${produtoNome} ajustada para ${br(value, 1)}. Necessidade, movimentação e pedido foram recalculados.`
   };
   saveCurrent();
@@ -76,6 +87,82 @@ function editIdealReference(event) {
 }
 function deleteSelectedHistory() { const id = document.querySelector('#lr150-history-select')?.value; if (!id) return; const next = readHistory().filter(item => item.id !== id); localStorage.setItem(HISTORY_KEY, JSON.stringify(next)); render(); }
 function deleteAllHistory() { localStorage.removeItem(HISTORY_KEY); render(); }
+
+async function cloudContext() {
+  const ready = window.GAO_AUTH_READY ? await window.GAO_AUTH_READY : null;
+  const session = window.GAO_AUTH_SESSION || ready;
+  const token = session?.access_token;
+  const userId = session?.user?.id;
+  if (!token || !userId) throw Error('Entre no Portal GAO para sincronizar a base.');
+  const headers = { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + token };
+  const params = new URLSearchParams({
+    select: 'id,organization_id,role_name,organizations!inner(kind,active)',
+    profile_id: 'eq.' + userId,
+    active: 'eq.true'
+  });
+  const response = await fetch(SUPABASE_URL + '/rest/v1/memberships?' + params, { headers, cache: 'no-store' });
+  const memberships = await response.json().catch(() => []);
+  if (!response.ok) throw Error(memberships.message || 'Não foi possível validar seu acesso à GAO.');
+  const member = (Array.isArray(memberships) ? memberships : []).find(item => item.organizations?.kind === 'gao' && item.organizations?.active);
+  if (!member) throw Error('Seu usuário não tem vínculo ativo com a organização GAO.');
+  const canWrite = ['Administrador Geral', 'Operacional'].includes(member.role_name);
+  return { token, organizationId: member.organization_id, canWrite };
+}
+
+async function loadSharedSnapshot(context) {
+  const params = new URLSearchParams({
+    select: 'rows,file_name,source_sheet,source_rule,as_of,informed_at,updated_at',
+    organization_id: 'eq.' + context.organizationId,
+    limit: '1'
+  });
+  const response = await fetch(SUPABASE_URL + '/rest/v1/' + LINEN_SNAPSHOT_TABLE + '?' + params, {
+    headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + context.token },
+    cache: 'no-store'
+  });
+  const result = await response.json().catch(() => []);
+  if (!response.ok) throw Error(result.message || 'Falha ao buscar a base compartilhada.');
+  return Array.isArray(result) ? result[0] || null : null;
+}
+
+async function syncSharedSnapshot() {
+  if (!state.baseRows.length || state.cloudBusy) return;
+  if (!window.confirm('Compartilhar a base RFID atualmente carregada com os usuários autorizados da GAO neste portal? A cópia será gravada no Supabase para aparecer também no tablet.')) return;
+  state = { ...state, cloudBusy: true, cloudStatus: 'Sincronizando base RFID com o portal…' };
+  render();
+  try {
+    const context = await cloudContext();
+    if (!context.canWrite) throw Error('Seu perfil pode consultar a base, mas não tem permissão para sincronizar. Peça ao Administrador Geral para fazer esta primeira sincronização.');
+    const response = await fetch(SUPABASE_URL + '/rest/v1/' + LINEN_SNAPSHOT_TABLE + '?on_conflict=organization_id', {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: 'Bearer ' + context.token,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=representation'
+      },
+      body: JSON.stringify({
+        organization_id: context.organizationId,
+        rows: state.baseRows,
+        file_name: state.fileName || '',
+        source_sheet: state.sourceSheet || '',
+        source_rule: state.sourceRule || '',
+        as_of: state.asOf || null,
+        informed_at: state.informedAt || null,
+        updated_at: new Date().toISOString()
+      })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw Error(result.message || result.details || 'Falha ao gravar a base compartilhada.');
+    const saved = Array.isArray(result) ? result[0] : result;
+    state = { ...state, cloudReady: true, cloudCanWrite: true, cloudOrgId: context.organizationId, cloudUpdatedAt: saved?.updated_at || new Date().toISOString(), needsCloudSync: false, cloudBusy: false, cloudStatus: 'Base RFID sincronizada. O tablet pode carregar os mesmos dados ao atualizar a página.' };
+    saveCurrent();
+    render();
+  } catch (error) {
+    state = { ...state, cloudBusy: false, cloudStatus: error.message || String(error) };
+    render();
+  }
+}
+
 async function fetchOnlineFaction() {
   try {
     if (!window.XLSX) throw Error('Leitor Excel indisponível');
@@ -110,6 +197,37 @@ async function fetchOnlineFaction() {
 async function load() {
   if (state.loaded || state.error) return;
   const current = readCurrent();
+  let shared = null;
+  try {
+    const context = await cloudContext();
+    state = { ...state, cloudReady: true, cloudCanWrite: context.canWrite, cloudOrgId: context.organizationId };
+    shared = await loadSharedSnapshot(context);
+    if (shared?.rows?.length) {
+      state = {
+        ...state,
+        loaded: true,
+        error: '',
+        baseRows: shared.rows,
+        rows: applyFactionToRows(shared.rows, current?.factionMap || {}),
+        asOf: shared.as_of || '',
+        informedAt: shared.informed_at || shared.as_of || '',
+        sourceSheet: shared.source_sheet || 'Base RFID compartilhada',
+        sourceRule: shared.source_rule || 'Base corporativa sincronizada no Supabase.',
+        fileName: shared.file_name || state.fileName,
+        factionMap: current?.factionMap || {},
+        factionSource: current?.factionSource || '',
+        cloudUpdatedAt: shared.updated_at || '',
+        needsCloudSync: false,
+        cloudStatus: 'Base RFID compartilhada carregada do portal.'
+      };
+      saveCurrent();
+      fetchOnlineFaction();
+      return;
+    }
+    state = { ...state, cloudStatus: current?.baseRows?.length ? 'Esta base está salva somente neste computador. Sincronize para abrir no tablet.' : 'Ainda não há base RFID compartilhada. Sincronize a base no computador que já tem a importação.' };
+  } catch (error) {
+    state = { ...state, cloudStatus: 'Sincronização indisponível: ' + (error.message || String(error)) };
+  }
   if (current?.baseRows?.length) {
     state = {
       ...state,
@@ -123,45 +241,41 @@ async function load() {
       sourceRule: current.sourceRule || 'Base recuperada do armazenamento local deste navegador.',
       fileName: current.fileName || state.fileName,
       factionMap: current.factionMap || {},
-      factionSource: current.factionSource || ''
+      factionSource: current.factionSource || '',
+      cloudUpdatedAt: current.cloudUpdatedAt || '',
+      needsCloudSync: state.cloudReady && !shared
     };
     fetchOnlineFaction();
     return;
   }
   try {
-    const [data, faction] = await Promise.all([
-      fetch(DATA).then(r => {
-        if (!r.ok) throw Error(`HTTP ${r.status}`);
-        return r.json();
-      }),
-      fetch(FACTION_DATA).then(r => r.ok ? r.json() : null).catch(() => null)
-    ]);
-    const current = readCurrent();
-    const summary = current?.baseRows?.length ? { rows: current.baseRows } : summarizeRows(data.rows || []);
-    // A facção oficial vem exclusivamente da planilha online atual.
-    // A base estática antiga não pode reintroduzir peças já concluídas.
-    const activeFactionMap = {};
+    const response = await fetch(DATA, { cache: 'no-store' });
+    if (!response.ok) throw Error('A base RFID não foi publicada no servidor.');
+    const data = await response.json();
+    const summary = summarizeRows(data.rows || []);
+    if (!summary.rows.length) throw Error('O arquivo publicado está sem linhas RFID válidas.');
     state = {
       ...state,
       loaded: true,
+      error: '',
       baseRows: summary.rows,
-      rows: applyFactionToRows(summary.rows, activeFactionMap),
-      asOf: current?.asOf || data.asOf || '',
-      informedAt: current?.informedAt || data.informedAt || data.asOf || '',
-      sourceSheet: current?.sourceSheet || data.sheet || '',
-      sourceRule: current?.sourceRule || data.rule || '',
-      fileName: current?.fileName || data.source || state.fileName,
-      factionMap: activeFactionMap,
-      factionSource: current?.factionSource || faction?.source || 'Base incorporada do controle de produção'
+      rows: applyFactionToRows(summary.rows, {}),
+      asOf: data.asOf || '',
+      informedAt: data.informedAt || data.asOf || '',
+      sourceSheet: data.sheet || '',
+      sourceRule: data.rule || '',
+      fileName: data.source || state.fileName,
+      factionMap: {},
+      factionSource: 'Base incorporada do controle de produção',
+      needsCloudSync: state.cloudReady
     };
     saveCurrent();
     saveHistory();
     fetchOnlineFaction();
-  } catch (e) {
-    state = { ...state, error: e.message || String(e) };
+  } catch (error) {
+    state = { ...state, error: 'Nenhuma base RFID compartilhada foi encontrada. No computador que já tem a base carregada, clique em “Sincronizar base RFID para tablets”. Detalhe: ' + (error.message || String(error)) };
   }
 }
-
 function summary() {
   const dimensioning = summarizeDimensioning(state.rows);
   return {
@@ -265,6 +379,7 @@ function applyUploadedRows(rows, fileName) {
     sourceRule: 'Base importada pelo usuário nesta sessão.',
     factionMap,
     factionSource: detectedFactionRows.length ? `${fileName} — facção detectada automaticamente` : state.factionSource,
+    needsCloudSync: true,
     uploadMessage: `${summary.rows.length} itens carregados de ${fileName}.${detectedFactionRows.length ? ` Facção detectada: ${br(Object.values(detectedFactionMap).reduce((a, b) => a + Number(b || 0), 0))} pç pendentes.` : ''}`
   };
   saveHistory();
@@ -474,6 +589,8 @@ function panel() {
         <span>Subir facção</span>
       </label>
     </div>
+    ${state.cloudStatus ? `<div class="lr150-message" role="status">${esc(state.cloudStatus)}</div>` : ''}
+    ${state.cloudReady && state.needsCloudSync && state.cloudCanWrite ? `<button id="lr150-sync-cloud" type="button" class="lr150-export" ${state.cloudBusy ? 'disabled' : ''}>${state.cloudBusy ? 'Sincronizando…' : 'Sincronizar base RFID para tablets'}</button>` : ''}
     ${state.uploadMessage ? `<div class="lr150-message">${esc(state.uploadMessage)}</div>` : ''}
     <nav class="lr150-dimension-nav" aria-label="Telas de dimensionamento">
       <button type="button" data-dimension-view="dashboard" class="${state.dimensionView === 'dashboard' ? 'active' : ''}" aria-pressed="${state.dimensionView === 'dashboard'}">Painel de gestão à vista</button>
@@ -603,6 +720,7 @@ function bind() {
     state = { ...state, dimensionView, openFilter: '' };
     render();
   }));
+  document.querySelector('#lr150-sync-cloud')?.addEventListener('click', syncSharedSnapshot);
   document.querySelector('#lr150-file')?.addEventListener('change', event => readRfidFile(event.target.files?.[0]));
   document.querySelector('#lr150-faction-file')?.addEventListener('change', event => readFactionFile(event.target.files?.[0]));
   document.querySelectorAll('.lr150-ideal-input').forEach(input => input.addEventListener('change', editIdealReference));
