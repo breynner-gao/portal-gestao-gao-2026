@@ -159,10 +159,19 @@ async function returnForm(id){
  }
  return result;
 }
+function setFlowMode(enabled){
+ state.mode=enabled;
+ const shell=document.querySelector('#gao-linen-risk-shell');
+ const host=document.querySelector('#gao-fabric-flow');
+ const button=document.querySelector('[data-fw-open]');
+ shell?.classList.toggle('fw-mode',enabled);
+ if(host)host.hidden=!enabled;
+ if(button){button.classList.toggle('active',enabled);button.setAttribute('aria-pressed',String(enabled))}
+}
 document.addEventListener('click',async e=>{
  const tab=e.target.closest('[data-fw-tab]');if(tab){state.tab=tab.dataset.fwTab;render();return}
- if(e.target.closest('[data-fw-open]')){state.mode=true;document.querySelector('#gao-linen-risk-shell')?.classList.add('fw-mode');const host=document.querySelector('#gao-fabric-flow');if(host)host.hidden=false;render();return}
- if(e.target.closest('[data-dimension-view]')){state.mode=false;document.querySelector('#gao-linen-risk-shell')?.classList.remove('fw-mode')}
+ if(e.target.closest('[data-fw-open]')){setFlowMode(true);render();return}
+ if(e.target.closest('[data-dimension-view]')){setFlowMode(false)}
  if(e.target.closest('[data-fw-refresh]')){await run(()=>reload());return}
  if(e.target.closest('[data-fw-create-order]')){await run(createOrder);return}
  if(e.target.closest('[data-fw-add-po-line]')){document.querySelector('[data-fw-po-lines]')?.insertAdjacentHTML('beforeend',poLineHtml());return}
@@ -180,7 +189,8 @@ function mount(){
  const shell=document.querySelector('#gao-linen-risk-shell');if(!shell)return;
  let nav=shell.querySelector('.lr150-dimension-nav');
  if(!nav){nav=document.createElement('div');nav.className='lr150-dimension-nav';shell.appendChild(nav)}
- if(!nav.querySelector('[data-fw-open]')){const b=document.createElement('button');b.type='button';b.dataset.fwOpen='';b.textContent='Fluxo tecido e facção';b.onclick=()=>{state.mode=true;document.querySelector('#gao-linen-risk-shell')?.classList.add('fw-mode');const host=document.querySelector('#gao-fabric-flow');if(host)host.hidden=false;};nav.appendChild(b)}
+ if(!nav.querySelector('[data-fw-open]')){const b=document.createElement('button');b.type='button';b.dataset.fwOpen='';b.textContent='Fluxo tecido e facção';nav.appendChild(b)}
+ const flowButton=nav.querySelector('[data-fw-open]');flowButton?.classList.toggle('active',state.mode);flowButton?.setAttribute('aria-pressed',String(state.mode));
  if(!shell.querySelector('#gao-fabric-flow')){const host=document.createElement('div');host.id='gao-fabric-flow';host.hidden=!state.mode;shell.appendChild(host);render();if(!state.org){init().then(render).catch(err=>{state.error=err.message;render()})}}
 }
 new MutationObserver(mount).observe(document.documentElement,{childList:true,subtree:true});
