@@ -1,6 +1,6 @@
 (()=>{ 
   const SB='https://fquzuxdqvhecijjuxbmg.supabase.co';
-  const KEY='sb_publishable_icrk6TaZexgiSIq63zX_ng_40JGaYlJ';
+  const KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZxdXp1eGRxdmhlY2lqanV4Ym1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk1ODg3NDEsImV4cCI6MjEwNTE2NDc0MX0.rE9sASn0lrz1bAqb_qC_BeCjAUkt182xlyMtciqpPGk';
   const STORAGE='sb-fquzuxdqvhecijjuxbmg-auth-token';
   let resolveReady;
   let booted=false;
