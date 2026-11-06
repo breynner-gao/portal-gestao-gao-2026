@@ -243,7 +243,8 @@ async function load() {
       factionMap: current.factionMap || {},
       factionSource: current.factionSource || '',
       cloudUpdatedAt: current.cloudUpdatedAt || '',
-      needsCloudSync: state.cloudReady && !shared
+      needsCloudSync: state.cloudReady && (!shared || Boolean(current.needsCloudSync)),
+      cloudStatus: shared && current.needsCloudSync ? 'Há uma base local mais recente que a compartilhada. Sincronize para atualizá-la para os demais dispositivos.' : state.cloudStatus
     };
     fetchOnlineFaction();
     return;
