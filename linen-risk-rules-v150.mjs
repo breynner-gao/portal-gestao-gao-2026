@@ -49,7 +49,16 @@ export function buildFactionMap(rows) {
       .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^A-Z0-9]+/gi, '').toUpperCase();
     if (['CONCLUIDO', 'CONCLUDO', 'CONCLUIDA', 'CONCLUDA', 'FINALIZADO', 'ENTREGUE', 'PRODUZIDO', 'ENCERRADO', 'CANCELADO'].includes(status)) return;
     const product = pick(row, 'PRODUTO', 'produto', 'produto_nome', 'Produto', 'Item');
-    const quantity = n(pick(row, 'QUANTIDADE', 'quantidade', 'Quantidade', 'QUANTIDADE DE', 'Quantidade de', 'ENTREGA', 'entrega'));
+    const hasPlannedQuantity = hasValue(row, 'QUANTIDADE', 'quantidade', 'Quantidade', 'QUANTIDADE DE', 'Quantidade de');
+    const hasDeliveryQuantity = hasValue(row, 'ENTREGA', 'entrega');
+    const plannedQuantity = n(pick(row, 'QUANTIDADE', 'quantidade', 'Quantidade', 'QUANTIDADE DE', 'Quantidade de'));
+    const deliveredQuantity = n(pick(row, 'ENTREGA', 'entrega'));
+    // Na planilha de facção, QUANTIDADE é a previsão e ENTREGA é o acumulado já recebido.
+    // O saldo ainda na facção é previsão menos entregue; em arquivos sem ENTREGA,
+    // mantém-se o comportamento de usar a própria quantidade como saldo informado.
+    const quantity = hasPlannedQuantity && hasDeliveryQuantity
+      ? Math.max(0, plannedQuantity - deliveredQuantity)
+      : n(pick(row, 'QUANTIDADE', 'quantidade', 'Quantidade', 'QUANTIDADE DE', 'Quantidade de', 'ENTREGA', 'entrega'));
     const key = normalizeItemKey(product);
     const compact = compactDimensionKey(product);
     const noMl = withoutMlKey(product);
