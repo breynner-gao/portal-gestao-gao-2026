@@ -106,7 +106,7 @@ async function cloudContext() {
   const member = (Array.isArray(memberships) ? memberships : []).find(item => item.organizations?.kind === 'gao' && item.organizations?.active);
   if (!member) throw Error('Seu usuário não tem vínculo ativo com a organização GAO.');
   const canWrite = ['Administrador Geral', 'Operacional'].includes(member.role_name);
-  return { token, organizationId: member.organization_id, canWrite };
+  return { token, userId, organizationId: member.organization_id, canWrite };
 }
 
 async function loadSharedSnapshot(context) {
@@ -148,7 +148,8 @@ async function syncSharedSnapshot() {
         source_rule: state.sourceRule || '',
         as_of: state.asOf || null,
         informed_at: state.informedAt || null,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        updated_by: context.userId
       })
     });
     const result = await response.json().catch(() => ({}));
