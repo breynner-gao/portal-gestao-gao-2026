@@ -5,7 +5,7 @@ const FACTION_DATA = '/assets/linen-production-pending-2026-10-13.json';
 const ONLINE_FACTION = 'https://docs.google.com/spreadsheets/d/1a8DJIkoxqbzNCz8O1BHmBEJFUpIukhILclCk5sv53i0/export?format=xlsx';
 const HISTORY_KEY = 'gao-linen-history-v1';
 const SUPABASE_URL = 'https://fquzuxdqvhecijjuxbmg.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_icrk6TaZexgiSIq63zX_ng_40JGaYl';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZxdXp1eGRxdmhlY2lqanV4Ym1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk1ODg3NDEsImV4cCI6MjEwNTE2NDc0MX0.rE9sASn0lrz1bAqb_qC_BeCjAUkt182xlyMtciqpPGk';
 const LINEN_SNAPSHOT_TABLE = 'linen_rfid_snapshots';
 const CURRENT_KEY = 'gao-linen-current-v1';
 const route = () => location.pathname.replace(/\/+$/, '') === '/enxoval-tecidos';
