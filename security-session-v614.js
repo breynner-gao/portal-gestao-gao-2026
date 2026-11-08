@@ -2,7 +2,7 @@
   'use strict';
   const IDLE_MS=30*60*1000, WARN_MS=25*60*1000;
   let last=Date.now(), warned=false, timer=null;
-  const isLogin=()=>location.pathname==='/login' || !!document.querySelector('.login-page');
+  const isLogin=()=>location.pathname==='/login' || !!document.querySelector('.login-page') || !!document.querySelector('#gao-supabase-auth-gate') || !!document.querySelector('#gao-auth-timeout');
   const cleanup=()=>{ try{ sessionStorage.clear(); Object.keys(localStorage).filter(k=>k.startsWith('gao.')||k.startsWith('GAO_')).forEach(k=>localStorage.removeItem(k)); }catch{} };
   function closeModal(){document.getElementById('gao-session-warning')?.remove(); warned=false;}
   function touch(){ if(isLogin()) return; last=Date.now(); if(warned) closeModal(); }
