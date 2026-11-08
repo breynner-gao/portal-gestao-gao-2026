@@ -18,6 +18,12 @@ test('tablet usa gaveta lateral vertical e botão móvel próprio', () => {
   assert.doesNotMatch(ui, /\.gao-nav\{[^}]*flex-flow:row wrap!important/);
 });
 
+test('recolher no desktop esconde a lateral inteira sem faixa cortada', () => {
+  assert.match(ui, /body\.gao-menu-collapsed \.gao-sidebar\{[^}]*width:0!important;[^}]*flex:0 0 0!important/);
+  assert.match(ui, /\.gao-mobile-menu-toggle\{position:fixed!important/);
+  assert.match(ui, /\.gao-sidebar \.gao-menu-toggle\{display:none!important\}/);
+});
+
 test('layout responsivo já está definido no HTML antes dos scripts do portal', () => {
   const head = index.slice(0, index.indexOf('<body'));
   assert.match(head, /id="gao-nav-responsive-early"/);
@@ -60,7 +66,7 @@ test('Enxoval e fluxo de tecido montam pela rota antiga com hash e pela rota dir
   assert.match(index, /linen-risk-panel-v150\.js\?v=230/);
   assert.match(index, /fabric-workflow-ui-v1\.js\?v=13/);
   assert.match(index, /portal-sgq-core\.js\?v=13/);
-  assert.match(index, /gao-ui-fix-v1\.js\?v=5/);
+  assert.match(index, /gao-ui-fix-v1\.js\?v=6/);
 });
 
 test('gaveta tem controle acessível e persiste preferência de abertura', () => {
