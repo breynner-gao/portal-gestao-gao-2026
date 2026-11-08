@@ -9,6 +9,25 @@ export function normalizeFabricNumber(value) {
 
 const nonnegative = value => Math.max(0, normalizeFabricNumber(value));
 
+export function normalizeFabricCatalogText(value) {
+  return String(value ?? '').trim().toUpperCase().replace(/\s+/g, ' ');
+}
+
+const normalizeFabricQuality = value => normalizeFabricCatalogText(value).replace(/^Q/, '');
+
+export function fabricCatalogVariantKey({ code = '', color_reference = '', quality_code = '' } = {}) {
+  return [normalizeFabricCatalogText(code), normalizeFabricCatalogText(color_reference), normalizeFabricQuality(quality_code)].join('|');
+}
+
+export function fabricInvoiceAliasKey({
+  supplier_id = '', supplier_item_code = '', supplier_item_description = '',
+  invoice_color_reference = '', invoice_quality_code = ''
+} = {}) {
+  return [normalizeFabricCatalogText(supplier_id), normalizeFabricCatalogText(supplier_item_code),
+    normalizeFabricCatalogText(supplier_item_description), normalizeFabricCatalogText(invoice_color_reference),
+    normalizeFabricQuality(invoice_quality_code)].join('|');
+}
+
 export function calculateFabricCoverage({
   needPieces = 0,
   openOrderPieces = 0,

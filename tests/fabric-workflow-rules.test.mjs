@@ -5,8 +5,32 @@ import {
   calculateFabricLoss,
   calculateFabricOrderCost,
   normalizeFabricNumber,
+  fabricCatalogVariantKey,
+  fabricInvoiceAliasKey,
   summarizeFabricPurchaseOrder
 } from '../fabric-workflow-rules-v1.mjs';
+
+test('catálogo distingue variante homologada por código, referência e qualidade sem duplicar diferenças de caixa/espaços', () => {
+  const base = fabricCatalogVariantKey({ code: ' AN048966464 ', color_reference: 'p53', quality_code: 'Q2' });
+  assert.equal(base, fabricCatalogVariantKey({ code: 'an048966464', color_reference: ' P53 ', quality_code: '2' }));
+  assert.notEqual(base, fabricCatalogVariantKey({ code: 'AN048966464', color_reference: 'V02', quality_code: '2' }));
+  assert.notEqual(base, fabricCatalogVariantKey({ code: 'AN048966464', color_reference: 'P53', quality_code: '1' }));
+});
+
+test('relação de NF considera fornecedor, código, texto bruto, referência e Q', () => {
+  const first = fabricInvoiceAliasKey({
+    supplier_id: 'supplier-a', supplier_item_code: 'item-01',
+    supplier_item_description: 'Tecido azul céu', invoice_color_reference: 'V02', invoice_quality_code: 'Q1'
+  });
+  assert.equal(first, fabricInvoiceAliasKey({
+    supplier_id: 'SUPPLIER-A', supplier_item_code: ' ITEM-01 ',
+    supplier_item_description: 'tecido azul céu', invoice_color_reference: 'v02', invoice_quality_code: '1'
+  }));
+  assert.notEqual(first, fabricInvoiceAliasKey({
+    supplier_id: 'supplier-b', supplier_item_code: 'item-01',
+    supplier_item_description: 'Tecido azul céu', invoice_color_reference: 'V02', invoice_quality_code: 'Q1'
+  }));
+});
 
 test('mostra recebimento parcial e inspeção separada da liberação do tecido', () => {
   const result = summarizeFabricPurchaseOrder({
