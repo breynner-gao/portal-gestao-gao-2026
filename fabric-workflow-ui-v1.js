@@ -1,3 +1,4 @@
+import { summarizeFabricPurchaseOrder } from '/fabric-workflow-rules-v1.mjs';
 (() => {
 'use strict';
 const SB='https://fquzuxdqvhecijjuxbmg.supabase.co';
