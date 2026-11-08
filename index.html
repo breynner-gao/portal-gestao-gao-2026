@@ -12,11 +12,24 @@
 <style id="gao-base-restore">:root{font-family:Inter,Segoe UI,Arial,sans-serif;color:#082d52;background:#f4f8fc}*{box-sizing:border-box}html,body,#root{margin:0;min-height:100%;width:100%}body{font-family:Inter,Segoe UI,Arial,sans-serif;background:#f4f8fc;color:#082d52;font-size:14px}a{color:#0d6fae;text-decoration:none}a:hover{text-decoration:underline}button,input,select,textarea{font:inherit}button{cursor:pointer}header{background:#fff;border-bottom:1px solid #d7e4ef}nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap}nav a{padding:8px 10px;border-radius:8px;color:#174a78;font-weight:700}nav a:hover{background:#eaf5ff;text-decoration:none}main{max-width:1600px;margin:0 auto;padding:24px}h1,h2,h3,h4{color:#082d52}h1{font-size:32px;margin:12px 0}h2{font-size:24px}label{color:#315675;font-weight:700}input,select,textarea{border:1px solid #b9d1e8;border-radius:8px;background:#fff;color:#082d52;padding:9px}button{border:1px solid #b9d1e8;border-radius:8px;background:#fff;color:#174a78;padding:9px 13px;font-weight:700}button:hover{background:#eaf5ff}.gao-menu-shell{background:#174a78}.gao-sidebar-logo{max-width:100%}@media(max-width:800px){main{padding:14px}h1{font-size:25px}}}</style>
 <style id="gao-nav-responsive-early">
   @media (max-width:900px) {
-    .gao-shell .gao-sidebar { position:relative!important; z-index:5!important; display:block!important; width:100%!important; min-width:0!important; max-width:none!important; flex:none!important; padding:16px!important; }
-    .gao-shell .gao-nav { position:relative!important; display:flex!important; flex-flow:row wrap!important; align-items:stretch!important; gap:6px!important; overflow:visible!important; padding:2px 0 8px!important; }
-    .gao-shell .gao-nav>a { display:flex!important; order:0!important; flex:0 1 auto!important; align-items:center!important; justify-content:center!important; min-height:48px!important; white-space:nowrap!important; touch-action:manipulation!important; }
-    .gao-shell .gao-nav>.gao-subnav.gao-menu-open { position:static!important; order:1!important; flex:1 0 100%!important; display:flex!important; flex-flow:row wrap!important; align-items:stretch!important; gap:6px!important; width:100%!important; margin:0!important; padding:8px!important; border:1px solid rgba(255,255,255,.25)!important; border-radius:12px!important; background:#0b3c63!important; }
+    html,body,#root { min-width:0!important; width:100%!important; overflow-x:hidden!important; }
+    .gao-shell { display:block!important; width:100%!important; min-height:100vh!important; }
+    .gao-shell .gao-sidebar { position:fixed!important; inset:0 auto 0 0!important; z-index:1002!important; display:block!important; width:min(84vw,320px)!important; min-width:min(84vw,320px)!important; max-width:min(84vw,320px)!important; height:100dvh!important; max-height:100dvh!important; overflow-x:hidden!important; overflow-y:auto!important; flex:none!important; padding:calc(22px + env(safe-area-inset-top)) 18px calc(22px + env(safe-area-inset-bottom))!important; transform:translateX(0)!important; transition:transform .22s ease!important; }
+    body.gao-mobile-menu-closed .gao-sidebar { transform:translateX(-110%)!important; }
+    .gao-shell.gao-menu-shell, body.gao-menu-collapsed .gao-menu-shell { width:auto!important; min-width:0!important; max-width:none!important; overflow:visible!important; }
+    body.gao-menu-collapsed .gao-menu-shell .gao-sidebar { width:min(84vw,320px)!important; min-width:min(84vw,320px)!important; max-width:min(84vw,320px)!important; }
+    .gao-sidebar .gao-menu-toggle { display:none!important; }
+    .gao-shell .gao-nav { position:static!important; display:grid!important; grid-template-columns:minmax(0,1fr)!important; align-items:stretch!important; gap:5px!important; overflow:visible!important; padding:2px 0 8px!important; }
+    .gao-shell .gao-nav>a { display:flex!important; align-items:center!important; justify-content:flex-start!important; min-width:0!important; min-height:48px!important; white-space:normal!important; touch-action:manipulation!important; }
+    .gao-shell .gao-nav>.gao-subnav.gao-menu-open { position:static!important; display:grid!important; grid-template-columns:minmax(0,1fr)!important; gap:3px!important; width:auto!important; margin:0 0 8px 12px!important; padding:4px 0 4px 12px!important; border:0!important; border-left:1px solid rgba(255,255,255,.35)!important; border-radius:0!important; background:transparent!important; }
     .gao-shell .gao-subnav a { display:flex!important; align-items:center!important; min-height:44px!important; }
+    .gao-shell .gao-body { display:block!important; width:100%!important; max-width:100%!important; min-width:0!important; margin:0!important; }
+    .gao-mobile-menu-toggle { position:fixed!important; top:calc(12px + env(safe-area-inset-top))!important; left:calc(min(84vw,320px) - 60px)!important; z-index:1004!important; display:grid!important; place-items:center!important; width:48px!important; height:48px!important; padding:0!important; border:1px solid rgba(255,255,255,.35)!important; border-radius:12px!important; background:#124b78!important; color:#fff!important; font-size:24px!important; font-weight:800!important; line-height:1!important; box-shadow:0 4px 16px rgba(5,35,60,.24)!important; }
+    .gao-mobile-menu-backdrop { position:fixed!important; inset:0!important; z-index:1001!important; display:block!important; background:rgba(4,22,38,.48)!important; }
+    body.gao-mobile-menu-closed .gao-mobile-menu-backdrop { display:none!important; }
+    body.gao-mobile-menu-closed .gao-mobile-menu-toggle { left:12px!important; background:#fff!important; color:#124b78!important; border-color:#d5e3ee!important; }
+    .gao-header { min-height:72px!important; height:auto!important; padding:14px 16px 14px 72px!important; }
+    .gao-main { padding:22px 16px!important; }
   }
 </style>
 </head>
@@ -143,6 +156,6 @@
   <script src="/portal-sgq-core.js?v=13"></script>
 <script src="/chemicals-launch-v1.js?v=2"></script>
   <script src="/src/rouparia-operations-v2.js?v=3"></script>
-  <script src="/src/gao-ui-fix-v1.js?v=3"></script>
+  <script src="/src/gao-ui-fix-v1.js?v=4"></script>
 </body>
 </html>
