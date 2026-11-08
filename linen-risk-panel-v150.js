@@ -827,6 +827,12 @@ function render() {
   const panelHost = document.querySelector('.page-stack .data-panel');
   const heading = panelHost?.querySelector('.section-heading');
   if (!panelHost || !heading) return;
+  const loadingStatus = heading.querySelector('p');
+  if (loadingStatus) {
+    if (state.error) loadingStatus.textContent = 'Base RFID não carregada';
+    else if (state.loaded) loadingStatus.textContent = `${br(state.baseRows.length)} itens carregados${state.asOf ? ` • posição ${dateBr(state.asOf)}` : ''}`;
+    else loadingStatus.textContent = 'Carregando base RFID…';
+  }
   let shell = document.querySelector('#gao-linen-risk-shell');
   if (!shell) {
     shell = document.createElement('div');
