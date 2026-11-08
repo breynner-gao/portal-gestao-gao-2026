@@ -15,6 +15,9 @@ on:
       - "tests/fabric-workflow-*.test.mjs"
       - "security-session-v614.js"
       - "tests/security-session.test.mjs"
+      - "portal-sgq-core.js"
+      - "src/gao-ui-fix-v1.js"
+      - "tests/navigation-responsive.test.mjs"
       - "supabase/migrations/**"
       - ".github/workflows/rouparia-cloudflare-smoke.yml"
   pull_request:
@@ -30,6 +33,9 @@ on:
       - "tests/fabric-workflow-*.test.mjs"
       - "security-session-v614.js"
       - "tests/security-session.test.mjs"
+      - "portal-sgq-core.js"
+      - "src/gao-ui-fix-v1.js"
+      - "tests/navigation-responsive.test.mjs"
       - "supabase/migrations/**"
       - ".github/workflows/rouparia-cloudflare-smoke.yml"
   workflow_dispatch:
@@ -57,12 +63,17 @@ jobs:
           node --check fabric-workflow-ui-v1.js
           node --check fabric-workflow-rules-v1.mjs
           node --check security-session-v614.js
+          node --check portal-sgq-core.js
+          node --check src/gao-ui-fix-v1.js
 
       - name: Check fabric workflow calculations
         run: node --test tests/fabric-workflow-rules.test.mjs
 
       - name: Check security session behavior
         run: node --test tests/security-session.test.mjs
+
+      - name: Check module navigation behavior
+        run: node --test tests/navigation-responsive.test.mjs
 
       - name: Check request types against Supabase constraint
         run: |
@@ -100,10 +111,14 @@ jobs:
           expected_hash="$(sha256sum src/rouparia-operations-v2.js | awk '{print $1}')"
           expected_fabric_hash="$(sha256sum fabric-workflow-ui-v1.js | awk '{print $1}')"
           expected_session_hash="$(sha256sum security-session-v614.js | awk '{print $1}')"
+          expected_core_hash="$(sha256sum portal-sgq-core.js | awk '{print $1}')"
+          expected_nav_hash="$(sha256sum src/gao-ui-fix-v1.js | awk '{print $1}')"
           script_ref="$(grep -oE '/src/rouparia-operations-v2\.js\?v=[0-9]+' index.html | head -n 1)"
           fabric_ref="$(grep -oE '/fabric-workflow-ui-v1\.js\?v=[0-9]+' index.html | head -n 1)"
           session_ref="$(grep -oE '/security-session-v614\.js\?v=[0-9]+' index.html | head -n 1)"
-          if [ -z "$script_ref" ] || [ -z "$fabric_ref" ] || [ -z "$session_ref" ]; then
+          core_ref="$(grep -oE '/portal-sgq-core\.js\?v=[0-9]+' index.html | head -n 1)"
+          nav_ref="$(grep -oE '/src/gao-ui-fix-v1\.js\?v=[0-9]+' index.html | head -n 1)"
+          if [ -z "$script_ref" ] || [ -z "$fabric_ref" ] || [ -z "$session_ref" ] || [ -z "$core_ref" ] || [ -z "$nav_ref" ]; then
             echo "Não encontrei as referências versionadas dos módulos no index.html."
             exit 1
           fi
@@ -114,6 +129,8 @@ jobs:
               && grep --fixed-strings --quiet "$script_ref" "$RUNNER_TEMP/live-index.html" \
               && grep --fixed-strings --quiet "$fabric_ref" "$RUNNER_TEMP/live-index.html" \
               && grep --fixed-strings --quiet "$session_ref" "$RUNNER_TEMP/live-index.html" \
+              && grep --fixed-strings --quiet "$core_ref" "$RUNNER_TEMP/live-index.html" \
+              && grep --fixed-strings --quiet "$nav_ref" "$RUNNER_TEMP/live-index.html" \
               && curl --fail --silent --show-error --location --max-time 20 \
                 "$base/src/rouparia-operations-v2.js?ci=$COMMIT_SHA" \
                 -o "$RUNNER_TEMP/live-rouparia.js" \
@@ -122,12 +139,20 @@ jobs:
                 -o "$RUNNER_TEMP/live-fabric.js" \
               && curl --fail --silent --show-error --location --max-time 20 \
                 "$base/security-session-v614.js?ci=$COMMIT_SHA" \
-                -o "$RUNNER_TEMP/live-session.js"; then
+                -o "$RUNNER_TEMP/live-session.js" \
+              && curl --fail --silent --show-error --location --max-time 20 \
+                "$base/portal-sgq-core.js?ci=$COMMIT_SHA" \
+                -o "$RUNNER_TEMP/live-core.js" \
+              && curl --fail --silent --show-error --location --max-time 20 \
+                "$base/src/gao-ui-fix-v1.js?ci=$COMMIT_SHA" \
+                -o "$RUNNER_TEMP/live-nav.js"; then
               live_hash="$(sha256sum "$RUNNER_TEMP/live-rouparia.js" | awk '{print $1}')"
               live_fabric_hash="$(sha256sum "$RUNNER_TEMP/live-fabric.js" | awk '{print $1}')"
               live_session_hash="$(sha256sum "$RUNNER_TEMP/live-session.js" | awk '{print $1}')"
-              if [ "$live_hash" = "$expected_hash" ] && [ "$live_fabric_hash" = "$expected_fabric_hash" ] && [ "$live_session_hash" = "$expected_session_hash" ]; then
-                echo "Cloudflare serve os módulos Rouparia, tecido/facção e sessão correspondentes ao commit $COMMIT_SHA."
+              live_core_hash="$(sha256sum "$RUNNER_TEMP/live-core.js" | awk '{print $1}')"
+              live_nav_hash="$(sha256sum "$RUNNER_TEMP/live-nav.js" | awk '{print $1}')"
+              if [ "$live_hash" = "$expected_hash" ] && [ "$live_fabric_hash" = "$expected_fabric_hash" ] && [ "$live_session_hash" = "$expected_session_hash" ] && [ "$live_core_hash" = "$expected_core_hash" ] && [ "$live_nav_hash" = "$expected_nav_hash" ]; then
+                echo "Cloudflare serve Rouparia, tecido/facção, sessão e navegação correspondentes ao commit $COMMIT_SHA."
                 exit 0
               fi
             fi

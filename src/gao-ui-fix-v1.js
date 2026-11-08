@@ -11,7 +11,7 @@
       --gao-text:#0b3156;
     }
     .gao-shell{background:var(--gao-bg)!important;color:var(--gao-text)!important}
-    .gao-sidebar{position:relative!important;width:344px!important;flex:0 0 344px!important;background:var(--gao-navy)!important;padding:22px 20px!important;transition:width .2s ease,padding .2s ease!important;overflow:visible!important}
+    .gao-sidebar{position:relative!important;width:344px!important;flex:0 0 344px!important;background:var(--gao-navy)!important;padding:22px 20px!important;transition:width .2s ease,padding .2s ease!important;overflow:visible!important;z-index:5!important}
     .gao-brand{display:flex!important;align-items:center!important;gap:11px!important;margin:4px 14px 34px!important;color:#fff!important;min-height:54px!important}
     .gao-brand .gao-logo{width:48px!important;height:34px!important;flex:0 0 48px!important}
     .gao-brand>span{font-size:23px!important;line-height:1.05!important;font-weight:900!important;white-space:nowrap!important}
@@ -20,7 +20,6 @@
     .gao-nav>a{font-size:18px!important;padding:13px 14px!important;border-radius:12px!important;color:#fff!important}
     .gao-nav>a:hover,.gao-nav>a.active{background:#3479a9!important}
     .gao-subnav{display:none!important;margin:0 0 8px 14px!important;padding:7px 0 4px 14px!important;border-left:1px solid rgba(255,255,255,.35)!important;gap:2px!important}
-    .gao-subnav.gao-menu-open{display:grid!important}
     .gao-subnav:has(a.active){display:grid!important}
     .gao-subnav a{color:#dceefa!important;padding:10px 12px!important;border-radius:9px!important;font-size:15px!important}
     .gao-subnav a:hover,.gao-subnav a.active{background:#2f6f9e!important;color:#fff!important}
@@ -28,8 +27,15 @@
     .gao-header{background:#fff!important;border-bottom:1px solid var(--gao-border)!important}
     .gao-main{background:var(--gao-bg)!important}
     .gao-rouparia-flow-menu{display:none!important}
+    .gao-nav>a[href="/rouparia"]:hover+.gao-subnav,.gao-subnav:hover{display:none!important}
     @media(max-width:900px){
       .gao-sidebar{width:100%!important;flex-basis:auto!important}
+      .gao-nav{position:relative!important;display:flex!important;flex-flow:row wrap!important;align-items:stretch!important;gap:6px!important;overflow:visible!important;padding:2px 0 8px!important}
+      .gao-nav>a{display:flex!important;align-items:center!important;justify-content:center!important;flex:0 1 auto!important;min-height:48px!important;white-space:nowrap!important;font-size:15px!important;padding:12px 14px!important;touch-action:manipulation!important}
+      .gao-nav>a[href="/rouparia"]:hover+.gao-subnav,.gao-subnav:hover{display:none!important}
+      .gao-subnav,.gao-subnav:has(a.active){position:absolute!important;top:calc(100% - 2px)!important;left:0!important;z-index:20!important;width:min(320px,calc(100vw - 36px))!important;max-height:60vh!important;overflow:auto!important;margin:0!important;padding:8px!important;border:1px solid rgba(255,255,255,.25)!important;border-radius:12px!important;background:var(--gao-navy-dark)!important;box-shadow:0 12px 30px rgba(0,0,0,.25)!important}
+      .gao-subnav:not(:has(a.active)){display:none!important}
+      .gao-subnav a{min-height:44px!important;display:flex!important;align-items:center!important}
     }
   `;
   function injectStyle(){
@@ -45,20 +51,6 @@
     injectStyle();
     const side=document.querySelector('.gao-sidebar');if(!side)return;
     ensureBrand(side);
-    const link=side.querySelector('.gao-nav>a[href="/rouparia"]');
-    const sub=side.querySelector('.gao-subnav');
-    if(link&&sub&&!link.dataset.gaoMenuFix){
-      link.dataset.gaoMenuFix='1';
-      const subroute=/^\/rouparia\/(contratos|rotas|coletas|cadastros)/.test(location.pathname);
-      const open=()=>{sub.classList.add('gao-menu-open');link.setAttribute('aria-expanded','true')};
-      const close=()=>{if(!/^\/rouparia\/(contratos|rotas|coletas|cadastros)/.test(location.pathname)){sub.classList.remove('gao-menu-open');link.setAttribute('aria-expanded','false')}};
-      link.setAttribute('aria-haspopup','true');
-      link.setAttribute('aria-expanded',subroute?'true':'false');
-      if(subroute)open(); else sub.classList.remove('gao-menu-open');
-      link.addEventListener('click',e=>{e.preventDefault();sub.classList.toggle('gao-menu-open');link.setAttribute('aria-expanded',sub.classList.contains('gao-menu-open')?'true':'false')});
-      sub.addEventListener('click',()=>sub.classList.add('gao-menu-open'));
-      side.querySelectorAll('.gao-nav>a:not([href="/rouparia"])').forEach(a=>a.addEventListener('click',close));
-    }
   }
   new MutationObserver(setup).observe(document.documentElement,{childList:true,subtree:true});
   window.addEventListener('load',setup);
