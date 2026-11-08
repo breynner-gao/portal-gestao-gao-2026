@@ -156,3 +156,14 @@ export function summarizeFabricPurchaseOrder({ orderStatus = 'ABERTA', items = [
     lines
   };
 }
+
+export function groupPendingFabricLotsByInvoice(lots = []) {
+  const groups = new Map();
+  for (const lot of lots) {
+    if (!['PENDENTE', 'REPROVADO'].includes(String(lot.quality_status || '').toUpperCase())) continue;
+    const invoice = String(lot.invoice_number || '').trim() || `Sem NF • ${lot.lot_code || lot.id}`;
+    if (!groups.has(invoice)) groups.set(invoice, []);
+    groups.get(invoice).push(lot);
+  }
+  return [...groups.entries()].map(([invoice, invoiceLots]) => ({ invoice, lots: invoiceLots }));
+}

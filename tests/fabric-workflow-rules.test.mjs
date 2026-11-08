@@ -7,8 +7,22 @@ import {
   normalizeFabricNumber,
   fabricCatalogVariantKey,
   fabricInvoiceAliasKey,
-  summarizeFabricPurchaseOrder
+  summarizeFabricPurchaseOrder,
+  groupPendingFabricLotsByInvoice
 } from '../fabric-workflow-rules-v1.mjs';
+
+test('organiza avaliação de qualidade em grupos por nota sem misturar notas ou lotes concluídos', () => {
+  const groups = groupPendingFabricLotsByInvoice([
+    { id: 'a', lot_code: 'a', invoice_number: 'NF-1', quality_status: 'PENDENTE' },
+    { id: 'b', lot_code: 'b', invoice_number: 'NF-1', quality_status: 'PENDENTE' },
+    { id: 'c', lot_code: 'c', invoice_number: 'NF-2', quality_status: 'PENDENTE' },
+    { id: 'd', lot_code: 'd', invoice_number: 'NF-1', quality_status: 'APROVADO' },
+    { id: 'e', lot_code: 'e', quality_status: 'REPROVADO' }
+  ]);
+  assert.deepEqual(groups.map(group => [group.invoice, group.lots.map(lot => lot.id)]), [
+    ['NF-1', ['a', 'b']], ['NF-2', ['c']], ['Sem NF • e', ['e']]
+  ]);
+});
 
 test('catálogo distingue variante homologada por código, referência e qualidade sem duplicar diferenças de caixa/espaços', () => {
   const base = fabricCatalogVariantKey({ code: ' AN048966464 ', color_reference: 'p53', quality_code: 'Q2' });

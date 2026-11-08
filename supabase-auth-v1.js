@@ -4,6 +4,7 @@
   const STORAGE='sb-fquzuxdqvhecijjuxbmg-auth-token';
   let resolveReady;
   let booted=false;
+  let refreshPromise=null;
   window.GAO_AUTH_READY=new Promise(resolve=>{resolveReady=resolve});
 
   const read=()=>{
@@ -24,6 +25,15 @@
     const data=await response.json().catch(()=>({}));
     if(!response.ok)throw Error(data.error_description||data.msg||data.message||'Não foi possível autenticar.');
     return data;
+  };
+  window.GAO_REFRESH_SESSION=async()=>{
+    if(refreshPromise)return refreshPromise;
+    refreshPromise=(async()=>{
+      const current=read()||window.GAO_AUTH_SESSION;
+      if(!current?.refresh_token)throw Error('A sessão expirou. Entre novamente no Portal.');
+      return save(await request('/auth/v1/token?grant_type=refresh_token',{refresh_token:current.refresh_token}));
+    })();
+    try{return await refreshPromise}finally{refreshPromise=null}
   };
   const showGate=()=>{
     if(document.getElementById('gao-supabase-auth-gate'))return;
@@ -59,7 +69,7 @@
     let session=read();
     if(session&&session.expires_at&&session.expires_at*1000<Date.now()+30000){
       try{
-        session=save(await request('/auth/v1/token?grant_type=refresh_token',{refresh_token:session.refresh_token}));
+        session=await window.GAO_REFRESH_SESSION();
       }catch{clear();session=null}
     }
     if(session){
