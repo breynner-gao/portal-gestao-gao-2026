@@ -4,8 +4,50 @@ import {
   calculateFabricCoverage,
   calculateFabricLoss,
   calculateFabricOrderCost,
-  normalizeFabricNumber
+  normalizeFabricNumber,
+  summarizeFabricPurchaseOrder
 } from '../fabric-workflow-rules-v1.mjs';
+
+test('mostra recebimento parcial e inspeção separada da liberação do tecido', () => {
+  const result = summarizeFabricPurchaseOrder({
+    orderStatus: 'PARCIAL',
+    items: [{ id: 'item-1', ordered_m: 100, received_m: 40 }],
+    receipts: [{ purchase_order_item_id: 'item-1', lot_id: 'lot-1', quantity_received_m: 40 }],
+    lots: [{ id: 'lot-1', quality_status: 'PENDENTE' }]
+  });
+  assert.equal(result.status, 'PARCIAL');
+  assert.equal(result.label, 'Recebimento parcial');
+  assert.equal(result.orderedMeters, 100);
+  assert.equal(result.receivedMeters, 40);
+  assert.equal(result.lines[0].pendingMeters, 60);
+  assert.equal(result.lines[0].label, 'Parcial • aguardando inspeção');
+});
+
+test('só marca o pedido como liberado quando todo o tecido recebido está aprovado', () => {
+  const result = summarizeFabricPurchaseOrder({
+    orderStatus: 'RECEBIDA',
+    items: [{ id: 'item-1', ordered_m: 20, received_m: 20 }],
+    receipts: [{ purchase_order_item_id: 'item-1', lot_id: 'lot-1', quantity_received_m: 20 }],
+    lots: [{ id: 'lot-1', quality_status: 'APROVADO' }]
+  });
+  assert.equal(result.status, 'LIBERADA');
+  assert.equal(result.label, 'Concluído • liberado no estoque');
+  assert.equal(result.lines[0].label, 'Recebido • aprovado');
+});
+
+test('mantém pedidos cancelados fora do fluxo de recebimento e identifica lote reprovado', () => {
+  const cancelled = summarizeFabricPurchaseOrder({ orderStatus: 'CANCELADA', items: [{ id: 'i', ordered_m: 5, received_m: 0 }] });
+  const rejected = summarizeFabricPurchaseOrder({
+    orderStatus: 'RECEBIDA',
+    items: [{ id: 'i', ordered_m: 5, received_m: 5 }],
+    receipts: [{ purchase_order_item_id: 'i', lot_id: 'l', quantity_received_m: 5 }],
+    lots: [{ id: 'l', quality_status: 'REPROVADO' }]
+  });
+  assert.equal(cancelled.status, 'CANCELADA');
+  assert.equal(cancelled.label, 'Cancelado');
+  assert.equal(rejected.status, 'REPROVADA');
+  assert.equal(rejected.lines[0].label, 'Recebido • lote reprovado');
+});
 
 test('não duplica a quantidade de peças já coberta por ordens abertas', () => {
   const result = calculateFabricCoverage({

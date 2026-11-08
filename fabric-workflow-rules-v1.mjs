@@ -82,3 +82,58 @@ export function calculateFabricLoss({
     acceptancePercent: produced > 0 ? Math.min(100, nonnegative(acceptedPieces) / produced * 100) : 0
   };
 }
+
+export function summarizeFabricPurchaseOrder({ orderStatus = 'ABERTA', items = [], receipts = [], lots = [] } = {}) {
+  const epsilon = 0.0005;
+  const lotById = new Map(lots.map(lot => [String(lot.id), String(lot.quality_status || '').toUpperCase()]));
+  const lines = items.map(item => {
+    const orderedMeters = nonnegative(item.ordered_m);
+    const receivedMeters = nonnegative(item.received_m);
+    const pendingMeters = Math.max(0, orderedMeters - receivedMeters);
+    const lineReceipts = receipts.filter(receipt => String(receipt.purchase_order_item_id) === String(item.id));
+    const qualities = lineReceipts.map(receipt => lotById.get(String(receipt.lot_id))).filter(Boolean);
+    const quality = qualities.includes('REPROVADO')
+      ? 'REPROVADO'
+      : qualities.includes('PENDENTE') || (lineReceipts.length && qualities.length < lineReceipts.length)
+        ? 'PENDENTE'
+        : qualities.length && qualities.every(status => status === 'APROVADO')
+          ? 'APROVADO'
+          : '';
+    let label;
+    if (receivedMeters <= epsilon) label = 'Aguardando recebimento';
+    else {
+      const qualityLabel = quality === 'REPROVADO' ? 'lote reprovado'
+        : quality === 'PENDENTE' ? 'aguardando inspeção'
+          : quality === 'APROVADO' ? 'aprovado' : 'qualidade não identificada';
+      label = (pendingMeters > epsilon ? 'Parcial' : 'Recebido') + ' • ' + qualityLabel;
+    }
+    return { id: item.id, orderedMeters, receivedMeters, pendingMeters, quality, label };
+  });
+  const orderedMeters = lines.reduce((sum, line) => sum + line.orderedMeters, 0);
+  const receivedMeters = lines.reduce((sum, line) => sum + line.receivedMeters, 0);
+  const complete = lines.length > 0 && lines.every(line => line.pendingMeters <= epsilon);
+  const allApproved = complete && lines.every(line => line.quality === 'APROVADO');
+  const hasRejected = lines.some(line => line.quality === 'REPROVADO');
+  const cancelled = String(orderStatus).toUpperCase() === 'CANCELADA';
+  const status = cancelled ? 'CANCELADA'
+    : complete && hasRejected ? 'REPROVADA'
+      : allApproved ? 'LIBERADA'
+        : complete ? 'AGUARDA_QUALIDADE'
+          : receivedMeters > epsilon ? 'PARCIAL' : 'ABERTA';
+  const labels = {
+    CANCELADA: 'Cancelado',
+    REPROVADA: 'Recebido • lote reprovado',
+    LIBERADA: 'Concluído • liberado no estoque',
+    AGUARDA_QUALIDADE: 'Recebido • aguardando inspeção',
+    PARCIAL: 'Recebimento parcial',
+    ABERTA: 'Aguardando recebimento'
+  };
+  return {
+    status,
+    label: labels[status],
+    orderedMeters,
+    receivedMeters,
+    pendingMeters: Math.max(0, orderedMeters - receivedMeters),
+    lines
+  };
+}
