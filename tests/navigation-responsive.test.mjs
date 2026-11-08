@@ -4,11 +4,21 @@ import { readFile } from 'node:fs/promises';
 
 const ui = await readFile(new URL('../src/gao-ui-fix-v1.js', import.meta.url), 'utf8');
 const core = await readFile(new URL('../portal-sgq-core.js', import.meta.url), 'utf8');
+const index = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+const linen = await readFile(new URL('../linen-risk-panel-v150.js', import.meta.url), 'utf8');
+const fabric = await readFile(new URL('../fabric-workflow-ui-v1.js', import.meta.url), 'utf8');
 
 test('menu de tablet mantém os módulos em botões separados e fáceis de tocar', () => {
   assert.match(ui, /@media\(max-width:900px\)[\s\S]*?\.gao-nav\{[^}]*display:flex!important;[^}]*flex-flow:row wrap!important/);
   assert.match(ui, /\.gao-nav>a\{[^}]*min-height:48px!important/);
   assert.match(ui, /\.gao-nav>a\{[^}]*touch-action:manipulation!important/);
+});
+
+test('layout responsivo já está definido no HTML antes dos scripts do portal', () => {
+  const head = index.slice(0, index.indexOf('<body'));
+  assert.match(head, /id="gao-nav-responsive-early"/);
+  assert.match(head, /@media\s*\(max-width:\s*900px\)[\s\S]*?\.gao-shell\s+\.gao-nav\s*\{[^}]*display:flex!important/);
+  assert.match(head, /\.gao-shell\s+\.gao-nav\s*>a\s*\{[^}]*min-height:48px!important/);
 });
 
 test('atalhos da Rouparia abrem em camada própria e não deslocam os módulos', () => {
@@ -36,4 +46,11 @@ test('cada módulo principal tem um destino único', () => {
   for (const [module, destination] of Object.entries(expected)) {
     assert.equal(href(module), destination, `destino incorreto para ${module}`);
   }
+});
+
+test('Enxoval e fluxo de tecido montam pela rota antiga com hash e pela rota direta', () => {
+  assert.match(linen, /path === '\/enxoval-tecidos' \|\| location\.hash === '#enxoval' \|\| location\.hash === '#enxoval-tecidos'/);
+  assert.match(fabric, /path==='\/enxoval-tecidos'\|\|location\.hash==='#enxoval'\|\|location\.hash==='#enxoval-tecidos'/);
+  assert.match(index, /linen-risk-panel-v150\.js\?v=230/);
+  assert.match(index, /fabric-workflow-ui-v1\.js\?v=13/);
 });

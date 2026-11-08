@@ -113,12 +113,14 @@ jobs:
           expected_session_hash="$(sha256sum security-session-v614.js | awk '{print $1}')"
           expected_core_hash="$(sha256sum portal-sgq-core.js | awk '{print $1}')"
           expected_nav_hash="$(sha256sum src/gao-ui-fix-v1.js | awk '{print $1}')"
+          expected_linen_hash="$(sha256sum linen-risk-panel-v150.js | awk '{print $1}')"
           script_ref="$(grep -oE '/src/rouparia-operations-v2\.js\?v=[0-9]+' index.html | head -n 1)"
           fabric_ref="$(grep -oE '/fabric-workflow-ui-v1\.js\?v=[0-9]+' index.html | head -n 1)"
           session_ref="$(grep -oE '/security-session-v614\.js\?v=[0-9]+' index.html | head -n 1)"
           core_ref="$(grep -oE '/portal-sgq-core\.js\?v=[0-9]+' index.html | head -n 1)"
           nav_ref="$(grep -oE '/src/gao-ui-fix-v1\.js\?v=[0-9]+' index.html | head -n 1)"
-          if [ -z "$script_ref" ] || [ -z "$fabric_ref" ] || [ -z "$session_ref" ] || [ -z "$core_ref" ] || [ -z "$nav_ref" ]; then
+          linen_ref="$(grep -oE '/linen-risk-panel-v150\.js\?v=[0-9]+' index.html | head -n 1)"
+          if [ -z "$script_ref" ] || [ -z "$fabric_ref" ] || [ -z "$session_ref" ] || [ -z "$core_ref" ] || [ -z "$nav_ref" ] || [ -z "$linen_ref" ]; then
             echo "Não encontrei as referências versionadas dos módulos no index.html."
             exit 1
           fi
@@ -131,6 +133,8 @@ jobs:
               && grep --fixed-strings --quiet "$session_ref" "$RUNNER_TEMP/live-index.html" \
               && grep --fixed-strings --quiet "$core_ref" "$RUNNER_TEMP/live-index.html" \
               && grep --fixed-strings --quiet "$nav_ref" "$RUNNER_TEMP/live-index.html" \
+              && grep --fixed-strings --quiet "$linen_ref" "$RUNNER_TEMP/live-index.html" \
+              && grep --fixed-strings --quiet 'gao-nav-responsive-early' "$RUNNER_TEMP/live-index.html" \
               && curl --fail --silent --show-error --location --max-time 20 \
                 "$base/src/rouparia-operations-v2.js?ci=$COMMIT_SHA" \
                 -o "$RUNNER_TEMP/live-rouparia.js" \
@@ -145,14 +149,18 @@ jobs:
                 -o "$RUNNER_TEMP/live-core.js" \
               && curl --fail --silent --show-error --location --max-time 20 \
                 "$base/src/gao-ui-fix-v1.js?ci=$COMMIT_SHA" \
-                -o "$RUNNER_TEMP/live-nav.js"; then
+                -o "$RUNNER_TEMP/live-nav.js" \
+              && curl --fail --silent --show-error --location --max-time 20 \
+                "$base/linen-risk-panel-v150.js?ci=$COMMIT_SHA" \
+                -o "$RUNNER_TEMP/live-linen.js"; then
               live_hash="$(sha256sum "$RUNNER_TEMP/live-rouparia.js" | awk '{print $1}')"
               live_fabric_hash="$(sha256sum "$RUNNER_TEMP/live-fabric.js" | awk '{print $1}')"
               live_session_hash="$(sha256sum "$RUNNER_TEMP/live-session.js" | awk '{print $1}')"
               live_core_hash="$(sha256sum "$RUNNER_TEMP/live-core.js" | awk '{print $1}')"
               live_nav_hash="$(sha256sum "$RUNNER_TEMP/live-nav.js" | awk '{print $1}')"
-              if [ "$live_hash" = "$expected_hash" ] && [ "$live_fabric_hash" = "$expected_fabric_hash" ] && [ "$live_session_hash" = "$expected_session_hash" ] && [ "$live_core_hash" = "$expected_core_hash" ] && [ "$live_nav_hash" = "$expected_nav_hash" ]; then
-                echo "Cloudflare serve Rouparia, tecido/facção, sessão e navegação correspondentes ao commit $COMMIT_SHA."
+              live_linen_hash="$(sha256sum "$RUNNER_TEMP/live-linen.js" | awk '{print $1}')"
+              if [ "$live_hash" = "$expected_hash" ] && [ "$live_fabric_hash" = "$expected_fabric_hash" ] && [ "$live_session_hash" = "$expected_session_hash" ] && [ "$live_core_hash" = "$expected_core_hash" ] && [ "$live_nav_hash" = "$expected_nav_hash" ] && [ "$live_linen_hash" = "$expected_linen_hash" ]; then
+                echo "Cloudflare serve Rouparia, tecido/facção, sessão, navegação e enxoval correspondentes ao commit $COMMIT_SHA."
                 exit 0
               fi
             fi

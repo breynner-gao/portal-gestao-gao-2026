@@ -8,7 +8,10 @@ const SUPABASE_URL = 'https://fquzuxdqvhecijjuxbmg.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZxdXp1eGRxdmhlY2lqanV4Ym1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk1ODg3NDEsImV4cCI6MjEwNTE2NDc0MX0.rE9sASn0lrz1bAqb_qC_BeCjAUkt182xlyMtciqpPGk';
 const LINEN_SNAPSHOT_TABLE = 'linen_rfid_snapshots';
 const CURRENT_KEY = 'gao-linen-current-v1';
-const route = () => location.pathname.replace(/\/+$/, '') === '/enxoval-tecidos';
+const route = () => {
+  const path = location.pathname.replace(/\/+$/, '');
+  return path === '/enxoval-tecidos' || location.hash === '#enxoval' || location.hash === '#enxoval-tecidos';
+};
 const br = (v, d = 0) => Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: d, minimumFractionDigits: d });
 const dateBr = value => {
   if (!value) return '';

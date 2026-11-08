@@ -270,7 +270,7 @@ document.addEventListener('submit',async e=>{const form=e.target.closest('[data-
 async function syncOrderStatuses(){for(const o of state.orders.filter(x=>['ABERTA','PARCIAL','ENVIADA'].includes(x.status))){const items=state.items.filter(i=>i.order_id===o.id);if(!items.length)continue;const done=items.every(i=>orderStats(i).accepted+orderStats(i).rejected>=n(i.ordered_pieces));const any=items.some(i=>orderStats(i).accepted+orderStats(i).rejected>0);const sent=items.some(i=>orderStats(i).issued>0);const status=done?'CONCLUIDA':any?'PARCIAL':sent?'ENVIADA':'ABERTA';if(status!==o.status)await api('/rest/v1/fabric_production_orders?id=eq.'+o.id,{method:'PATCH',body:JSON.stringify({status,updated_at:new Date().toISOString()})})}}
 async function run(fn){if(state.busy)return;state.busy=true;state.error='';render();try{await fn();await reload();await syncOrderStatuses();await reload()}catch(err){state.error=err.message||String(err)}finally{state.busy=false;render()}}
 function mount(){
- const route=location.pathname.replace(/\/+$/,'')==='/enxoval-tecidos';if(!route){document.querySelector('#gao-fabric-flow')?.remove();return}
+ const path=location.pathname.replace(/\/+$/,'');const route=path==='/enxoval-tecidos'||location.hash==='#enxoval'||location.hash==='#enxoval-tecidos';if(!route){document.querySelector('#gao-fabric-flow')?.remove();return}
  const shell=document.querySelector('#gao-linen-risk-shell');if(!shell)return;
  let nav=shell.querySelector('.lr150-dimension-nav');
  if(!nav){nav=document.createElement('div');nav.className='lr150-dimension-nav';shell.appendChild(nav)}

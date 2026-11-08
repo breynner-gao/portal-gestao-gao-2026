@@ -10,6 +10,16 @@
   <!-- Portal GAO V60: escopo antes da renderização + entrega scoped -->
   <meta name="gao-build" content="v112-20260925" />
 <style id="gao-base-restore">:root{font-family:Inter,Segoe UI,Arial,sans-serif;color:#082d52;background:#f4f8fc}*{box-sizing:border-box}html,body,#root{margin:0;min-height:100%;width:100%}body{font-family:Inter,Segoe UI,Arial,sans-serif;background:#f4f8fc;color:#082d52;font-size:14px}a{color:#0d6fae;text-decoration:none}a:hover{text-decoration:underline}button,input,select,textarea{font:inherit}button{cursor:pointer}header{background:#fff;border-bottom:1px solid #d7e4ef}nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap}nav a{padding:8px 10px;border-radius:8px;color:#174a78;font-weight:700}nav a:hover{background:#eaf5ff;text-decoration:none}main{max-width:1600px;margin:0 auto;padding:24px}h1,h2,h3,h4{color:#082d52}h1{font-size:32px;margin:12px 0}h2{font-size:24px}label{color:#315675;font-weight:700}input,select,textarea{border:1px solid #b9d1e8;border-radius:8px;background:#fff;color:#082d52;padding:9px}button{border:1px solid #b9d1e8;border-radius:8px;background:#fff;color:#174a78;padding:9px 13px;font-weight:700}button:hover{background:#eaf5ff}.gao-menu-shell{background:#174a78}.gao-sidebar-logo{max-width:100%}@media(max-width:800px){main{padding:14px}h1{font-size:25px}}}</style>
+<style id="gao-nav-responsive-early">
+  @media (max-width:900px) {
+    .gao-shell .gao-sidebar { position:relative!important; z-index:5!important; display:block!important; width:100%!important; min-width:0!important; max-width:none!important; flex:none!important; padding:16px!important; }
+    .gao-shell .gao-nav { position:relative!important; display:flex!important; flex-flow:row wrap!important; align-items:stretch!important; gap:6px!important; overflow:visible!important; padding:2px 0 8px!important; }
+    .gao-shell .gao-nav>a { display:flex!important; flex:0 1 auto!important; align-items:center!important; justify-content:center!important; min-height:48px!important; white-space:nowrap!important; touch-action:manipulation!important; }
+    .gao-shell .gao-subnav:has(a.active) { position:absolute!important; top:calc(100% - 2px)!important; left:0!important; z-index:20!important; width:min(320px,calc(100vw - 36px))!important; max-height:60vh!important; overflow:auto!important; margin:0!important; padding:8px!important; border:1px solid rgba(255,255,255,.25)!important; border-radius:12px!important; background:#0b3c63!important; box-shadow:0 12px 30px rgba(0,0,0,.25)!important; }
+    .gao-shell .gao-subnav:not(:has(a.active)) { display:none!important; }
+    .gao-shell .gao-subnav a { display:flex!important; align-items:center!important; min-height:44px!important; }
+  }
+</style>
 </head>
   <body>
     <div id="root"></div>
@@ -52,9 +62,9 @@
   <script type="module" src="/quality-indicator-analysis-v1.mjs?v=1"></script>
   <script type="module" src="/quality-indicator-rules-v1.mjs?v=1"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script type="module" src="/linen-risk-panel-v150.js?v=229"></script>
+  <script type="module" src="/linen-risk-panel-v150.js?v=230"></script>
   <script src="/fabric-purchase-addon-v1.js?v=28"></script>
-  <script type="module" src="/fabric-workflow-ui-v1.js?v=12"></script>
+  <script type="module" src="/fabric-workflow-ui-v1.js?v=13"></script>
   <script src="/chemical-processing-sync-v1.js?v=1"></script>
     <script type="module" src="/indicators-performance-v176.mjs?v=184"></script>
 <script>window.GAO_BUILD="V314";</script>
