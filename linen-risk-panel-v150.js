@@ -1,4 +1,4 @@
-import { applyFactionToRows, buildFactionMap, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, updateIdealReference } from './linen-risk-rules-v150.mjs?v=224';
+import { applyFactionToRows, buildFactionMap, buildPendingProductionCoverage, applyPendingProductionCoverage, factionQuantityFor, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, updateIdealReference } from './linen-risk-rules-v150.mjs?v=225';
 
 const DATA = '/assets/linen-rfid-report-2026-10-13.json';
 const FACTION_DATA = '/assets/linen-production-pending-2026-10-13.json';
@@ -48,7 +48,11 @@ let state = {
   movementDirection: 'supply',
   openFilter: '',
   factionMap: {},
+  trackingMap: {},
+  serviceOrderMap: {},
   factionSource: '',
+  coverageReady: false,
+  productionError: '',
   cloudReady: false,
   cloudCanWrite: false,
   cloudOrgId: '',
@@ -170,10 +174,14 @@ async function syncSharedSnapshot() {
 async function fetchOnlineFaction() {
  try {
   const context=await cloudContext();
-  const response=await fetch(SUPABASE_URL+'/rest/v1/fabric_faction_tracking?select=*&organization_id=eq.'+context.organizationId,{headers:{apikey:SUPABASE_KEY,Authorization:'Bearer '+context.token},cache:'no-store'});
-  const data=await response.json();if(!response.ok)throw Error(data.message||'Falha ao carregar produção');
-  applyUploadedFaction(data.filter(r=>r.cut_status==='CONCLUIDO').map(r=>({PRODUTO:r.product_name,QUANTIDADE:r.quantity,ENTREGA:r.delivered,Status:r.delivery_status})), 'Produção registrada no sistema');
- }catch(e){state={...state,uploadMessage:'Produção: '+e.message};render()}
+  const get=async(table,fields)=>{const response=await fetch(SUPABASE_URL+'/rest/v1/'+table+'?select='+fields+'&organization_id=eq.'+context.organizationId,{headers:{apikey:SUPABASE_KEY,Authorization:'Bearer '+context.token},cache:'no-store'});const data=await response.json();if(!response.ok)throw Error(data.message||'Falha ao carregar pedidos');return data;};
+  const [tracking,orders,items,returns]=await Promise.all([get('fabric_faction_tracking','product_name,quantity,delivered,delivery_status'),get('fabric_production_orders','id,status'),get('fabric_production_order_items','id,order_id,product_reference,product_name,ordered_pieces'),get('fabric_faction_returns','order_item_id,accepted_pieces,rejected_pieces')]);
+  const coverage=buildPendingProductionCoverage({tracking,orders,items,returns});
+  state={...state,coverageReady:true,productionError:'',trackingMap:coverage.trackingMap,serviceOrderMap:coverage.serviceOrderMap,factionMap:coverage.totalMap,factionSource:'Pedidos em andamento registrados no sistema'};
+  state.rows=applyPendingProductionCoverage(state.baseRows,coverage);
+  state.factionMap=buildFactionMap(state.rows.map(row=>({PRODUTO:row.produtoNome,product_reference:row.produtoId,QUANTIDADE:row.pecasFaccao,ENTREGA:0,Status:'PENDENTE'})));
+  saveCurrent();render();
+ }catch(e){state={...state,coverageReady:false,productionError:e.message,uploadMessage:'Produção: '+e.message};render()}
 }
 window.addEventListener('gao-production-updated',fetchOnlineFaction);
 
@@ -250,6 +258,8 @@ async function load() {
       sourceRule: data.rule || '',
       fileName: data.source || state.fileName,
       factionMap: {},
+  trackingMap: {},
+  serviceOrderMap: {},
       factionSource: 'Base incorporada do controle de produção',
       needsCloudSync: state.cloudReady
     };
@@ -472,9 +482,10 @@ function filteredDecisionItems() {
 }
 
 function downloadItemReport() {
+  if(!state.coverageReady)return;
   const rows = sortOrderItems(listDecisionItems(filteredDecisionItems()), state.itemSort);
   if (!rows.length) return;
-  const header = ['Item', 'Categoria', 'Criticidade', 'Cliente', 'Area critica', 'Mercado', 'Estoque GAO', 'Relave', 'Qualidade', 'Desengoma', 'Costura avaliacao', 'Total util', 'Trocas cliente + AC', 'Trocas mercado', 'Trocas GAO', 'Trocas total', 'Necessidade', 'Faccao', 'Pedido real'];
+  const header = ['Item', 'Categoria', 'Criticidade', 'Cliente', 'Area critica', 'Mercado', 'Estoque GAO', 'Relave', 'Qualidade', 'Desengoma', 'Costura avaliacao', 'Total util', 'Trocas cliente + AC', 'Trocas mercado', 'Trocas GAO', 'Trocas total', 'Necessidade', 'Pedidos em andamento', 'Pedido real'];
   const csv = [header, ...rows.map(row => [row.produtoNome, row.categoria, row.criticidade, row.cliente, row.areaCritica, row.mercado, row.estoqueGao, row.relave, row.qualidade, row.desengoma, row.costura, row.totalUtil, row.trocasClienteArea, row.trocasMercado, row.trocasGao, row.trocasTotal, row.necessidade, row.faccao, row.pedidoReal])]
     .map(line => line.map(value => `"${String(value ?? '').replace(/"/g, '""')}"`).join(';'))
     .join('\n');
@@ -570,6 +581,7 @@ function panel() {
   ].filter(Boolean).join(' • ');
   return `<section class="lr150-shell">
     ${textileMenu()}
+    ${!state.coverageReady?`<div class="lr150-message" role="status">${state.productionError?'Pedidos em andamento não atualizados: '+esc(state.productionError)+'. Aguarde a atualização antes de emitir novo pedido.':'Carregando pedidos em andamento para conferir a necessidade…'}</div>`:''}
     ${state.dimensionView === 'imports' ? `
     <div class="lr150-top">
       <div>
@@ -610,7 +622,7 @@ function panel() {
         <span>${s.depositoBaixo} itens com estoque GAO baixo</span>
         <span>${s.mercadoBaixo} itens com mercado baixo</span>
         <span>${br(movementItems.length)} itens com movimentação • ${br(movementTotal)} pç</span>
-        <span>${br(s.faccao)} pç já em facção • ${br(s.pedidoReal)} pç a pedir</span>
+        <span>${br(s.faccao)} pç em pedidos em andamento • ${br(s.pedidoReal)} pç a pedir</span>
       </div>
     </div>
     ` : ''}
@@ -639,10 +651,10 @@ function panel() {
       <div class="lr150-order-head">
         <span><b>Resumo do enxoval</b><small>${br(orderItems.length)} peças • ${br(orderItems.filter(row => row.pedidoReal > 0).length)} com pedido • ${br(orderItems.reduce((sum, row) => sum + row.pedidoReal, 0))} pç a pedir</small></span>
         <div class="lr150-order-actions">
-          <button id="lr150-export-items" type="button" class="lr150-export" ${orderItems.length ? '' : 'disabled'}>Extrair itens</button>
+          <button id="lr150-export-items" type="button" class="lr150-export" ${orderItems.length && state.coverageReady ? '' : 'disabled'}>Extrair itens</button>
         </div>
       </div>
-      <div class="lr150-message">Abaixo fica o mapa de decisão por peça: estoque em cada ponto, trocas, facção e quantidade final para pedir.</div>
+      <div class="lr150-message">Abaixo fica o mapa de decisão por peça: estoque em cada ponto, trocas, pedidos em andamento e quantidade final para pedir.</div>
     </div>
     <div class="lr150-table-wrap">
       <div class="lr150-table-head">
@@ -659,7 +671,7 @@ function panel() {
         ${multiFilter('masterCategoryFilter', categories, state.masterCategoryFilter, 'Categorias')}
         ${multiFilter('riskFilter', risks, state.riskFilter, 'Criticidade')}
         ${filterInput('lr150-qty-filter', state.qtyFilter, 'Necessidade mín.', 'number')}
-        ${filterInput('lr150-faction-filter', state.factionFilter, 'Facção mín.', 'number')}
+        ${filterInput('lr150-faction-filter', state.factionFilter, 'Em andamento mín.', 'number')}
         ${filterInput('lr150-real-order-filter', state.realOrderFilter, 'Pedir mín.', 'number')}
       </div>
       <table class="lr150-table">
@@ -688,7 +700,7 @@ function panel() {
           </div></td>
           <td><div class="lr150-decision">
             <span><b>Necessidade</b>${br(row.necessidade)} pç</span>
-            <span><b>Facção</b>${br(row.faccao)} pç</span>
+            <span><b>Em andamento</b>${br(row.faccao)} pç</span>
             <strong>Pedir ${br(row.pedidoReal)} pç</strong>
           </div></td>
         </tr>`).join('') : '<tr><td colspan="4" class="lr150-empty">Nenhuma peça encontrada nos filtros atuais.</td></tr>'}</tbody>
@@ -842,7 +854,7 @@ function render() {
   }
   const activeId = document.activeElement?.id || '';
   const activeStart = document.activeElement?.selectionStart;
-  window.GAO_LINEN_NEED_SNAPSHOT = state.rows.map(row => ({ produtoId: row.produtoId, produtoNome: row.produtoNome, pedidoReal: row.pedidoReal, asOf: state.asOf }));
+  window.GAO_LINEN_NEED_SNAPSHOT = state.rows.map(row => ({ produtoId: row.produtoId, produtoNome: row.produtoNome, pedidoReal: row.pedidoReal, coverageReady:state.coverageReady, necessidade:row.compraSugerida, pendingTracking:factionQuantityFor(row,state.trackingMap), pendingServiceOrders:factionQuantityFor(row,state.serviceOrderMap), needWithoutTracking:Math.max(0,Number(row.compraSugerida||0)-factionQuantityFor(row,state.trackingMap)), asOf: state.asOf }));
   shell.innerHTML = panel();
   mountTextileSubmenu(shell);
   bind();

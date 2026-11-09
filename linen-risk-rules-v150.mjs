@@ -45,9 +45,8 @@ const TOLERANCIA_EXCEDENTE_CIRCULACAO = 30;
 export function buildFactionMap(rows) {
   const map = {};
   (rows || []).forEach(row => {
-    const status = String(pick(row, 'Status', 'status', 'STATUS', 'Situação', 'Situacao', 'Status da produção', 'Status da producao') || '')
-      .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^A-Z0-9]+/gi, '').toUpperCase();
-    if (['CONCLUIDO', 'CONCLUDO', 'CONCLUIDA', 'CONCLUDA', 'FINALIZADO', 'ENTREGUE', 'PRODUZIDO', 'ENCERRADO', 'CANCELADO'].includes(status)) return;
+    const status = normalizeItemKey(pick(row, 'Status', 'status', 'STATUS', 'Situação', 'Situacao', 'Status da produção', 'Status da producao')).replace(/\s+/g, '');
+    if (['CONCLUIDO', 'CONCLUDO', 'CONCLUIDA', 'CONCLUDA', 'FINALIZADO', 'ENTREGUE', 'PRODUZIDO', 'ENCERRADO', 'CANCELADO', 'CANCELADA'].includes(status)) return;
     const product = pick(row, 'PRODUTO', 'produto', 'produto_nome', 'Produto', 'Item');
     const hasPlannedQuantity = hasValue(row, 'QUANTIDADE', 'quantidade', 'Quantidade', 'QUANTIDADE DE', 'Quantidade de');
     const hasDeliveryQuantity = hasValue(row, 'ENTREGA', 'entrega');
@@ -59,6 +58,8 @@ export function buildFactionMap(rows) {
     const quantity = hasPlannedQuantity && hasDeliveryQuantity
       ? Math.max(0, plannedQuantity - deliveredQuantity)
       : n(pick(row, 'QUANTIDADE', 'quantidade', 'Quantidade', 'QUANTIDADE DE', 'Quantidade de', 'ENTREGA', 'entrega'));
+    const productId=pick(row,'product_reference','produtoId','product_id');
+    if(productId)addMapQty(map,'ID:'+String(productId),quantity);
     const key = normalizeItemKey(product);
     const compact = compactDimensionKey(product);
     const noMl = withoutMlKey(product);
@@ -71,6 +72,7 @@ export function buildFactionMap(rows) {
 
 export function factionQuantityFor(row, map = {}) {
   const keys = [
+    ...(row.produtoId?['ID:'+String(row.produtoId)]:[]),
     normalizeItemKey(row.produtoNome),
     compactDimensionKey(row.produtoNome),
     withoutMlKey(row.produtoNome)
@@ -89,6 +91,22 @@ export function applyFactionToRows(rows, map = {}) {
       pecasFaccao,
       pedidoReal: Math.max(0, n(row.compraSugerida) - pecasFaccao)
     };
+  });
+}
+
+export function buildPendingProductionCoverage({tracking=[],orders=[],items=[],returns=[]}={}) {
+  const trackingMap=buildFactionMap(tracking.map(row=>({PRODUTO:row.product_name,QUANTIDADE:row.quantity,ENTREGA:row.delivered,Status:row.delivery_status})));
+  const active=new Set(orders.filter(o=>['ABERTA','PARCIAL','ENVIADA'].includes(o.status)).map(o=>o.id));
+  const serviceOrderMap=buildFactionMap(items.filter(i=>active.has(i.order_id)).map(i=>({PRODUTO:i.product_name,product_reference:i.product_reference,QUANTIDADE:i.ordered_pieces,ENTREGA:returns.filter(r=>r.order_item_id===i.id).reduce((sum,r)=>sum+n(r.accepted_pieces)+n(r.rejected_pieces),0),Status:'PENDENTE'})));
+  const totalMap={...trackingMap};for(const[key,quantity]of Object.entries(serviceOrderMap))totalMap[key]=(totalMap[key]||0)+quantity;
+  return {trackingMap,serviceOrderMap,totalMap};
+}
+
+export function applyPendingProductionCoverage(rows, coverage) {
+  return rows.map(row=>{
+    const pendingTracking=factionQuantityFor(row,coverage.trackingMap),pendingServiceOrders=factionQuantityFor(row,coverage.serviceOrderMap),pending=pendingTracking+pendingServiceOrders;
+    const needWithoutTracking=Math.max(0,n(row.compraSugerida)-pendingTracking);
+    return {...row,pendingTracking,pendingServiceOrders,needWithoutTracking,pecasFaccao:pending,emProducao:pending,pedidoReal:Math.max(0,needWithoutTracking-pendingServiceOrders)};
   });
 }
 

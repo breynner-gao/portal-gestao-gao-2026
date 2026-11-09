@@ -1,0 +1,14 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import{buildPendingProductionCoverage,applyPendingProductionCoverage}from'../linen-risk-rules-v150.mjs';
+test('pedido com corte pendente reduz necessidade; dimensões e acentos não impedem o vínculo',()=>{
+ const c=buildPendingProductionCoverage({tracking:[{product_name:'LENÇOL PADRÃO 1,90 X 2,80',quantity:60,delivered:0,cut_status:'PENDENTE',delivery_status:'PENDENTE'}]});
+ const [row]=applyPendingProductionCoverage([{produtoId:'P1',produtoNome:'LENCOL PADRAO 190X280',compraSugerida:100,pecasFaccao:999}],c);assert.equal(row.pendingTracking,60);assert.equal(row.pedidoReal,40);assert.equal(row.pecasFaccao,60);
+});
+test('corte concluído não confirma entrega; apenas saldo ainda não recebido cobre a necessidade',()=>{
+ const c=buildPendingProductionCoverage({tracking:[{product_name:'CAMPO SIMPLES VERDE 1,60 X 1,60',quantity:20,delivered:5,cut_status:'CONCLUIDO',delivery_status:'PARCIAL'},{product_name:'CAMPO SIMPLES VERDE 1,60 X 1,60',quantity:30,delivered:30,delivery_status:'CONCLUÍDO'},{product_name:'CAMPO SIMPLES VERDE 1,60 X 1,60',quantity:10,delivered:0,delivery_status:'CANCELADA'}]});const[row]=applyPendingProductionCoverage([{produtoNome:'CAMPO SIMPLES VERDE 160X160',compraSugerida:40}],c);assert.equal(row.pecasFaccao,15);assert.equal(row.pedidoReal,25);
+});
+test('OS novas por código e histórico por nome são somados uma única vez',()=>{
+ const c=buildPendingProductionCoverage({tracking:[{product_name:'CAMISA',quantity:30,delivered:0,delivery_status:'PENDENTE'}],orders:[{id:'a',status:'PARCIAL'},{id:'b',status:'CANCELADA'}],items:[{id:'i',order_id:'a',product_reference:'P1',product_name:'Nome homologado diferente',ordered_pieces:25},{id:'j',order_id:'b',product_reference:'P1',product_name:'CAMISA',ordered_pieces:90}],returns:[{order_item_id:'i',accepted_pieces:5,rejected_pieces:0}]});
+ const[row]=applyPendingProductionCoverage([{produtoId:'P1',produtoNome:'CAMISA',compraSugerida:100}],c);assert.equal(row.pendingTracking,30);assert.equal(row.pendingServiceOrders,20);assert.equal(row.needWithoutTracking,70);assert.equal(row.pedidoReal,50);
+});
+test('linhas distintas de um mesmo item são preservadas e cobertura excedente não gera pedido negativo',()=>{const c=buildPendingProductionCoverage({tracking:[{product_name:'PEÇA',quantity:8,delivered:0,delivery_status:'PENDENTE'},{product_name:'PEÇA',quantity:7,delivered:0,delivery_status:'PENDENTE'}]});const[row]=applyPendingProductionCoverage([{produtoNome:'PEÇA',compraSugerida:10}],c);assert.equal(row.pecasFaccao,15);assert.equal(row.pedidoReal,0);});
