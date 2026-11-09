@@ -1,0 +1,5 @@
+-- Historical baseline: 20261103193308_secure_laundry_operational_tables_v2
+-- Already applied to the linked Supabase project before migration history was aligned.
+-- Original SQL is retained in the private database migration history.
+-- This marker intentionally performs no schema or permission changes.
+-- A fresh database requires the organization's approved private baseline.

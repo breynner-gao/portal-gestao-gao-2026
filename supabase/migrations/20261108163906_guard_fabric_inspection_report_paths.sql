@@ -1,0 +1,5 @@
+-- Historical baseline: 20261108163906_guard_fabric_inspection_report_paths
+-- Already applied to the linked Supabase project before migration history was aligned.
+-- Original SQL is retained in the private database migration history.
+-- This marker intentionally performs no schema or permission changes.
+-- A fresh database requires the organization's approved private baseline.
