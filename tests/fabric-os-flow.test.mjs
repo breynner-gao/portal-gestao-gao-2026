@@ -71,3 +71,8 @@ test('OC contém produtos expansíveis e notas dos recebimentos sem navegação'
  const h=harness();h.state.fabric=[{id:'f',code:'TEC',name:'Tecido'}];h.state.purchaseOrders=[{id:'p',order_number:'TESTE',status:'ABERTA'}];h.state.purchaseItems=[{id:'i',purchase_order_id:'p',fabric_id:'f',ordered_m:10,received_m:5}];h.state.purchaseReceipts=[{purchase_order_item_id:'i',lot_id:'l'}];h.state.lots=[{id:'l',invoice_number:'NF-TESTE',lot_code:'LOTE',quantity_received_m:5,quality_status:'APROVADO'}];
  const html=h.purchaseOrderView();assert.match(html,/data-fw-purchase-product/);assert.match(html,/NF NF-TESTE/);assert.match(html,/Receber este produto/);assert.doesNotMatch(html,/<details[^>]+ open/);
 });
+
+test('conciliação começa pelo padrão GAO e identifica apenas estoques compatíveis',()=>{
+ const h=harness();h.state.standards=[{id:'s',code:'GAO-TEST',name:'CIRURGICO TESTE'}];h.state.fabric=[{id:'f',name:'Comercial',standard_id:'s',color:'Oliva',color_reference:'ABC'},{id:'other',name:'Incompatível'}];h.state.recipes=[{active:true,product_reference:'P',fabric_id:'f'}];h.state.suppliers=[{id:'supplier',trade_name:'Fornecedor Teste'}];h.state.lots=[{id:'l',fabric_id:'f',supplier_id:'supplier',quality_status:'APROVADO',invoice_number:'NFTEST',lot_code:'LOTE'},{id:'bad',fabric_id:'other',quality_status:'APROVADO'}];
+ const html=h.reconciliationLine({product_reference:'P'});assert.match(html,/CIRURGICO TESTE/);assert.match(html,/Fornecedor Teste/);assert.match(html,/Ref. ABC/);assert.match(html,/NF NFTEST/);assert.match(html,/saldo registrado/);assert.doesNotMatch(html,/value="bad"|livre /);
+});
