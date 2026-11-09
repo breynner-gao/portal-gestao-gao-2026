@@ -1,4 +1,4 @@
-import { applyFactionToRows, buildFactionMap, buildPendingProductionCoverage, applyPendingProductionCoverage, factionQuantityFor, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, updateIdealReference } from './linen-risk-rules-v150.mjs?v=225';
+import { applyFactionToRows, buildFactionMap, buildPendingProductionCoverage, applyPendingProductionCoverage, factionQuantityFor, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, updateIdealReference } from './linen-risk-rules-v150.mjs?v=226';
 
 const DATA = '/assets/linen-rfid-report-2026-10-13.json';
 const FACTION_DATA = '/assets/linen-production-pending-2026-10-13.json';
@@ -175,11 +175,12 @@ async function fetchOnlineFaction() {
  try {
   const context=await cloudContext();
   const get=async(table,fields)=>{const response=await fetch(SUPABASE_URL+'/rest/v1/'+table+'?select='+fields+'&organization_id=eq.'+context.organizationId,{headers:{apikey:SUPABASE_KEY,Authorization:'Bearer '+context.token},cache:'no-store'});const data=await response.json();if(!response.ok)throw Error(data.message||'Falha ao carregar pedidos');return data;};
-  const [tracking,orders,items,returns]=await Promise.all([get('fabric_faction_tracking','product_name,quantity,delivered,delivery_status'),get('fabric_production_orders','id,status'),get('fabric_production_order_items','id,order_id,product_reference,product_name,ordered_pieces'),get('fabric_faction_returns','order_item_id,accepted_pieces,rejected_pieces')]);
+  const [tracking,orders,items,returns]=await Promise.all([get('fabric_faction_tracking','product_name,product_reference,quantity,delivered,delivery_status'),get('fabric_production_orders','id,status'),get('fabric_production_order_items','id,order_id,product_reference,product_name,ordered_pieces'),get('fabric_faction_returns','order_item_id,accepted_pieces,rejected_pieces')]);
   const coverage=buildPendingProductionCoverage({tracking,orders,items,returns});
   state={...state,coverageReady:true,productionError:'',trackingMap:coverage.trackingMap,serviceOrderMap:coverage.serviceOrderMap,factionMap:coverage.totalMap,factionSource:'Pedidos em andamento registrados no sistema'};
   state.rows=applyPendingProductionCoverage(state.baseRows,coverage);
   state.factionMap=buildFactionMap(state.rows.map(row=>({PRODUTO:row.produtoNome,product_reference:row.produtoId,QUANTIDADE:row.pecasFaccao,ENTREGA:0,Status:'PENDENTE'})));
+  for(const row of state.rows)if(row.produtoId)state.factionMap['ID:'+String(row.produtoId)]=row.pecasFaccao;
   saveCurrent();render();
  }catch(e){state={...state,coverageReady:false,productionError:e.message,uploadMessage:'Produção: '+e.message};render()}
 }

@@ -59,23 +59,21 @@ export function buildFactionMap(rows) {
       ? Math.max(0, plannedQuantity - deliveredQuantity)
       : n(pick(row, 'QUANTIDADE', 'quantidade', 'Quantidade', 'QUANTIDADE DE', 'Quantidade de', 'ENTREGA', 'entrega'));
     const productId=pick(row,'product_reference','produtoId','product_id');
-    if(productId)addMapQty(map,'ID:'+String(productId),quantity);
+    if(productId){addMapQty(map,'ID:'+String(productId),quantity);return;}
     const key = normalizeItemKey(product);
     const compact = compactDimensionKey(product);
-    const noMl = withoutMlKey(product);
     addMapQty(map, key, quantity);
     if (compact !== key) addMapQty(map, compact, quantity);
-    if (noMl !== key && noMl !== compact) addMapQty(map, noMl, quantity);
   });
   return map;
 }
 
 export function factionQuantityFor(row, map = {}) {
+  const explicit=row.produtoId?'ID:'+String(row.produtoId):'';
+  if(explicit&&Object.hasOwn(map,explicit))return Math.max(0,n(map[explicit]));
   const keys = [
-    ...(row.produtoId?['ID:'+String(row.produtoId)]:[]),
     normalizeItemKey(row.produtoNome),
-    compactDimensionKey(row.produtoNome),
-    withoutMlKey(row.produtoNome)
+    compactDimensionKey(row.produtoNome)
   ].filter(Boolean);
   const key = keys.find(candidate => map[candidate] !== undefined && n(map[candidate]) > 0);
   if (key) return n(map[key]);
@@ -95,7 +93,7 @@ export function applyFactionToRows(rows, map = {}) {
 }
 
 export function buildPendingProductionCoverage({tracking=[],orders=[],items=[],returns=[]}={}) {
-  const trackingMap=buildFactionMap(tracking.map(row=>({PRODUTO:row.product_name,QUANTIDADE:row.quantity,ENTREGA:row.delivered,Status:row.delivery_status})));
+  const trackingMap=buildFactionMap(tracking.map(row=>({PRODUTO:row.product_name,product_reference:row.product_reference,QUANTIDADE:row.quantity,ENTREGA:row.delivered,Status:row.delivery_status})));
   const active=new Set(orders.filter(o=>['ABERTA','PARCIAL','ENVIADA'].includes(o.status)).map(o=>o.id));
   const serviceOrderMap=buildFactionMap(items.filter(i=>active.has(i.order_id)).map(i=>({PRODUTO:i.product_name,product_reference:i.product_reference,QUANTIDADE:i.ordered_pieces,ENTREGA:returns.filter(r=>r.order_item_id===i.id).reduce((sum,r)=>sum+n(r.accepted_pieces)+n(r.rejected_pieces),0),Status:'PENDENTE'})));
   const totalMap={...trackingMap};for(const[key,quantity]of Object.entries(serviceOrderMap))totalMap[key]=(totalMap[key]||0)+quantity;
