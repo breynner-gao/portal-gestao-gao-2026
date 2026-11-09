@@ -92,3 +92,5 @@ test('todas as programações vinculadas entram no cálculo sem conciliar e sem 
 test('reserva alheia à programação reduz saldo projetado sem contar reserva própria duas vezes',()=>{
  const h=harness();h.state.fabric=[{id:'f'}];h.state.recipes=[{active:true,product_reference:'P',fabric_id:'f',consumption_m_per_piece:1}];h.state.lots=[{id:'l',fabric_id:'f',quality_status:'APROVADO'}];h.state.moves=[{lot_id:'l',stock_delta_m:100,reserved_delta_m:80}];h.state.tracking=[{id:'a',quantity:50,delivered:0,product_reference:'P'}];assert.equal(h.materialPurchasePlan().fabrics[0].buy,30);h.state.reconciliations=[{tracking_id:'a',lot_id:'l',reserved_m:50,consumed_m:0,returned_m:0}];assert.equal(h.materialPurchasePlan().fabrics[0].buy,0);
 });
+
+test('campos de ajuste arredondam o cálculo para três casas decimais',()=>{const h=harness();assert.match(h.reconciliationLine({product_reference:'P'},{reserved_m:182*2.05}),/name="reserved_m"[^>]+value="373.1"/);});
