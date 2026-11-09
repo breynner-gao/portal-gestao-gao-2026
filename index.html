@@ -79,9 +79,9 @@
   <script type="module" src="/quality-indicator-analysis-v1.mjs?v=1"></script>
   <script type="module" src="/quality-indicator-rules-v1.mjs?v=1"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script type="module" src="/linen-risk-panel-v150.js?v=230"></script>
+  <script type="module" src="/linen-risk-panel-v150.js?v=231"></script>
   <script src="/fabric-purchase-addon-v1.js?v=28"></script>
-  <script type="module" src="/fabric-workflow-ui-v1.js?v=14"></script>
+  <script type="module" src="/fabric-workflow-ui-v1.js?v=18"></script>
   <script src="/chemical-processing-sync-v1.js?v=1"></script>
     <script type="module" src="/indicators-performance-v176.mjs?v=184"></script>
 <script>window.GAO_BUILD="V314";</script>
@@ -141,23 +141,7 @@
 })();
 </script>
 
-<script>
-(()=>{
-  const css='[data-gao-exec-rebuild]{font-family:inherit;color:#082f55;padding:24px;background:#f4f8fc;min-height:calc(100vh - 80px)}[data-gao-exec-rebuild] .gerb-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px}[data-gao-exec-rebuild] h1{margin:0;font-size:30px}[data-gao-exec-rebuild] .gerb-sub{color:#5f7893;margin-top:5px}[data-gao-exec-rebuild] .gerb-period{background:#fff;border:1px solid #d5e2ef;border-radius:10px;padding:10px 14px;color:#45627f;font-size:13px}[data-gao-exec-rebuild] .gerb-grid{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:14px}[data-gao-exec-rebuild] .gerb-card{background:#fff;border:1px solid #d5e2ef;border-radius:14px;padding:16px;min-height:120px;box-shadow:0 3px 12px #163e5d0b}[data-gao-exec-rebuild] .gerb-label{font-weight:800;color:#55718d;font-size:13px}[data-gao-exec-rebuild] .gerb-value{font-size:26px;font-weight:900;margin:12px 0 4px}[data-gao-exec-rebuild] .gerb-meta{font-size:12px;color:#6d8499}[data-gao-exec-rebuild] .ok{color:#14824b}[data-gao-exec-rebuild] .warn{color:#b26a00}[data-gao-exec-rebuild] .neutral{color:#6d7785}[data-gao-exec-rebuild] .gerb-bottom{display:grid;grid-template-columns:1.3fr 1fr;gap:14px;margin-top:14px}[data-gao-exec-rebuild] .gerb-panel{background:#fff;border:1px solid #d5e2ef;border-radius:14px;padding:18px}[data-gao-exec-rebuild] .gerb-panel h2{margin:0 0 12px;font-size:17px}@media(max-width:900px){[data-gao-exec-rebuild] .gerb-grid{grid-template-columns:repeat(2,minmax(150px,1fr))}[data-gao-exec-rebuild] .gerb-bottom{grid-template-columns:1fr}}';
-  function mount(){
-    if(location.hash && location.hash!=='#painel' && location.hash!=='') return;
-    const heading=[...document.querySelectorAll('h1,h2')].find(x=>(x.textContent||'').trim()==='Painel gerencial');
-    if(!heading||document.querySelector('[data-gao-exec-rebuild]')) return;
-    const main=heading.closest('main')||heading.closest('[role="main"]')||heading.parentElement?.parentElement?.parentElement;
-    if(!main) return;
-    const style=document.createElement('style');style.textContent=css;document.head.appendChild(style);
-    const host=document.createElement('section');host.setAttribute('data-gao-exec-rebuild','');
-    host.innerHTML='<div class="gerb-head"><div><div class="gerb-label">GESTÃO À VISTA</div><h1>Painel executivo da Qualidade</h1><div class="gerb-sub">Resumo dos principais indicadores para decisão gerencial</div></div><div class="gerb-period"><b>Período de referência</b><br>19/10/2026 a 25/10/2026<br><span>Comparação: 12/10/2026 a 18/10/2026</span></div></div><div class="gerb-grid"><article class="gerb-card"><div class="gerb-label">CUSTO DE QUÍMICO</div><div class="gerb-value">R$ 0,1256</div><div class="gerb-meta warn">Meta: R$ 0,120/kg · acima da meta</div><div class="gerb-meta">Período anterior: não apurado</div><div class="gerb-meta">Referência da fonte: 19/10 a 25/10</div></article><article class="gerb-card"><div class="gerb-label">RELAVE</div><div class="gerb-value">2,62%</div><div class="gerb-meta warn">Meta: ≤ 2,50% · atenção</div><div class="gerb-meta">Período anterior: não apurado</div><div class="gerb-meta">Referência da fonte: 19/10 a 25/10</div></article><article class="gerb-card"><div class="gerb-label">SLA DE ENTREGA</div><div class="gerb-value">35%</div><div class="gerb-meta warn">Período anterior: 65%</div></article><article class="gerb-card"><div class="gerb-label">SLA DE COLETA</div><div class="gerb-value neutral">Não apurado</div><div class="gerb-meta">Fonte ainda não validada</div></article><article class="gerb-card"><div class="gerb-label">ENXOVAL — MERCADO</div><div class="gerb-value">3.172</div><div class="gerb-meta ok">Peças para enviar ao mercado</div><div class="gerb-meta">Destino: mercado</div></article><article class="gerb-card"><div class="gerb-label">ENXOVAL — DEPÓSITO</div><div class="gerb-value">16.918</div><div class="gerb-meta ok">Peças para enviar ao depósito</div><div class="gerb-meta">Destino: depósito GAO</div></article><article class="gerb-card"><div class="gerb-label">PRODUÇÃO DE ENXOVAL</div><div class="gerb-value neutral">Não apurado</div><div class="gerb-meta">Aguardando lançamentos validados</div></article><article class="gerb-card"><div class="gerb-label">LIXO</div><div class="gerb-value neutral">Não apurado</div><div class="gerb-meta">Sem faturamento validado</div></article><article class="gerb-card"><div class="gerb-label">FONTES DE DADOS</div><div class="gerb-value ok">Em validação</div><div class="gerb-meta">Sem resultado fictício</div></article></div><div class="gerb-bottom"><article class="gerb-panel"><h2>Tendência dos indicadores</h2><div class="gerb-meta">A evolução semanal será exibida aqui assim que houver duas semanas válidas para comparação.</div></article><article class="gerb-panel"><h2>Principais ações</h2><div class="gerb-meta">Desvios, responsáveis e prazos aparecerão neste quadro.</div></article></div>';
-    document.body.appendChild(host);
-  }
-  let timer;new MutationObserver(()=>{clearTimeout(timer);timer=setTimeout(mount,180)}).observe(document.documentElement,{childList:true,subtree:true});setTimeout(mount,900);
-})();
-</script>
+<!-- Indicadores em revisão: retirado painel antigo com valores fixos. -->
   <script src="/portal-sgq-core.js?v=13"></script>
 <script src="/chemicals-launch-v1.js?v=2"></script>
   <script src="/src/rouparia-operations-v2.js?v=3"></script>

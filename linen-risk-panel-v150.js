@@ -2,10 +2,10 @@ import { applyFactionToRows, buildFactionMap, listDecisionItems, listMovementIte
 
 const DATA = '/assets/linen-rfid-report-2026-10-13.json';
 const FACTION_DATA = '/assets/linen-production-pending-2026-10-13.json';
-const ONLINE_FACTION = 'https://docs.google.com/spreadsheets/d/1a8DJIkoxqbzNCz8O1BHmBEJFUpIukhILclCk5sv53i0/export?format=xlsx';
+
 const HISTORY_KEY = 'gao-linen-history-v1';
 const SUPABASE_URL = 'https://fquzuxdqvhecijjuxbmg.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZxdXp1eGRxdmhlY2lqanV4Ym1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk1ODg3NDEsImV4cCI6MjEwNTE2NDc0MX0.rE9sASn0lrz1bAqb_qC_BeCjAUkt182xlyMtciqpPGk';
+const SUPABASE_KEY = 'sb_publishable_icrk6TaZexgiSIq63zX_ng_40JGaYlJ';
 const LINEN_SNAPSHOT_TABLE = 'linen_rfid_snapshots';
 const CURRENT_KEY = 'gao-linen-current-v1';
 const route = () => {
@@ -42,7 +42,7 @@ let state = {
   factionFilter: '',
   realOrderFilter: '',
   itemSort: 'pedido',
-  dimensionView: 'dashboard',
+  dimensionView: 'map',
   orderListOpen: true,
   movementListOpen: true,
   movementDirection: 'supply',
@@ -168,35 +168,14 @@ async function syncSharedSnapshot() {
 }
 
 async function fetchOnlineFaction() {
-  try {
-    if (!window.XLSX) throw Error('Leitor Excel indisponível');
-    const buffer = await fetch(ONLINE_FACTION, { cache: 'no-store' }).then(r => { if (!r.ok) throw Error(`HTTP ${r.status}`); return r.arrayBuffer(); });
-    const book = window.XLSX.read(buffer, { type: 'array', cellDates: true });
-    const sheetName = book.SheetNames.find(name => /base|produção|producao/i.test(name)) || book.SheetNames[0];
-    const sheet = book.Sheets[sheetName];
-    const matrix = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
-    const headerIndex = matrix.findIndex(row => row.some(cell => String(cell || '').trim().toUpperCase() === 'PRODUTO'));
-    if (headerIndex < 0) throw Error('cabeçalho PRODUTO não encontrado');
-    const rows = window.XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false, range: headerIndex });
-    const statusOf = row => String(row.Status ?? row.status ?? row.STATUS ?? row['Status da produção'] ?? row['Situação'] ?? '').trim();
-    const pending = rows.filter(row => /pendente|aguardando|em produção|em producao|em corte|em costura/i.test(statusOf(row)));
-    const statusSummary = [...new Set(rows.map(statusOf).filter(Boolean))].join(', ');
-    if (!pending.length) throw Error(`nenhum pendente encontrado; status lidos: ${statusSummary || 'vazio'}`);
-    const qty = value => {
-      const normalized = String(value ?? '0').trim().replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
-      const parsed = Number(normalized);
-      return Number.isFinite(parsed) ? parsed : 0;
-    };
-    const planned = pending.reduce((sum, row) => sum + qty(row.QUANTIDADE ?? row.quantidade), 0);
-    const delivered = pending.reduce((sum, row) => sum + qty(row.ENTREGA ?? row.entrega), 0);
-    const factionBalance = pending.reduce((sum, row) => sum + Math.max(0, qty(row.QUANTIDADE ?? row.quantidade) - qty(row.ENTREGA ?? row.entrega)), 0);
-    const cutCompleteRows = pending.filter(row => /conclu/i.test(String(row.CORTE ?? row.corte ?? ''))).length;
-    applyUploadedFaction(pending, 'controle produção facção');
-    state = { ...state, uploadMessage: `Planilha online lida: ${pending.length} linhas pendentes; ${br(planned)} pç previstas; ${br(cutCompleteRows)} linhas com corte concluído; ${br(delivered)} pç entregues; saldo calculado na facção: ${br(factionBalance)} pç.` };
-    saveHistory();
-    render();
-  } catch (e) { state = { ...state, uploadMessage: `Facção online não atualizada: ${e.message || e}` }; render(); }
+ try {
+  const context=await cloudContext();
+  const response=await fetch(SUPABASE_URL+'/rest/v1/fabric_faction_tracking?select=*&organization_id=eq.'+context.organizationId,{headers:{apikey:SUPABASE_KEY,Authorization:'Bearer '+context.token},cache:'no-store'});
+  const data=await response.json();if(!response.ok)throw Error(data.message||'Falha ao carregar produção');
+  applyUploadedFaction(data.filter(r=>r.cut_status==='CONCLUIDO').map(r=>({PRODUTO:r.product_name,QUANTIDADE:r.quantity,ENTREGA:r.delivered,Status:r.delivery_status})), 'Produção registrada no sistema');
+ }catch(e){state={...state,uploadMessage:'Produção: '+e.message};render()}
 }
+window.addEventListener('gao-production-updated',fetchOnlineFaction);
 
 async function load() {
   if (state.loaded || state.error) return;
@@ -435,7 +414,7 @@ function applyUploadedFaction(rows, fileName) {
   const total = Object.values(map).reduce((sum, value) => sum + Number(value || 0), 0);
   state = {
     ...state,
-    rows: applyFactionToRows(state.baseRows, map),
+    rows: applyFactionToRows(state.baseRows.map(r=>({...r,pecasFaccao:0,emProducao:0})), map),
     factionMap: map,
     factionSource: fileName,
     uploadMessage: `${Object.keys(map).length} itens de facção carregados de ${fileName}. ${br(total)} pç pendentes consideradas.`
@@ -551,8 +530,19 @@ function dashboardView(s, totals, movementItems, asOf) {
   </div>`;
 }
 
+function textileMenu(){return `    <nav class="lr150-dimension-nav" aria-label="Enxoval e tecidos">
+<button type="button" data-dimension-view="movements">Movimentações</button>
+<button type="button" data-dimension-view="map">Mapa de peças, trocas e necessidade</button>
+<button type="button" data-fw-tab="catalog">Padronização de produtos</button>
+<button type="button" data-fw-tab="suppliers">Fornecedores</button>
+<button type="button" data-fw-tab="stock">Estoque de tecidos</button>
+<button type="button" data-fw-tab="production">Produção e facção</button>
+<button type="button" data-fw-tab="quality">Qualidade</button>
+<button type="button" data-fw-tab="cost">Custos e perdas</button>
+<button type="button" data-dimension-view="imports">Importações</button>
+</nav>`;}
 function panel() {
-  if (state.error) return `<div class="lr150-shell error"><strong>Curva RFID indisponível</strong><p>${esc(state.error)}</p><p>Os arquivos-base do RFID não estão publicados neste endereço. Para recuperar os dados sem inventar números, envie o relatório RFID original em CSV, JSON ou Excel:</p><label class="lr150-upload"><input id="lr150-file" type="file" accept=".csv,.txt,.json,.xlsx,.xls"><span>Selecionar relatório RFID</span></label>${state.uploadMessage ? `<div class="lr150-message">${esc(state.uploadMessage)}</div>` : ''}<small style="display:block;margin-top:10px;color:#54708e">A planilha de produção da facção é separada e não substitui o relatório RFID.</small></div>`;
+  if (state.error) return `${textileMenu()}<div class="lr150-shell error"><strong>Curva RFID indisponível</strong><p>${esc(state.error)}</p><p>Os arquivos-base do RFID não estão publicados neste endereço. Para recuperar os dados sem inventar números, envie o relatório RFID original em CSV, JSON ou Excel:</p><label class="lr150-upload"><input id="lr150-file" type="file" accept=".csv,.txt,.json,.xlsx,.xls"><span>Selecionar relatório RFID</span></label>${state.uploadMessage ? `<div class="lr150-message">${esc(state.uploadMessage)}</div>` : ''}<small style="display:block;margin-top:10px;color:#54708e">A planilha de produção da facção é separada e não substitui o relatório RFID.</small></div>`;
   if (!state.loaded) return '<div class="lr150-shell">Carregando curva RFID...</div>';
   const s = summary();
   const totals = sourceTotals();
@@ -579,6 +569,8 @@ function panel() {
     asOf && asOf !== informedAt ? `base ${asOf}` : ''
   ].filter(Boolean).join(' • ');
   return `<section class="lr150-shell">
+    ${textileMenu()}
+    ${state.dimensionView === 'imports' ? `
     <div class="lr150-top">
       <div>
         <p>RFID</p>
@@ -589,20 +581,14 @@ function panel() {
         <input id="lr150-file" type="file" accept=".csv,.txt,.json,.xlsx,.xls">
         <span>Subir CSV RFID</span>
       </label>
-      <label class="lr150-upload lr150-upload-alt">
-        <input id="lr150-faction-file" type="file" accept=".csv,.txt,.json,.xlsx,.xls">
-        <span>Subir facção</span>
-      </label>
+
     </div>
     ${state.cloudStatus ? `<div class="lr150-message" role="status">${esc(state.cloudStatus)}</div>` : ''}
     ${state.cloudReady && state.needsCloudSync && state.cloudCanWrite ? `<button id="lr150-sync-cloud" type="button" class="lr150-export" ${state.cloudBusy ? 'disabled' : ''}>${state.cloudBusy ? 'Sincronizando…' : 'Sincronizar base RFID para tablets'}</button>` : ''}
     ${state.uploadMessage ? `<div class="lr150-message">${esc(state.uploadMessage)}</div>` : ''}
-    <nav class="lr150-dimension-nav" aria-label="Telas de dimensionamento">
-      <button type="button" data-dimension-view="dashboard" class="${state.dimensionView === 'dashboard' ? 'active' : ''}" aria-pressed="${state.dimensionView === 'dashboard'}">Painel de gestão à vista</button>
-      <button type="button" data-dimension-view="map" class="${state.dimensionView === 'map' ? 'active' : ''}" aria-pressed="${state.dimensionView === 'map'}">Mapa geral de peças e trocas</button>
-      <button type="button" data-dimension-view="movements" class="${state.dimensionView === 'movements' ? 'active' : ''}" aria-pressed="${state.dimensionView === 'movements'}">Movimentação sugerida</button>
-    </nav>
+
     <div class="lr150-period-bar"><label>Data da posição<select id="lr150-asof-filter"><option value="${esc(state.asOf)}">${esc(informedAt || 'Não informada')}</option></select></label><label>Histórico<select id="lr150-history-select"><option value="">${readHistory().length ? 'Escolha uma base salva' : 'Nenhuma base salva'}</option>${readHistory().map(h => `<option value="${esc(h.id)}">${esc(dateBr(h.asOf))} — ${esc(h.label)}</option>`).join('')}</select></label><button id="lr150-delete-history" type="button" class="lr150-danger">Excluir selecionada</button><button id="lr150-delete-all-history" type="button" class="lr150-danger">Excluir todas</button><button id="lr150-reset-current" type="button" class="lr150-danger">Excluir base atual</button><span>${readHistory().length > 1 ? `Histórico local: ${readHistory().length} bases. As novas importações entram automaticamente na comparação.` : 'A próxima importação será salva automaticamente para comparação.'}</span></div>
+    ` : ''}
     ${state.dimensionView === 'dashboard' ? dashboardView(s, totals, movementItems, informedAt) : ''}
     ${state.dimensionView === 'map' ? `<div class="lr150-grid">
       <div class="lr150-box">
@@ -713,6 +699,7 @@ function panel() {
 }
 
 function bind() {
+ document.querySelectorAll('[data-dimension-view]').forEach(b=>b.classList.toggle('active',b.dataset.dimensionView===state.dimensionView));
   document.querySelectorAll('[data-movement-direction]').forEach(button => button.addEventListener('click', event => {
     const movementDirection = event.currentTarget.dataset.movementDirection;
     if (!['supply', 'return'].includes(movementDirection) || movementDirection === state.movementDirection) return;
@@ -721,7 +708,7 @@ function bind() {
   }));
   document.querySelectorAll('[data-dimension-view]').forEach(button => button.addEventListener('click', event => {
     const dimensionView = event.currentTarget.dataset.dimensionView;
-    if (!['dashboard', 'map', 'movements'].includes(dimensionView) || dimensionView === state.dimensionView) return;
+    if (!['map', 'movements', 'imports'].includes(dimensionView) || dimensionView === state.dimensionView) return;
     state = { ...state, dimensionView, openFilter: '' };
     render();
   }));

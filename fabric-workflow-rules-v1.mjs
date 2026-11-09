@@ -167,3 +167,44 @@ export function groupPendingFabricLotsByInvoice(lots = []) {
   }
   return [...groups.entries()].map(([invoice, invoiceLots]) => ({ invoice, lots: invoiceLots }));
 }
+
+export function latestFabricConsumptionByVariant(rows = []) {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = String(row.variant_key || '').trim();
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  return [...groups.entries()].map(([variantKey, history]) => {
+    history.sort((a, b) => String(a.source_date || '').localeCompare(String(b.source_date || '')) || Number(a.source_row || 0) - Number(b.source_row || 0));
+    const latest = history[history.length - 1];
+    return {
+      ...latest,
+      variant_key: variantKey,
+      source_history: history,
+      historical_consumptions: [...new Set(history.map(row => Number(row.consumption_m_per_piece)).filter(Number.isFinite))]
+    };
+  }).sort((a, b) => String(a.product_name || '').localeCompare(String(b.product_name || '')) || String(a.size || '').localeCompare(String(b.size || '')) || String(a.color_description || '').localeCompare(String(b.color_description || '')));
+}
+
+export function fabricCostReferenceLabel(row = {}) {
+  const sourceBlock = ({
+    MODELO_A: 'Base de custo A',
+    MODELO_B: 'Base de custo B',
+    VARIANTES: 'Custo por produto e cor'
+  })[String(row.source_block || '').toUpperCase()] || String(row.source_block || 'Fonte da planilha');
+  return [row.product_name, row.fabric_description, row.color_description,
+    row.supplier_name, sourceBlock, row.source_row ? `linha ${row.source_row}` : '']
+    .filter(value => String(value ?? '').trim())
+    .join(' • ');
+}
+
+export function serviceOrderDueDate(date, days = 21) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date))) throw new Error('Data de envio inválida');
+  const [y,m,d]=date.split('-').map(Number);
+  const value=new Date(Date.UTC(y,m-1,d));
+  if(value.toISOString().slice(0,10)!==date)throw new Error('Data de envio inválida');
+  value.setUTCDate(value.getUTCDate()+days);
+  return value.toISOString().slice(0,10);
+}

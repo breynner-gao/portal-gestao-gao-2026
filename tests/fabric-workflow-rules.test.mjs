@@ -8,8 +8,31 @@ import {
   fabricCatalogVariantKey,
   fabricInvoiceAliasKey,
   summarizeFabricPurchaseOrder,
-  groupPendingFabricLotsByInvoice
+  groupPendingFabricLotsByInvoice,
+  latestFabricConsumptionByVariant,
+  fabricCostReferenceLabel,
+  serviceOrderDueDate
 } from '../fabric-workflow-rules-v1.mjs';
+
+test('distingue custos da mesma peça por tecido, cor e fornecedor', () => {
+  const v02 = fabricCostReferenceLabel({ product_name: 'Camisa Privativo', fabric_description: 'Camisaria', color_description: 'Azul V02', supplier_name: 'Santista', source_block: 'VARIANTES', source_row: 27 });
+  const p53 = fabricCostReferenceLabel({ product_name: 'Camisa Privativo', fabric_description: 'Camisaria', color_description: 'Azul P53', supplier_name: 'Santista', source_block: 'VARIANTES', source_row: 35 });
+  assert.match(v02, /Camisa Privativo.*Camisaria.*Azul V02.*Santista.*linha 27/);
+  assert.match(p53, /Camisa Privativo.*Camisaria.*Azul P53.*Santista.*linha 35/);
+  assert.notEqual(v02, p53);
+});
+
+test('ficha técnica prioriza consumo mais recente e preserva histórico da mesma variante', () => {
+  const [row] = latestFabricConsumptionByVariant([
+    { variant_key: 'v1', source_date: '2026-04-01', source_row: 9, consumption_m_per_piece: 1.2, product_name: 'Campo', size: '1x1' },
+    { variant_key: 'v1', source_date: '2026-10-28', source_row: 18, consumption_m_per_piece: 1.35, product_name: 'Campo', size: '1x1' },
+    { variant_key: 'v2', source_date: '2026-10-28', source_row: 19, consumption_m_per_piece: 2, product_name: 'Lençol', size: '2x2' }
+  ]);
+  assert.equal(row.source_row, 18);
+  assert.equal(row.consumption_m_per_piece, 1.35);
+  assert.deepEqual(row.historical_consumptions, [1.2, 1.35]);
+  assert.deepEqual(row.source_history.map(x => x.source_row), [9, 18]);
+});
 
 test('organiza avaliação de qualidade em grupos por nota sem misturar notas ou lotes concluídos', () => {
   const groups = groupPendingFabricLotsByInvoice([
@@ -143,4 +166,16 @@ test('calcula perda de tecido e valor da perda além do consumo padrão das peç
   assert.equal(result.lossMeters, 2);
   assert.equal(result.lossValue, 10);
   assert.equal(result.acceptancePercent, 8 / 9 * 100);
+});
+
+test('OS prevê 21 dias corridos por envio sem depender de fuso horário', () => {
+ assert.equal(serviceOrderDueDate('2026-11-09'), '2026-11-30');
+ assert.equal(serviceOrderDueDate('2026-12-20'), '2027-01-10');
+ assert.equal(serviceOrderDueDate('2028-02-10'), '2028-03-02');
+ assert.throws(()=>serviceOrderDueDate('2026-02-30'));
+});
+test('preserva metros e preços com três e quatro casas decimais', () => {
+ assert.equal(normalizeFabricNumber(1.234),1.234);
+ assert.equal(normalizeFabricNumber('1.234'),1.234);
+ assert.equal(normalizeFabricNumber('1.234,56'),1234.56);
 });
