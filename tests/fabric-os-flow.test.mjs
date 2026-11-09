@@ -94,3 +94,5 @@ test('reserva alheia à programação reduz saldo projetado sem contar reserva p
 });
 
 test('campos de ajuste arredondam o cálculo para três casas decimais',()=>{const h=harness();assert.match(h.reconciliationLine({product_reference:'P'},{reserved_m:182*2.05}),/name="reserved_m"[^>]+value="373.1"/);});
+
+test('padrão Cinza e demais padrões aparecem mesmo sem referência comercial ou estoque',()=>{const h=harness();h.state.standards=[{id:'gray',active:true,code:'GAO-TEC-007',name:'CAMISARIA CINZA',material_kind:'TECIDO'},{id:'finished',active:true,code:'PA',name:'TOALHA',material_kind:'PRODUTO_ACABADO'}];const html=h.internalFabricOptions();assert.match(html,/CAMISARIA CINZA/);assert.match(html,/value="standard:gray"/);assert.doesNotMatch(html,/TOALHA/);});

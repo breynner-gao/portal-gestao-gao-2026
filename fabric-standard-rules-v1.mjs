@@ -6,6 +6,6 @@ export function sameFabricStandard(references,a,b){
 }
 export function purchaseReferenceChoices(references,standardId,supplierId){
  if(!standardId||!supplierId)return [];
- return references.filter(r=>r.standard_id===standardId&&r.supplier_id===supplierId&&r.active!==false&&r.homologated&&r.standard_link_approved);
+ return references.filter(r=>!r.internal_only&&r.standard_id===standardId&&r.supplier_id===supplierId&&r.active!==false&&r.homologated&&r.standard_link_approved);
 }
 export function groupFabricStandards(standards,references){return standards.map(standard=>({standard,references:references.filter(r=>r.standard_id===standard.id)}));}
