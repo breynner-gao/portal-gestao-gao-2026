@@ -76,6 +76,34 @@ function closeRecipeDialog(){
  const dialog=recipeDialog;recipeDialog=null;if(dialog.open)dialog.close();dialog.remove();
  recipeDialogOrigin?.focus?.({preventScroll:true});window.scrollTo({top:recipeDialogScroll,behavior:'instant'});recipeDialogOrigin=null;
 }
+const recipeSearchKey=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/VERMELHA/g,'VERMELHO').replace(/[^A-Z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+function recipeSourceChoices(kind,productName,query='',all=false,selected=''){
+ const target=recipeSearchKey(productName),search=recipeSearchKey(query);
+ const rows=kind==='cost'?state.costReferences.filter(r=>r.product_name):latestFabricConsumptionByVariant(state.consumptionReferences);
+ return rows.filter(r=>{
+  const name=recipeSearchKey(r.product_name),same=kind==='consumption'?name===target:target.startsWith(name)||name.startsWith(target)||(/^CALCA /.test(target)&&/^CALCA /.test(name))||(/^CAMISA /.test(target)&&!target.includes(' ML ')&&/^CAMISA /.test(name)&&!name.includes(' ML '));
+  const value=kind==='cost'?r.id:r.variant_key;
+  return value===selected||((all||same)&&(!search||recipeSearchKey([r.product_name,r.color_description,r.fabric_description,r.supplier_name,r.size,r.source_block].join(' ')).includes(search)));
+ }).map(r=>({value:kind==='cost'?r.id:r.variant_key,label:kind==='cost'?[r.product_name,r.color_description,r.supplier_name,r.source_block==='MODELO_A'?'Base A':r.source_block==='MODELO_B'?'Base B':''].filter(Boolean).join(' • '):[r.product_name,recipeSearchKey(r.product_name).endsWith(recipeSearchKey(r.size))?'':r.size,r.color_description,br(r.consumption_m_per_piece,3)+' m/peça'].filter(Boolean).join(' • ')}));
+}
+function refreshRecipeSources(form){
+ const name=form.elements.namedItem('product_name').value,query=form.querySelector('[data-fw-source-search]').value,all=form.querySelector('[data-fw-source-all]').checked;
+ for(const [kind,selector] of [['cost','[data-fw-cost-source]'],['consumption','[data-fw-consumption-source]']]){
+  const select=form.querySelector(selector),selected=select.value,choices=recipeSourceChoices(kind,name,query,all,selected);
+  select.innerHTML='<option value="">'+(choices.length?'Escolher outra origem (opcional)':'Nenhuma fonte correspondente')+'</option>'+choices.map(c=>'<option value="'+esc(c.value)+'" '+(c.value===selected?'selected':'')+'>'+esc(c.label)+'</option>').join('');
+ }
+}
+function simplifyRecipeDialog(form){
+ const advanced=document.createElement('details');advanced.className='fw-recipe-sources';
+ advanced.innerHTML='<summary>Consultar ou alterar a fonte dos dados</summary><label class="fw-source-picker">Buscar na fonte<input type="search" data-fw-source-search placeholder="Nome, cor ou fornecedor"></label><label class="fw-all-sources"><input type="checkbox" data-fw-source-all> Mostrar outras peças da base</label>';
+ const sourceNodes=[...form.querySelectorAll('.fw-source-picker,[data-fw-cost-note],[data-fw-consumption-note]')];sourceNodes.forEach(node=>advanced.appendChild(node));
+ const submitButton=form.querySelector('button[type="submit"],button:not([type])');submitButton.before(advanced);
+ const summary=document.createElement('div');summary.className='fw-piece-summary';summary.innerHTML='<b>'+esc(form.elements.namedItem('product_name').value)+'</b><small>Código '+esc(form.elements.namedItem('product_reference').value)+'</small>';form.prepend(summary);
+ for(const key of ['product_name','product_reference'])form.elements.namedItem(key).closest('label').hidden=true;
+ // Keep the fabric and consumption together before optional costs and sources.
+ const fabric=form.elements.namedItem('fabric_id').closest('label'),consumption=form.elements.namedItem('consumption_m_per_piece').closest('label');summary.after(fabric,consumption);
+ refreshRecipeSources(form);
+}
 function openRecipeDialog(code,recipeId=null,origin=null){
  if(recipeDialog)return;
  const template=document.createElement('template');template.innerHTML=recipeView();const source=template.content.querySelector('form[data-fw-form="recipe"]');
@@ -90,6 +118,7 @@ function openRecipeDialog(code,recipeId=null,origin=null){
   form.elements.namedItem('manual_extras_per_piece').value=Math.max(0,n(r.extras_cost_per_piece)-n(r.label_cost_per_piece)-n(r.rfid_cost_per_piece));
  }else fillMaterialLink(code,form);
  form.elements.namedItem('product_reference').readOnly=true;
+ simplifyRecipeDialog(form);
  dialog.addEventListener('cancel',e=>{e.preventDefault();closeRecipeDialog();});dialog.showModal();form.elements.namedItem('fabric_id').focus();
 }
 async function saveRecipeDialog(form){
@@ -432,7 +461,7 @@ function setFlowMode(enabled){
  if(host)host.hidden=!enabled;
  if(button){button.classList.toggle('active',enabled);button.setAttribute('aria-pressed',String(enabled))}
 }
-const catalogStyle=document.createElement('style');catalogStyle.textContent='.fw-recipe-dialog{width:min(920px,calc(100vw - 24px));max-height:calc(100dvh - 32px);border:1px solid #b9d1e8;border-radius:16px;padding:0;background:#fff;color:#082d52;overflow:auto;box-shadow:0 24px 80px #082d5240}.fw-recipe-dialog::backdrop{background:#082d5280}.fw-modal-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px;position:sticky;top:0;z-index:1;background:#fff}.fw-modal-head h2{font-size:21px;margin:0}.fw-modal-head button{min-width:44px;min-height:44px}.fw-recipe-dialog .fw-panel{border:0;margin:0}.fw-recipe-dialog .fw-field{flex:1 1 220px;min-width:0}.fw-recipe-dialog .fw-field input,.fw-recipe-dialog .fw-field select{min-width:0;width:100%}.fw-recipe-dialog [hidden]{display:none!important}@media(max-width:600px){.fw-recipe-dialog{max-height:calc(100dvh - 16px)}.fw-recipe-dialog .fw-field{flex-basis:100%}}'+'.fw-demand-editor{display:flex;align-items:center;gap:6px;min-height:44px}.fw-demand-editor input{width:100px;min-width:80px;height:40px}.fw-panel button.fw-demand-reset{background:transparent;color:#315675;border:1px solid #b9d1e8;width:40px;height:40px;min-height:40px;padding:0;font-size:22px;line-height:1}.fw-panel button.fw-demand-reset:hover{background:#edf5fb}.fw-panel button.fw-demand-reset[hidden]{display:none!important}'+'.fw-cards.fw-po-summary{grid-template-columns:repeat(5,minmax(0,1fr))}.fw-cards.fw-po-summary article{padding:10px}.fw-field{display:flex;flex-direction:column;align-items:stretch!important;gap:5px}.fw-field input,.fw-field select{width:100%}@media(max-width:1000px){.fw-cards.fw-po-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.fw-field{width:100%}.fw-cards.fw-po-summary{grid-template-columns:1fr}}.fw-po-order summary,.fw-new-order summary{cursor:pointer;padding:12px;border-radius:8px;background:#f3f8fd;min-height:44px}.fw-new-order{margin:12px 0}.fw-new-order form{padding:14px 0}.fw-order-meter{display:block;margin-top:6px;color:#54708e;font-size:13px}.fw-stock-child{margin-left:12px!important;width:calc(100% - 12px)!important}.fw-catalog-actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 6px}.fw-catalog-actions button{min-height:40px}.fw-catalog-actions+details{margin-top:0}[data-fw-catalog-row][hidden]{display:none!important}';document.head.appendChild(catalogStyle);
+const catalogStyle=document.createElement('style');catalogStyle.textContent='.fw-piece-summary{flex-basis:100%;padding:10px 12px;background:#edf5fc;border-radius:8px}.fw-piece-summary b,.fw-piece-summary small{display:block}.fw-piece-summary small{margin-top:4px;color:#54708e}.fw-recipe-sources{flex-basis:100%;border-top:1px solid #e1eaf3;padding:12px 0;margin-top:8px}.fw-recipe-sources summary{cursor:pointer;min-height:40px;display:flex;align-items:center;color:#315675;font-weight:700}.fw-recipe-sources .fw-source-picker{margin:12px 0}.fw-recipe-sources .fw-all-sources{font-size:13px}.fw-recipe-sources .fw-all-sources input{min-width:0;width:auto}.fw-recipe-dialog .fw-field[hidden]{display:none!important}'+'.fw-recipe-dialog{width:min(920px,calc(100vw - 24px));max-height:calc(100dvh - 32px);border:1px solid #b9d1e8;border-radius:16px;padding:0;background:#fff;color:#082d52;overflow:auto;box-shadow:0 24px 80px #082d5240}.fw-recipe-dialog::backdrop{background:#082d5280}.fw-modal-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px;position:sticky;top:0;z-index:1;background:#fff}.fw-modal-head h2{font-size:21px;margin:0}.fw-modal-head button{min-width:44px;min-height:44px}.fw-recipe-dialog .fw-panel{border:0;margin:0}.fw-recipe-dialog .fw-field{flex:1 1 220px;min-width:0}.fw-recipe-dialog .fw-field input,.fw-recipe-dialog .fw-field select{min-width:0;width:100%}.fw-recipe-dialog [hidden]{display:none!important}@media(max-width:600px){.fw-recipe-dialog{max-height:calc(100dvh - 16px)}.fw-recipe-dialog .fw-field{flex-basis:100%}}'+'.fw-demand-editor{display:flex;align-items:center;gap:6px;min-height:44px}.fw-demand-editor input{width:100px;min-width:80px;height:40px}.fw-panel button.fw-demand-reset{background:transparent;color:#315675;border:1px solid #b9d1e8;width:40px;height:40px;min-height:40px;padding:0;font-size:22px;line-height:1}.fw-panel button.fw-demand-reset:hover{background:#edf5fb}.fw-panel button.fw-demand-reset[hidden]{display:none!important}'+'.fw-cards.fw-po-summary{grid-template-columns:repeat(5,minmax(0,1fr))}.fw-cards.fw-po-summary article{padding:10px}.fw-field{display:flex;flex-direction:column;align-items:stretch!important;gap:5px}.fw-field input,.fw-field select{width:100%}@media(max-width:1000px){.fw-cards.fw-po-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.fw-field{width:100%}.fw-cards.fw-po-summary{grid-template-columns:1fr}}.fw-po-order summary,.fw-new-order summary{cursor:pointer;padding:12px;border-radius:8px;background:#f3f8fd;min-height:44px}.fw-new-order{margin:12px 0}.fw-new-order form{padding:14px 0}.fw-order-meter{display:block;margin-top:6px;color:#54708e;font-size:13px}.fw-stock-child{margin-left:12px!important;width:calc(100% - 12px)!important}.fw-catalog-actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 6px}.fw-catalog-actions button{min-height:40px}.fw-catalog-actions+details{margin-top:0}[data-fw-catalog-row][hidden]{display:none!important}';document.head.appendChild(catalogStyle);
 function catalogModelValues(f){return Object.fromEntries(['code','name','fabric_type','composition','width_m'].map(k=>[k,f[k]??'']));}
 function fillCatalogModel(id){
  const f=state.fabric.find(x=>x.id===id),form=document.querySelector('[data-fw-form="fabric"]');if(!f||!form)return;
@@ -452,6 +481,8 @@ async function catalogAction(action,id){
  }
 }
 document.addEventListener('input',e=>{
+ if(e.target.matches('[data-fw-source-search]')){refreshRecipeSources(e.target.closest('form'));return;}
+
  if(e.target.matches('[data-fw-demand-quantity]')){
   const input=e.target,key=input.dataset.fwDemandQuantity;demandDrafts.set(key,input.value);
   const valid=input.value.trim()!==''&&Number.isSafeInteger(Number(input.value))&&Number(input.value)>=0;
@@ -497,6 +528,8 @@ document.addEventListener('click',async e=>{
  const ret=e.target.closest('[data-fw-return]');if(ret){await run(()=>returnForm(ret.dataset.fwReturn));return}
 });
 document.addEventListener('change',async e=>{
+ if(e.target.matches('[data-fw-source-all]')){refreshRecipeSources(e.target.closest('form'));return;}
+
  if(e.target.matches('[data-fw-material-link]')){fillMaterialLink(e.target.value);return;}
 
  if(e.target.matches('[data-fw-catalog-model]')){fillCatalogModel(e.target.value);return;}
