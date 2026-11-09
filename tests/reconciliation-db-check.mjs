@@ -1,0 +1,40 @@
+// Run with PGLITE_MODULE=/absolute/path/to/@electric-sql/pglite/dist/index.js node tests/reconciliation-db-check.mjs
+// Entirely synthetic, in-memory database: never connects to Supabase.
+import {readFile} from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const {PGlite}=await import(process.env.PGLITE_MODULE);
+const db=new PGlite();
+await db.exec(`create role anon; create role authenticated; create schema auth;
+create function auth.uid() returns uuid language sql as $$select nullif(current_setting('test.uid',true),'')::uuid$$;
+create table organizations(id uuid primary key);create table fabric_faction_tracking(id uuid primary key,organization_id uuid,source_item text,product_reference text,quantity int,delivered int,cut_status text);
+create table fabric_product_recipes(id uuid primary key,organization_id uuid,product_reference text,fabric_id uuid,active boolean);
+create table fabric_lots(id uuid,organization_id uuid,fabric_id uuid,quality_status text,lot_code text,effective_price_per_m numeric,primary key(id,organization_id));
+create table fabric_stock_movements(id uuid default gen_random_uuid(),organization_id uuid,lot_id uuid,movement_type text,quantity_m numeric(14,3) check(quantity_m>0),stock_delta_m numeric(14,3),reserved_delta_m numeric(14,3),unit_cost_per_m numeric,idempotency_key text unique,notes text,created_by uuid);
+create function fabric_user_has_permission(uuid,text) returns boolean language sql as $$select auth.uid()='00000000-0000-0000-0000-000000000001'::uuid and $1='00000000-0000-0000-0000-000000000002'::uuid$$;
+create function fabric_same_standard(uuid,uuid,uuid) returns boolean language sql as $$select $2=$3$$;
+create function fabric_audit_production() returns trigger language plpgsql as $$begin return new;end$$;`);
+await db.exec(await readFile(new URL('../supabase/migrations/20261109214456_fabric_tracking_reconciliation.sql',import.meta.url),'utf8'));
+const id=i=>'00000000-0000-0000-0000-'+String(i).padStart(12,'0');const org=id(2),tid=id(3),lot=id(4);
+await db.query(`insert into organizations values($1);`,[org]);
+await db.query(`insert into fabric_faction_tracking values($1,$2,'TEST','P',20,0,'PENDENTE')`,[tid,org]);
+await db.query(`insert into fabric_product_recipes values($1,$2,'P',$3,true)`,[id(5),org,id(6)]);
+await db.query(`insert into fabric_lots values($1,$2,$3,'APROVADO','TEST',10)`,[lot,org,id(6)]);
+await db.query(`insert into fabric_stock_movements(organization_id,lot_id,quantity_m,stock_delta_m,reserved_delta_m,idempotency_key) values($1,$2,100,100,0,'initial')`,[org,lot]);
+const save=(alloc,rev,expected=null,o=org)=>db.query('select fabric_reconcile_tracking($1,$2,$3::jsonb,$4,$5,$6)',[o,tid,JSON.stringify(alloc),'Synthetic test',rev,expected]);
+const allocation=(reserved_m,consumed_m,returned_m)=>[{lot_id:lot,reserved_m,consumed_m,returned_m}];
+await assert.rejects(save(allocation(2,3,1),id(7)),/Sem permissão/);
+await db.query(`select set_config('test.uid',$1,false)`,[id(1)]);
+await assert.rejects(save(allocation(2,3,1),id(7),null,id(99)),/Sem permissão/);
+await save(allocation(2,3,1),id(7));await save(allocation(2,3,1),id(7));
+async function totals(){return(await db.query('select sum(stock_delta_m)::float8 as stock,sum(reserved_delta_m)::float8 as reserved from fabric_stock_movements')).rows[0]}
+assert.deepEqual(await totals(),{stock:98,reserved:2});
+await save(allocation(1,4,1),id(8),id(7));assert.deepEqual(await totals(),{stock:97,reserved:1});
+await assert.rejects(save(allocation(1,4,1),id(9),id(7)),/alterada por outra pessoa/);
+await assert.rejects(save(allocation(1000,4,1),id(9),id(8)),/Saldo livre insuficiente/);
+assert.deepEqual(await totals(),{stock:97,reserved:1});
+await assert.rejects(save(allocation(0,1,2),id(9),id(8)),/Metros inválidos/);
+await assert.rejects(save([...allocation(1,4,1),...allocation(1,4,1)],id(9),id(8)),/Não repita/);
+await assert.rejects(save([{lot_id:id(99),reserved_m:1,consumed_m:0,returned_m:0}],id(9),id(8)),/incompatível/);
+await assert.rejects(save(allocation(0,0,0),id(9),id(8)),/Informe metros/);
+console.log('PASS isolated PostgreSQL: permissions, tenant, idempotency, correction, concurrent revision, overspend rollback, returns, duplicate and foreign lots.');
+await db.close();
