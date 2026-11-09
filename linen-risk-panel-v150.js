@@ -548,6 +548,7 @@ function textileMenu(){return `    <nav class="lr150-dimension-nav" aria-label="
 <button type="button" data-fw-tab="catalog">Padronização de produtos</button>
 <button type="button" data-fw-tab="suppliers">Fornecedores</button>
 <button type="button" data-fw-tab="stock">Estoque de tecidos</button>
+<button type="button" class="fw-stock-child" data-fw-tab="material-need">↳ Necessidade de compra de tecido</button>
 <button type="button" class="fw-stock-child" data-fw-tab="purchases">↳ Pedidos de compra</button>
 <button type="button" class="fw-stock-child" data-fw-tab="receipt">↳ Receber NF</button>
 <button type="button" class="fw-stock-child" data-fw-tab="lots">↳ Lotes recebidos</button>

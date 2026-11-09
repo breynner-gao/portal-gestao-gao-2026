@@ -63,8 +63,8 @@ test('cada módulo principal tem um destino único', () => {
 test('Enxoval e fluxo de tecido montam pela rota antiga com hash e pela rota direta', () => {
   assert.match(linen, /path === '\/enxoval-tecidos' \|\| location\.hash === '#enxoval' \|\| location\.hash === '#enxoval-tecidos'/);
   assert.match(fabric, /path==='\/enxoval-tecidos'\|\|location\.hash==='#enxoval'\|\|location\.hash==='#enxoval-tecidos'/);
-  assert.match(index, /linen-risk-panel-v150\.js\?v=235/);
-  assert.match(index, /fabric-workflow-ui-v1\.js\?v=25/);
+  assert.match(index, /linen-risk-panel-v150\.js\?v=236/);
+  assert.match(index, /fabric-workflow-ui-v1\.js\?v=26/);
   assert.match(index, /portal-sgq-core\.js\?v=13/);
   assert.match(index, /gao-ui-fix-v1\.js\?v=8/);
 });
