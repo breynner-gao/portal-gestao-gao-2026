@@ -507,7 +507,7 @@ document.addEventListener('input',e=>{
  const q=e.target.value.trim().toLocaleLowerCase('pt-BR');document.querySelectorAll('[data-fw-catalog-row]').forEach(row=>{row.hidden=!row.dataset.search.includes(q)});
 });
 document.addEventListener('click',async e=>{
- if(e.target.closest('[data-fw-unit-defaults]')){const form=e.target.closest('form');form.elements.namedItem('label_cost_per_piece').value=RECIPE_UNIT_DEFAULTS.label;form.elements.namedItem('rfid_cost_per_piece').value=RECIPE_UNIT_DEFAULTS.rfid;return;}
+ if(e.target.closest('[data-fw-unit-defaults]')){const form=e.target.closest('form'),cost=state.costReferences.find(c=>c.id===form.elements.namedItem('cost_reference_id').value);if(cost?.source_block==='VARIANTES'&&n(form.elements.namedItem('label_cost_per_piece').value)===0&&n(form.elements.namedItem('rfid_cost_per_piece').value)===0&&n(form.elements.namedItem('manual_extras_per_piece').value)===n(cost.extras_cost_per_piece)){form.elements.namedItem('manual_extras_per_piece').value=0;const note=form.querySelector('[data-fw-default-cost-note]');if(note)note.textContent='RFID e etiqueta padrão aplicados. O insumo agrupado da planilha não foi somado novamente.';}form.elements.namedItem('label_cost_per_piece').value=RECIPE_UNIT_DEFAULTS.label;form.elements.namedItem('rfid_cost_per_piece').value=RECIPE_UNIT_DEFAULTS.rfid;return;}
 
  const applyCost=e.target.closest('[data-fw-apply-cost]');if(applyCost){const cost=state.costReferences.find(c=>c.id===applyCost.dataset.fwApplyCost);if(cost)applyRecipeCost(applyCost.closest('form'),cost);return;}
 
