@@ -66,7 +66,7 @@ test('Enxoval e fluxo de tecido montam pela rota antiga com hash e pela rota dir
   assert.match(index, /linen-risk-panel-v150\.js\?v=232/);
   assert.match(index, /fabric-workflow-ui-v1\.js\?v=19/);
   assert.match(index, /portal-sgq-core\.js\?v=13/);
-  assert.match(index, /gao-ui-fix-v1\.js\?v=7/);
+  assert.match(index, /gao-ui-fix-v1\.js\?v=8/);
 });
 
 test('gaveta tem controle acessível e persiste preferência de abertura', () => {

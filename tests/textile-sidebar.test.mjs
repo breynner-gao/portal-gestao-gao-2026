@@ -17,5 +17,5 @@ test('submenu sai do conteúdo e fica imediatamente abaixo do módulo na lateral
 test('apresentação lateral é vertical e seleção pelo tablet fecha a gaveta',async()=>{
  const mobile=await readFile(new URL('../src/gao-ui-fix-v1.js',import.meta.url),'utf8');
  assert.match(source,/\.gao-sidebar \.gao-textile-subnav\{display:grid!important;grid-template-columns:minmax\(0,1fr\)!important/);
- assert.match(mobile,/closest\?\.\('\.gao-nav a,\.gao-textile-subnav button'\)/);
+ assert.match(mobile,/closest\?\.\('\.gao-nav a,\.gao-textile-subnav button,\.gao-chemical-subnav button'\)/);
 });
