@@ -809,9 +809,20 @@ function mountMenuToggle() {
   };
 }
 
+function mountTextileSubmenu(shell) {
+  const nav = shell.querySelector('.lr150-dimension-nav');
+  const moduleLink = document.querySelector('.gao-nav > a[href="/enxoval-tecidos"]');
+  if (!nav || !moduleLink) return;
+  document.querySelector('.gao-textile-subnav')?.remove();
+  nav.classList.add('gao-textile-subnav');
+  nav.setAttribute('aria-label', 'Submenu Enxoval e Tecidos');
+  moduleLink.after(nav);
+}
+
 function render() {
   if (!route()) {
     document.querySelector('#gao-linen-risk-shell')?.remove();
+    document.querySelector('.gao-textile-subnav')?.remove();
     return;
   }
   const panelHost = document.querySelector('.page-stack .data-panel');
@@ -833,6 +844,7 @@ function render() {
   const activeStart = document.activeElement?.selectionStart;
   window.GAO_LINEN_NEED_SNAPSHOT = state.rows.map(row => ({ produtoId: row.produtoId, produtoNome: row.produtoNome, pedidoReal: row.pedidoReal, asOf: state.asOf }));
   shell.innerHTML = panel();
+  mountTextileSubmenu(shell);
   bind();
   if (activeId.startsWith('lr150-')) {
     const active = document.getElementById(activeId);
@@ -861,6 +873,7 @@ css.textContent += '.lr150-data-grid-tight .lr150-ideal-card{grid-column:2;backg
 css.textContent += '.lr150-ideal-card{display:grid!important;grid-template-columns:auto 1fr;align-items:center;gap:4px;cursor:text}.lr150-ideal-card b{grid-column:1/-1}.lr150-ideal-input{width:58px;border:1px solid #8bb8d9;border-radius:5px;background:#fff;color:#082d52;padding:4px 5px;font:inherit;font-weight:900;text-align:center}.lr150-ideal-input:focus{outline:2px solid #3188cc;outline-offset:1px}.lr150-ideal-card em{font-style:normal;font-size:10px;color:#54708e}.lr150-pending-qty{background:#fff7ed;color:#9a3412}.lr150-pending-qty strong{color:#9a3412}.lr150-pending-qty small{color:#9a3412!important}';
 css.textContent += '.lr150-movement-flags{display:flex;flex-wrap:wrap;gap:7px;margin:8px 0 6px}.lr150-movement-flags span{display:inline-flex;align-items:center;gap:5px;border:1px solid #d7e4ef;border-radius:999px;background:#fff;padding:6px 9px;color:#54708e;font-size:11px;font-weight:800}.lr150-movement-flags span.critical{color:#a32626;background:#fff3f3;border-color:#f1c4c4}.lr150-movement-flags i{display:inline-block;width:8px;height:8px;border-radius:50%;background:#3188cc}.lr150-movement-flags .critical i{background:#dc2626}.lr150-movement-status{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:4px 6px;background:#fff3f3;color:#a32626;font-size:11px;font-weight:900;white-space:nowrap}.lr150-movement-status.return{background:#fff8df;color:#805600}.lr150-movement-status i{width:7px;height:7px;border-radius:50%;background:#dc2626}.lr150-movement-status.return i{background:#e4b32e}';
 css.textContent += `.lr150-movement-nav{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 18px}.lr150-movement-nav button{flex:1 1 220px;text-align:left;border:1px solid #b9d1e8;border-radius:8px;background:#fff;color:#174a78;padding:12px 14px;cursor:pointer;font:inherit}.lr150-movement-nav b,.lr150-movement-nav span,.lr150-movement-nav small{display:block}.lr150-movement-nav b{font-size:15px;margin-bottom:5px}.lr150-movement-nav span{font-size:13px}.lr150-movement-nav small{font-size:12px;margin-top:6px}.lr150-movement-nav button.active{background:#eaf5ff;border:2px solid #3188cc;padding:11px 13px}.lr150-movement-nav button:focus-visible{outline:3px solid #91c4eb;outline-offset:2px}.lr150-movement-rule{font-size:12px;color:#54708e;margin:8px 0 12px}.lr150-movement-items{min-width:1000px;table-layout:fixed}.lr150-movement-items th,.lr150-movement-items td{width:auto!important;text-align:center}.lr150-movement-items th:first-child,.lr150-movement-items td:first-child{width:270px!important;text-align:left}.lr150-movement-items small{display:block;color:#607d9b;font-size:11px;margin-top:4px}.lr150-movement-items .lr150-transfer-qty{background:#eaf5ff;color:#082d52}`;
+css.textContent += '.gao-sidebar .gao-textile-subnav{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:3px!important;width:auto!important;min-width:0!important;margin:0 0 10px 14px!important;padding:4px 0 4px 12px!important;border-left:1px solid rgba(255,255,255,.35)!important;background:transparent!important}.gao-sidebar .gao-textile-subnav button{display:block!important;min-width:0!important;width:100%!important;min-height:44px!important;border:0!important;border-radius:8px!important;background:transparent!important;color:#dceefa!important;text-align:left!important;white-space:normal!important;font-size:14px!important;line-height:1.4!important;padding:9px 10px!important;touch-action:manipulation!important}.gao-sidebar .gao-textile-subnav button:hover,.gao-sidebar .gao-textile-subnav button.active{background:#2f6f9e!important;color:#fff!important}';
 document.head.appendChild(css);
 
 let last = '';
