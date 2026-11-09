@@ -393,6 +393,36 @@ function trackingReconciled(row){
  const records=state.reconciliations.filter(r=>r.tracking_id===row.id);
  return records.length>0&&records.some(r=>n(r.reserved_m)+n(r.consumed_m)>0)&&records.every(r=>{const x=r.tracking_snapshot;return x&&x.quantity===row.quantity&&x.delivered===row.delivered&&x.cut_status===row.cut_status&&x.product_reference===row.product_reference;});
 }
+function reconciliationStockPlan(row,values={}){
+ const recipes=state.recipes.filter(r=>r.active&&r.product_reference===row.product_reference);
+ if(recipes.length!==1)return null;
+ const recipe=recipes[0],fabric=state.fabric.find(f=>f.id===recipe.fabric_id),own=state.reconciliations.filter(r=>r.tracking_id===row.id);
+ const balances=liveBalances().filter(l=>l.quality_status==='APROVADO'&&fabricMatches(l.fabric_id,recipe.fabric_id));
+ const recorded=balances.reduce((a,l)=>a+l.onhand,0),reserved=balances.reduce((a,l)=>a+l.reserved,0);
+ const recoverable=own.filter(r=>balances.some(l=>l.id===r.lot_id)).reduce((a,r)=>a+n(r.reserved_m)+n(r.consumed_m)-n(r.returned_m),0);
+ const needed=Math.max(n(row.quantity)*n(recipe.consumption_m_per_piece),n(values.reserved_m)+n(values.consumed_m)-n(values.returned_m));
+ const incoming=state.purchaseItems.filter(i=>fabricMatches(i.fabric_id,recipe.fabric_id)&&state.purchaseOrders.some(o=>o.id===i.purchase_order_id&&o.status!=='CANCELADA'&&o.logistics_stage!=='COTACAO')).reduce((a,i)=>a+Math.max(0,n(i.ordered_m)-n(i.received_m)),0);
+ const available=Math.max(0,recorded-reserved+recoverable),missing=Math.max(0,Math.round((needed-available-incoming)*1000)/1000);
+ return {fabric,recorded,reserved,available,needed,incoming,missing};
+}
+function updateReconciliationPlan(dialog){
+ const row=state.tracking.find(r=>r.id===dialog.dataset.fwReconciliation),values=Object.fromEntries(['reserved_m','consumed_m','returned_m'].map(k=>[k,dialog.querySelector('[name="'+k+'"]').value]));
+ const plan=reconciliationStockPlan(row,values),box=dialog.querySelector('[data-fw-stock-plan]');if(!box)return;
+ box.innerHTML=plan?'<b>Previsão desta programação: '+br(plan.needed,3)+' m</b><p>Saldo registrado: '+br(plan.recorded,3)+' m • Reservas registradas: '+br(plan.reserved,3)+' m • Compras confirmadas a receber: '+br(plan.incoming,3)+' m</p><p><b>Estimativa de tecido a comprar: '+br(plan.missing,3)+' m</b></p><small>Estimativa com os registros atuais; confira as demais programações e conciliações antes de fechar a compra. O pedido só é registrado após sua confirmação.</small>'+(plan.missing>0?'<p><button type="button" data-fw-shortage-order>Preparar pedido dos '+br(plan.missing,3)+' m faltantes</button></p>':''):'Vincule a ficha técnica para calcular a necessidade em metros.';
+}
+function openShortageOrder(origin){
+ const row=state.tracking.find(r=>r.id===origin.dataset.fwReconciliation),values=Object.fromEntries(['reserved_m','consumed_m','returned_m'].map(k=>[k,origin.querySelector('[name="'+k+'"]').value])),plan=reconciliationStockPlan(row,values);if(!plan||plan.missing<=0)return;
+ const template=document.createElement('template');template.innerHTML=purchaseOrderView();const source=template.content.querySelector('[data-fw-form="purchaseOrder"]');
+ const dialog=document.createElement('dialog');dialog.className='fw-recipe-dialog';dialog.setAttribute('data-fw-shortage-dialog','');dialog.innerHTML='<header class="fw-modal-head"><h2>Pedido de tecido faltante</h2><button type="button" data-fw-shortage-close aria-label="Fechar">×</button></header><div class="fw-panel"><p>'+esc(internalName(plan.fabric))+' • Sugestão: '+br(plan.missing,3)+' m. Confira fornecedor, quantidade e preço antes de registrar.</p><div data-fw-shortage-error class="fw-error" role="alert" hidden></div>'+source.outerHTML+'</div>';
+ const form=dialog.querySelector('form'),standard=form.querySelector('[data-fw-purchase-standard]');standard.value=plan.fabric.standard_id||'';
+ form.querySelector('[name="ordered_m"]').value=plan.missing;form.querySelector('[name="notes"]').value='Necessidade estimada da programação '+(row.source_item||'')+' • '+row.product_name;
+ const allowed=state.suppliers.filter(s=>purchaseReferenceChoices(state.fabric,plan.fabric.standard_id,s.id).length>0),supplier=form.querySelector('[name="supplier_id"]');supplier.innerHTML='<option value="">Escolher fornecedor</option>'+allowed.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.trade_name||s.legal_name)+'</option>').join('');if(allowed.length===1)supplier.value=allowed[0].id;
+ refreshPurchaseReferences(form);document.body.appendChild(dialog);dialog.showModal();dialog.addEventListener('cancel',e=>{if(dialog.dataset.saving==='true')e.preventDefault();else dialog.remove();});
+ form.addEventListener('submit',async e=>{e.preventDefault();e.stopPropagation();if(dialog.dataset.saving==='true')return;dialog.dataset.saving='true';const buttons=[...dialog.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);const error=dialog.querySelector('[data-fw-shortage-error]');error.hidden=true;
+ try{await submit(form);await reload();render();updateReconciliationPlan(origin);dialog.close();dialog.remove();}
+ catch(err){error.textContent=err.message||String(err);error.hidden=false;}finally{dialog.dataset.saving='false';buttons.forEach(b=>b.disabled=false);}
+ });
+}
 function reconciliationLine(row,allocation={}){
  const recipes=state.recipes.filter(r=>r.active&&r.product_reference===row.product_reference);
  const lots=liveBalances().filter(l=>l.quality_status==='APROVADO'&&recipes.length===1&&fabricMatches(l.fabric_id,recipes[0].fabric_id));
@@ -406,8 +436,9 @@ function openReconciliation(id){
  const row=state.tracking.find(r=>r.id===id);if(!row)return;
  const records=state.reconciliations.filter(r=>r.tracking_id===id),totals=Object.fromEntries(['reserved_m','consumed_m','returned_m'].map(k=>[k,records.reduce((sum,r)=>sum+n(r[k]),0)]));
  const dialog=document.createElement('dialog');dialog.className='fw-recipe-dialog';dialog.dataset.fwReconciliation=id;
- dialog.innerHTML='<header class="fw-modal-head"><h2>Conciliar tecido com a facção</h2><button type="button" data-fw-reconcile-close aria-label="Fechar">×</button></header><div class="fw-panel"><b>'+esc(row.source_item+' • '+row.product_name)+'</b><p>'+br(row.quantity-row.delivered,0)+' peças pendentes • corte '+esc(row.cut_status)+'. Informe totais acumulados, não apenas a diferença. A sobra devolvida é descontada do total retirado.</p><div data-fw-reconciliation-error class="fw-error" role="alert" hidden></div><form data-fw-reconciliation-form><div data-fw-allocations style="width:100%">'+reconciliationLine(row,totals)+'</div><label class="fw-field">Conferência realizada<input name="notes" required value="'+esc(records[0]?.notes||'')+'" placeholder="Data da contagem, corte ou documento conferido"></label><label><input type="checkbox" required> Confirmei os metros físicos deste tecido para esta programação</label><button type="submit">Salvar conciliação</button><button type="button" data-fw-reconcile-close>Cancelar</button></form></div>';
+ dialog.innerHTML='<header class="fw-modal-head"><h2>Conciliar tecido com a facção</h2><button type="button" data-fw-reconcile-close aria-label="Fechar">×</button></header><div class="fw-panel"><b>'+esc(row.source_item+' • '+row.product_name)+'</b><p>'+br(row.quantity-row.delivered,0)+' peças pendentes • corte '+esc(row.cut_status)+'. Informe totais acumulados, não apenas a diferença. A sobra devolvida é descontada do total retirado.</p><div data-fw-reconciliation-error class="fw-error" role="alert" hidden></div><form data-fw-reconciliation-form><div data-fw-allocations style="width:100%">'+reconciliationLine(row,totals)+'</div><div data-fw-stock-plan class="fw-piece-summary" style="width:100%"></div><label class="fw-field">Conferência realizada<input name="notes" required value="'+esc(records[0]?.notes||'')+'" placeholder="Data da contagem, corte ou documento conferido"></label><label><input type="checkbox" required> Confirmei os metros físicos deste tecido para esta programação</label><button type="submit">Salvar conciliação</button><button type="button" data-fw-reconcile-close>Cancelar</button></form></div>';
  if(state.recipes.filter(r=>r.active&&r.product_reference===row.product_reference).length!==1){dialog.querySelector('[data-fw-allocations]').insertAdjacentHTML('beforebegin','<p class="fw-error">Primeiro vincule o tecido e o consumo desta peça na ficha técnica. <button type="button" data-fw-reconcile-recipe="'+esc(row.product_reference||'')+'">Vincular ficha técnica</button></p>');}
+ updateReconciliationPlan(dialog);
  dialog.dataset.revision=records[0]?.revision||'';dialog.dataset.request=uid();document.body.appendChild(dialog);dialog.showModal();
  dialog.addEventListener('cancel',e=>{if(dialog.dataset.saving==='true')e.preventDefault();else dialog.remove();});
  dialog.querySelector('form').addEventListener('submit',async e=>{e.preventDefault();if(dialog.dataset.saving==='true')return;dialog.dataset.saving='true';const buttons=[...dialog.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);const error=dialog.querySelector('[data-fw-reconciliation-error]');error.hidden=true;
@@ -569,6 +600,7 @@ async function catalogAction(action,id){
  }
 }
 document.addEventListener('input',e=>{
+ const reconciliation=e.target.closest('[data-fw-reconciliation]');if(reconciliation&&['reserved_m','consumed_m','returned_m'].includes(e.target.name))updateReconciliationPlan(reconciliation);
  if(e.target.name==='purchase_price_per_m')e.target.dataset.auto='false';
 
  if(e.target.matches('[data-fw-source-search]')){refreshRecipeSources(e.target.closest('form'));return;}
@@ -587,6 +619,8 @@ document.addEventListener('input',e=>{
  const q=e.target.value.trim().toLocaleLowerCase('pt-BR');document.querySelectorAll('[data-fw-catalog-row]').forEach(row=>{row.hidden=!row.dataset.search.includes(q)});
 });
 document.addEventListener('click',async e=>{
+ const shortageClose=e.target.closest('[data-fw-shortage-close]');if(shortageClose){const d=shortageClose.closest('dialog');if(d.dataset.saving!=='true'){d.close();d.remove();}return;}
+ if(e.target.closest('[data-fw-shortage-order]')){openShortageOrder(e.target.closest('[data-fw-reconciliation]'));return;}
  const reconcileRecipe=e.target.closest('[data-fw-reconcile-recipe]');if(reconcileRecipe){const d=reconcileRecipe.closest('dialog');d.close();d.remove();openRecipeDialog(reconcileRecipe.dataset.fwReconcileRecipe);return;}
  const receiveClose=e.target.closest('[data-fw-receive-close]');if(receiveClose){const d=receiveClose.closest('dialog');if(d.dataset.saving!=='true'){d.close();d.remove();}return;}
  const reconcile=e.target.closest('[data-fw-reconcile]');if(reconcile){openReconciliation(reconcile.dataset.fwReconcile);return;}
@@ -621,8 +655,8 @@ document.addEventListener('click',async e=>{
  const dimension=e.target.closest('[data-dimension-view]');if(dimension){setFlowMode(false);document.querySelectorAll('.gao-textile-subnav .active').forEach(b=>b.classList.remove('active'));dimension.classList.add('active')}
  if(e.target.closest('[data-fw-refresh]')){await run(()=>reload());return}
  if(e.target.closest('[data-fw-create-order]')){await run(createOrder);return}
- if(e.target.closest('[data-fw-add-po-line]')){document.querySelector('[data-fw-po-lines]')?.insertAdjacentHTML('beforeend',poLineHtml());const form=document.querySelector('[data-fw-form="purchaseOrder"]');if(form)refreshPurchaseReferences(form);return}
- const removePoLine=e.target.closest('[data-fw-remove-po-line]');if(removePoLine){if(document.querySelectorAll('[data-fw-po-line]').length>1)removePoLine.closest('[data-fw-po-line]').remove();return}
+ if(e.target.closest('[data-fw-add-po-line]')){const form=e.target.closest('form');form.querySelector('[data-fw-po-lines]')?.insertAdjacentHTML('beforeend',poLineHtml());refreshPurchaseReferences(form);return}
+ const removePoLine=e.target.closest('[data-fw-remove-po-line]');if(removePoLine){if(removePoLine.closest('form').querySelectorAll('[data-fw-po-line]').length>1)removePoLine.closest('[data-fw-po-line]').remove();return}
  const receivePo=e.target.closest('[data-fw-receive-po-item]');if(receivePo){receivePurchaseItem(receivePo.dataset.fwReceivePoItem);return}
  const report=e.target.closest('[data-fw-report]');if(report){await run(()=>openQualityReport(report.dataset.fwReport));return}
  const shipBtn=e.target.closest('[data-fw-ship]');if(shipBtn){await run(()=>ship(shipBtn.dataset.fwShip));return}
