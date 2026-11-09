@@ -68,6 +68,7 @@
     if(!brand.querySelector('.gao-logo'))brand.insertAdjacentHTML('afterbegin','<svg class="gao-logo" viewBox="0 0 72 48" aria-label="GAO"><path fill="#fff" d="M4 9h29c8 0 12 4 12 10v20H4z"/><path fill="#8ec5e8" d="M33 9h28c6 0 9 4 9 9v21H33z"/><path fill="#154a78" d="M18 30 44 9v20c0 4-3 7-7 7H18z"/></svg>');
     const span=brand.querySelector('span');if(span&&span.textContent!=='GAO Lavanderia')span.textContent='GAO Lavanderia';
   }
+  let menuStateRestored=false;
   function ensureMobileMenu(side){
     let toggle=document.getElementById('gao-mobile-menu-toggle');
     if(!toggle){toggle=document.createElement('button');toggle.id='gao-mobile-menu-toggle';toggle.type='button';toggle.className='gao-mobile-menu-toggle';toggle.setAttribute('aria-controls','gao-portal-sidebar');toggle.innerHTML='☰';document.body.appendChild(toggle)}
@@ -75,10 +76,13 @@
     let backdrop=document.getElementById('gao-mobile-menu-backdrop');
     if(!backdrop){backdrop=document.createElement('div');backdrop.id='gao-mobile-menu-backdrop';backdrop.className='gao-mobile-menu-backdrop';backdrop.setAttribute('aria-hidden','true');document.body.appendChild(backdrop)}
     document.body.classList.remove('gao-menu-collapsed');
-    try{if(localStorage.getItem('gao-mobile-menu-state')==='closed')document.body.classList.add('gao-mobile-menu-closed')}catch{}
+    if(!menuStateRestored){
+      menuStateRestored=true;
+      try{if(localStorage.getItem('gao-mobile-menu-state')==='closed')document.body.classList.add('gao-mobile-menu-closed')}catch{}
+    }
     const mobile=()=>window.matchMedia('(max-width: 900px)').matches;
-    const setOpen=open=>{document.body.classList.toggle('gao-mobile-menu-closed',!open);toggle.setAttribute('aria-expanded',String(open));toggle.setAttribute('aria-label',open?'Fechar menu':'Abrir menu');toggle.title=open?'Fechar menu':'Abrir menu';const label=open?'×':'☰';if(toggle.textContent!==label)toggle.textContent=label;if(mobile())try{localStorage.setItem('gao-mobile-menu-state',open?'open':'closed')}catch{}};
-    setOpen(!document.body.classList.contains('gao-mobile-menu-closed'));
+    const setOpen=(open,persist=true)=>{document.body.classList.toggle('gao-mobile-menu-closed',!open);toggle.setAttribute('aria-expanded',String(open));toggle.setAttribute('aria-label',open?'Fechar menu':'Abrir menu');toggle.title=open?'Fechar menu':'Abrir menu';const label=open?'×':'☰';if(toggle.textContent!==label)toggle.textContent=label;if(persist)try{localStorage.setItem('gao-mobile-menu-state',open?'open':'closed')}catch{}};
+    setOpen(!document.body.classList.contains('gao-mobile-menu-closed'),false);
     if(!toggle.dataset.bound){toggle.addEventListener('click',()=>setOpen(document.body.classList.contains('gao-mobile-menu-closed')));backdrop.addEventListener('click',()=>setOpen(false));document.addEventListener('keydown',e=>{if(e.key==='Escape'&&mobile())setOpen(false)});document.addEventListener('click',e=>{if(!mobile())return;const link=e.target.closest?.('.gao-nav a,.gao-textile-subnav button,.gao-chemical-subnav button');if(!link)return;const isModuleHome=['/rouparia','/enxoval-tecidos','/quimicos'].includes(link.getAttribute('href'));if(!isModuleHome)setOpen(false)});toggle.dataset.bound='true'}
   }
   function setup(){
