@@ -5,3 +5,5 @@ Implementar a solicitação aprovada: botão Conciliar nas linhas importadas e j
 Compra: lista compacta de ordens; produtos em detalhes expansíveis, recebimentos/NFs dentro de cada produto, acompanhamento dentro da OC. Manter identificadores históricos e referências originais. Formulário de recebimento em janela, sem sequência de prompts ou troca de página.
 
 Verificação: testes de cálculo de conciliação, reconciliação idempotente e saldos no banco em transação revertida; testes da apresentação e formulários; suíte existente; implantação e verificação do arquivo publicado.
+
+Ajuste solicitado: operação pelo saldo único do padrão GAO. Sem seleção ou divisão manual de lotes; RPC aloca automaticamente os metros por compras mais antigas. Ao corrigir, preserva o consumo líquido já atribuído à origem e distribui apenas o incremento. Reservas e devoluções são reprocessadas em transação com trava por lote e revisão otimista.
