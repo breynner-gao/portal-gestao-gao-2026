@@ -1,0 +1,11 @@
+import {readFile} from 'node:fs/promises';import assert from 'node:assert/strict';
+const {PGlite}=await import(process.env.PGLITE_MODULE);const db=new PGlite();
+await db.exec(`create role authenticated;create table laundry_clients(id uuid primary key);create table laundry_units(id uuid primary key,client_id uuid);create table laundry_sectors(id uuid primary key,unit_id uuid);create table laundry_collections(id uuid primary key,sector_id uuid);create table laundry_collection_weights(collection_id uuid);
+create function gao_can_access_laundry_client(uuid) returns boolean language sql as $$select $1='00000000-0000-0000-0000-000000000001'::uuid$$;
+insert into laundry_clients values('00000000-0000-0000-0000-000000000001'),('00000000-0000-0000-0000-000000000002');insert into laundry_units select id,id from laundry_clients;insert into laundry_sectors select id,id from laundry_clients;insert into laundry_collections select id,id from laundry_clients;insert into laundry_collection_weights select id from laundry_clients;
+grant select,insert,update,delete on all tables in schema public to authenticated;do $$declare t text;begin for t in select tablename from pg_tables where schemaname='public' loop execute format('alter table %I enable row level security',t);execute format('create policy legacy_all on %I for all to authenticated using(true) with check(true)',t);end loop;end$$;`);
+await db.exec(await readFile(process.env.SCOPE_SQL||new URL('../supabase/migrations/20261110095730_access_roles_client_scope.sql',import.meta.url),'utf8'));await db.exec('set role authenticated');
+for(const t of ['laundry_clients','laundry_units','laundry_sectors','laundry_collections','laundry_collection_weights'])assert.equal((await db.query(`select * from ${t}`)).rows.length,1,t);
+await assert.rejects(db.query(`insert into laundry_collection_weights values('00000000-0000-0000-0000-000000000002')`),/row-level security/);
+assert.equal((await db.query(`delete from laundry_collections where id='00000000-0000-0000-0000-000000000002' returning *`)).rows.length,0);
+console.log('PASS client scope: legacy allow-all cannot expose another client through units, sectors, collections or weights; foreign insert/delete blocked.');await db.close();

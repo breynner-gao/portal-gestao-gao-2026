@@ -15,3 +15,5 @@ Executar: migração com RLS e RPC autorizada; integração admin-users; interfa
 - Compilação TypeScript da função admin-users com esbuild, imports npm externos.
 
 Os papéis Gestor, Cliente, Coletador, Entregador e Somente leitura são modelos sem acessos iniciais, prontos para a configuração do administrador. As 41 permissões do catálogo existente são exibidas sem prometer separação de operações que continuam agrupadas pelo backend legado. Barreiras restritivas complementam as políticas permissivas antigas em Químicos e Rouparia. Não houve criação de usuários de teste em produção.
+
+Complemento: `access_roles_client_scope` aplica o limite de clientes também às políticas antigas de clientes, unidades, setores, coletas e pesagens. Teste sintético `PGLITE_MODULE=<pglite/dist/index.js> node tests/access-client-scope-db-check.mjs` confirma leitura somente do cliente autorizado e bloqueio de gravação/exclusão do outro cliente.
