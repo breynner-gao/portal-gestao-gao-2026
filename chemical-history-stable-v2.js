@@ -1,8 +1,9 @@
 (function(){
-if(!/(quimicos.*historico|historico.*quimicos)/i.test(location.pathname+location.hash))return;
+function isChemicalHistoryRoute(){return location.pathname==='/quimicos/historico'||location.pathname==='/quimicos'&&['#historico','#quimicos-historico'].includes(location.hash);}
+if(!isChemicalHistoryRoute())return;
 var done=false;
 function mount(){
- if(done)return;
+ if(done||!isChemicalHistoryRoute())return;
  var title=Array.from(document.querySelectorAll('h1,h2,h3,div')).find(function(e){return /Histórico semanal/i.test(e.textContent||'')&&e.children.length<8;});
  if(!title)return false;
  var box=title.closest('section')||title.parentElement.parentElement||title.parentElement;
