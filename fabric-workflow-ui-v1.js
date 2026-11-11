@@ -1,3 +1,5 @@
+import {buildPendingProductionCoverage,applyPendingProductionCoverage,compactDimensionKey} from '/linen-risk-rules-v150.mjs?v=226';
+import {createBuyingController} from '/linen-buying-controller-v1.mjs?v=1';
 import { fabricCatalogVariantKey, fabricInvoiceAliasKey, summarizeFabricPurchaseOrder, groupPendingFabricLotsByInvoice, latestFabricConsumptionByVariant, fabricCostReferenceLabel, normalizeFabricNumber, serviceOrderDueDate } from '/fabric-workflow-rules-v1.mjs?v=3'; import {sameFabricStandard,groupFabricStandards,purchaseReferenceChoices} from '/fabric-standard-rules-v1.mjs?v=2';
 (() => {
 'use strict';
@@ -7,7 +9,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const n=normalizeFabricNumber;
 const br=(v,d=2)=>n(v).toLocaleString('pt-BR',{maximumFractionDigits:d});
 const uid=()=>crypto.randomUUID();
-const state={org:null,session:null,tab:'demand',qualityInvoice:'',fabric:[],standards:[],suppliers:[],recipes:[],lots:[],orders:[],items:[],moves:[],returns:[],purchaseOrders:[],purchaseItems:[],purchaseReceipts:[],aliases:[],inspections:[],tracking:[],cuts:[],consumptionReferences:[],materialLinks:[],reconciliations:[],costReferences:[],busy:false,error:'',snapshot:[],mode:false};
+const state={org:null,session:null,tab:'buying',qualityInvoice:'',fabric:[],standards:[],suppliers:[],recipes:[],lots:[],orders:[],items:[],moves:[],returns:[],purchaseOrders:[],purchaseItems:[],purchaseReceipts:[],aliases:[],inspections:[],tracking:[],cuts:[],consumptionReferences:[],materialLinks:[],reconciliations:[],costReferences:[],pieceOrders:[],pieceReceipts:[],loaded:false,busy:false,error:'',snapshot:[],mode:true};
 const style=document.createElement('style');style.textContent='.fw-shell{margin:14px 0;color:#082d52}.fw-head,.fw-panel{background:#fff;border:1px solid #d5e2ef;border-radius:12px;padding:16px;margin:10px 0}.fw-head{display:flex;justify-content:space-between;align-items:center;background:#eef7ff}.fw-head small{font-weight:900;letter-spacing:.12em;color:#0879c9}.fw-head h2{margin:5px 0}.fw-head p,.fw-panel p{color:#54708e;margin:6px 0 12px}.fw-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.fw-tabs button,.fw-panel button{border:0;border-radius:8px;background:#3188cc;color:white;padding:9px 12px;font-weight:800}.fw-tabs button{background:#fff;color:#174a78;border:1px solid #b9d1e8}.fw-tabs button.active{background:#3188cc;color:white}.fw-panel h3{margin:0 0 10px}.fw-panel table{width:100%;border-collapse:collapse;min-width:780px;font-size:13px}.fw-panel th,.fw-panel td{text-align:left;padding:9px;border-bottom:1px solid #e7eef5;vertical-align:top}.fw-panel th{background:#f3f8fd;color:#54708e}.fw-panel td small{display:block;color:#7890a8;margin-top:4px}.fw-po-line{display:flex;flex-wrap:wrap;gap:8px;align-items:center;width:100%}.fw-po-order{border-top:1px solid #e7eef5;padding-top:8px;margin-top:12px}.fw-status{display:inline-block;background:#eef5fb;border-radius:999px;padding:4px 9px;color:#174a78;font-size:12px;font-weight:800}.fw-po-summary{grid-template-columns:repeat(5,1fr);margin:12px 0}.fw-po-order h4{margin:8px 0}.fw-purchase-orders>form{margin:10px 0 14px}.fw-panel form{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.fw-panel input,.fw-panel select{padding:9px;border:1px solid #b9d1e8;border-radius:8px;min-width:150px}.fw-panel form button{min-height:38px}.fw-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.fw-cards article{background:#fff;border:1px solid #d5e2ef;border-radius:10px;padding:14px}.fw-cards small,.fw-cards b{display:block}.fw-cards small{color:#54708e}.fw-cards b{font-size:22px;margin-top:7px}.fw-error{background:#fff0f0;border:1px solid #f4bcbc;color:#9b1c1c;padding:10px;border-radius:8px}.fw-note{padding:10px;color:#54708e}.fw-table-scroll{overflow:auto}.fw-catalog-edit{border:1px solid #e1eaf3;border-radius:9px;padding:10px;margin:8px 0}.fw-catalog-edit summary{cursor:pointer}.fw-catalog-edit form{margin-top:10px}.fw-catalog-edit label,.fw-panel form label{display:flex;gap:6px;align-items:center}.fw-alias-row{border-bottom:1px solid #e7eef5;padding:8px}#gao-linen-risk-shell.fw-mode>.lr150-shell{display:none!important}#gao-linen-risk-shell>#gao-fabric-flow:not([hidden]){display:block!important}@media(max-width:760px){.fw-cards{grid-template-columns:1fr}.fw-po-summary{grid-template-columns:1fr}.fw-panel form input,.fw-panel form select{width:100%}.fw-head{align-items:start;gap:8px;flex-direction:column}}';document.head.appendChild(style);
 style.textContent+='.fw-source-picker{display:grid!important;gap:6px;width:100%;font-weight:800;color:#54708e}.fw-source-picker select{width:100%;max-width:100%}[data-fw-consumption-note]{display:block;width:100%;padding:2px 0;font-size:12px;line-height:1.5}';
 const headers=()=>({apikey:KEY,Authorization:'Bearer '+state.session.access_token,'Content-Type':'application/json',Prefer:'return=representation'});
@@ -27,11 +29,33 @@ async function reload(){
  const tables=[
   ['fabric_catalog','created_at'],['fabric_suppliers','created_at'],['fabric_product_recipes','created_at'],['fabric_consumption_references','source_date'],['fabric_product_cost_references','source_row'],
   ['fabric_lots','created_at'],['fabric_production_orders','created_at'],
-  ['fabric_production_order_items','created_at'],['fabric_stock_movements','created_at'],['fabric_faction_returns','returned_at'],['fabric_purchase_orders','ordered_date'],['fabric_purchase_order_items','created_at'],['fabric_purchase_order_receipts','received_at'],['fabric_catalog_aliases','updated_at'],['fabric_lot_inspections','inspected_at'],['fabric_faction_tracking','source_row'],['fabric_cut_batches','created_at'],['fabric_material_links','updated_at'],['fabric_standards','code'],['fabric_tracking_reconciliations','updated_at']
+  ['fabric_production_order_items','created_at'],['fabric_stock_movements','created_at'],['fabric_faction_returns','returned_at'],['fabric_purchase_orders','ordered_date'],['fabric_purchase_order_items','created_at'],['fabric_purchase_order_receipts','received_at'],['fabric_catalog_aliases','updated_at'],['fabric_lot_inspections','inspected_at'],['fabric_faction_tracking','source_row'],['fabric_cut_batches','created_at'],['fabric_material_links','updated_at'],['fabric_standards','code'],['fabric_tracking_reconciliations','updated_at'],['linen_ready_orders','created_at'],['linen_ready_receipts','created_at']
  ];
- const [fabric,suppliers,recipes,consumptionReferences,costReferences,lots,orders,items,moves,returns,purchaseOrders,purchaseItems,purchaseReceipts,aliases,inspections,tracking,cuts,materialLinks,standards,reconciliations]=await Promise.all(tables.map(([t,order])=>api('/rest/v1/'+t+'?select=*&organization_id=eq.'+state.org+'&order='+order+'.desc')));
- Object.assign(state,{fabric,suppliers,recipes,consumptionReferences,costReferences,lots,orders,items,moves,returns,purchaseOrders,purchaseItems,purchaseReceipts,aliases,inspections,tracking,cuts,materialLinks,standards,reconciliations});
+ const [fabric,suppliers,recipes,consumptionReferences,costReferences,lots,orders,items,moves,returns,purchaseOrders,purchaseItems,purchaseReceipts,aliases,inspections,tracking,cuts,materialLinks,standards,reconciliations,pieceOrders,pieceReceipts]=await Promise.all(tables.map(([table,order])=>loadTable(table,order)));
+ Object.assign(state,{fabric,suppliers,recipes,consumptionReferences,costReferences,lots,orders,items,moves,returns,purchaseOrders,purchaseItems,purchaseReceipts,aliases,inspections,tracking,cuts,materialLinks,standards,reconciliations,pieceOrders,pieceReceipts});
  state.snapshot=window.GAO_LINEN_NEED_SNAPSHOT||state.snapshot||[];
+ state.loaded=true;
+}
+async function loadTable(table,order){
+ const rows=[],limit=500;
+ for(let offset=0;;offset+=limit){
+  const page=await api('/rest/v1/'+table+'?select=*&organization_id=eq.'+state.org+'&order='+order+'.desc,id.desc&limit='+limit+'&offset='+offset);
+  rows.push(...page);
+  if(page.length<limit)return rows;
+ }
+}
+function buyingSnapshot(){
+ const snapshot=window.GAO_LINEN_NEED_SNAPSHOT||[];
+ if(!state.loaded)return snapshot.map(row=>({...row,coverageReady:false}));
+ const coverage=buildPendingProductionCoverage(state);
+ const cutoff=Date.parse(window.GAO_LINEN_SOURCE_UPDATED_AT||'');
+ const afterPosition=(date,row)=>Number.isFinite(cutoff)&&Date.parse(date)>cutoff&&(!row.asOf||String(date).slice(0,10)>=row.asOf);
+ return applyPendingProductionCoverage(snapshot.map(row=>({...row,compraSugerida:row.necessidade})),coverage).map(row=>{
+  const matches=record=>record.product_reference?String(record.product_reference)===String(row.produtoId||row.produtoNome):compactDimensionKey(record.product_name)===compactDimensionKey(row.produtoNome);
+  const itemIds=new Set(state.items.filter(matches).map(i=>i.id));
+  const receivedAfterSnapshot=state.returns.filter(r=>itemIds.has(r.order_item_id)&&afterPosition(r.returned_at,row)).reduce((sum,r)=>sum+n(r.accepted_pieces),0);
+  return {...row,coverageReady:true,receivedAfterSnapshot};
+ });
 }
 function liveBalances(){
  return state.lots.map(l=>{const ms=state.moves.filter(m=>m.lot_id===l.id);return {...l,onhand:ms.reduce((a,m)=>a+n(m.stock_delta_m),0),reserved:ms.reduce((a,m)=>a+n(m.reserved_delta_m),0)}})
@@ -53,9 +77,10 @@ function render(){
  const expanded=[...host.querySelectorAll('details[data-fw-detail-key][open]')].map(d=>d.dataset.fwDetailKey);
  const tabs=[['demand','Necessidade e facção'],['stock','Tecido e compras'],['quality','Qualidade'],['recipes','Ficha técnica'],['cost','Custos e perdas']];
  const buttons=tabs.map(([id,label])=>'<button type="button" data-fw-tab="'+id+'" class="'+(state.tab===id?'active':'')+'">'+label+'</button>').join('');
- const body=state.tab==='material-need'?materialCoverageView():state.tab==='production'||state.tab==='demand'?demandView()+productionView()+trackingView():['stock','purchases','receipt','lots'].includes(state.tab)?stockPanels(state.tab):state.tab==='suppliers'?stockPanels('suppliers'):state.tab==='catalog'?standardsManagementView()+'<details class="fw-panel"><summary>Referências comerciais e códigos de NF</summary>'+stockPanels('catalog')+'</details>'+recipeView():state.tab==='quality'?qualityView():state.tab==='recipes'?recipeView():costView();
- host.innerHTML='<section class="fw-shell"><header class="fw-head"><div><small>ENXOVAL • PRODUÇÃO TÊXTIL</small><h2>'+esc(({'material-need':'Necessidade de compra de tecido',stock:'Estoque de tecidos',purchases:'Pedidos de compra',receipt:'Receber nota fiscal',lots:'Lotes recebidos',catalog:'Padronização de produtos',suppliers:'Fornecedores',quality:'Qualidade de tecidos',production:'Produção e facção',cost:'Custos e perdas'})[state.tab]||'Produção têxtil')+'</h2><p>'+esc(({'material-need':'Quanto tecido falta comprar, em metros, descontando estoque e compras a receber.',stock:'Saldo disponível e reservado de cada tecido.',purchases:'Pedidos em andamento, entregas previstas e histórico.',receipt:'Importe o XML ou registre o material recebido.',lots:'Consulte os lotes e a avaliação por nota fiscal.'})[state.tab]||'Demanda ligada a estoque, produção e custo real.')+'</p></div><button type="button" data-fw-refresh>Atualizar dados</button></header>'+(state.error?'<div class="fw-error">'+esc(state.error)+'</div>':'')+(state.busy?'<div class="fw-note">Salvando no banco…</div>':'')+body+'</section>';
+ const body=state.tab==='buying'?buying.view():state.tab==='material-need'?materialCoverageView():state.tab==='production'||state.tab==='demand'?demandView()+productionView()+trackingView():['stock','purchases','receipt','lots'].includes(state.tab)?stockPanels(state.tab):state.tab==='suppliers'?stockPanels('suppliers'):state.tab==='catalog'?standardsManagementView()+'<details class="fw-panel"><summary>Referências comerciais e códigos de NF</summary>'+stockPanels('catalog')+'</details>'+recipeView():state.tab==='quality'?qualityView():state.tab==='recipes'?recipeView():costView();
+ host.innerHTML='<section class="fw-shell"><header class="fw-head"><div><small>ENXOVAL • PRODUÇÃO TÊXTIL</small><h2>'+esc(({buying:'Comprar enxoval','material-need':'Necessidade de compra de tecido',stock:'Estoque de tecidos',purchases:'Pedidos de compra',receipt:'Receber nota fiscal',lots:'Lotes recebidos',catalog:'Padronização de produtos',suppliers:'Fornecedores',quality:'Qualidade de tecidos',production:'Produção e facção',cost:'Custos e perdas'})[state.tab]||'Produção têxtil')+'</h2><p>'+esc(({buying:'Necessidade, estoque, corte/facção e compras no mesmo lugar.','material-need':'Quanto tecido falta comprar, em metros, descontando estoque e compras a receber.',stock:'Saldo disponível e reservado de cada tecido.',purchases:'Pedidos em andamento, entregas previstas e histórico.',receipt:'Importe o XML ou registre o material recebido.',lots:'Consulte os lotes e a avaliação por nota fiscal.'})[state.tab]||'Demanda ligada a estoque, produção e custo real.')+'</p></div><button type="button" data-fw-refresh>Atualizar dados</button></header>'+(state.error?'<div class="fw-error">'+esc(state.error)+'</div>':'')+(state.busy?'<div class="fw-note">Salvando no banco…</div>':'')+(state.notice?'<div class="fw-note" role="status">'+esc(state.notice)+'</div>':'')+body+'</section>';
  for(const d of host.querySelectorAll('details[data-fw-detail-key]'))if(expanded.includes(d.dataset.fwDetailKey))d.open=true;
+ buying.restore(host);
 }
 function materialLinkInfo(code){
  const link=state.materialLinks.find(l=>l.product_reference===String(code));
@@ -72,7 +97,7 @@ function applyRecipeCost(form,row){
  const note=form.querySelector('[data-fw-default-cost-note]');if(note)note.textContent='Padrão aplicado: '+row.source_sheet+' • linha '+row.source_row+'. Padrão GAO: RFID R$ 1,98 e etiqueta R$ 0,22. Os valores podem ser ajustados.';
 }
 function fillMaterialLink(code,targetForm=null){
- const link=materialLinkInfo(code),form=targetForm||document.querySelector('form[data-fw-form="recipe"]');if(!link||!form)return;
+ const link=materialLinkInfo(code),form=targetForm||document.querySelector('form[data-fw-form="recipe"]');if(!form)return;if(!link){const row=(window.GAO_LINEN_NEED_SNAPSHOT||[]).find(r=>String(r.produtoId||r.produtoNome)===String(code));if(row){form.elements.namedItem('product_reference').value=String(code);form.elements.namedItem('product_name').value=row.produtoNome;form.elements.namedItem('label_cost_per_piece').value=RECIPE_UNIT_DEFAULTS.label;form.elements.namedItem('rfid_cost_per_piece').value=RECIPE_UNIT_DEFAULTS.rfid;}return;}
  form.reset();form.elements.namedItem('label_cost_per_piece').value=RECIPE_UNIT_DEFAULTS.label;form.elements.namedItem('rfid_cost_per_piece').value=RECIPE_UNIT_DEFAULTS.rfid;for(const [key,value] of Object.entries({product_reference:link.product_reference,product_name:link.product_name,consumption_m_per_piece:link.consumption,fabric_id:link.fabric_id||'',cost_reference_id:link.cost_reference_id||''})){const input=form.elements.namedItem(key);if(input)input.value=value;}
  const cost=state.costReferences.find(c=>c.id===link.cost_reference_id);
  if(cost)applyRecipeCost(form,cost);
@@ -142,8 +167,13 @@ async function saveRecipeDialog(form){
  finally{dialog.dataset.saving='false';buttons.forEach(b=>b.disabled=false);}
 }
 const demandDrafts=new Map();
+function readyPieceCoverage(row){
+ const orders=state.pieceOrders.filter(o=>o.product_reference===String(row.produtoId||row.produtoNome)),ids=new Set(orders.map(o=>o.id));
+ const receipts=state.pieceReceipts.filter(r=>ids.has(r.order_id)&&!r.rfid_confirmed),review=receipts.some(r=>window.GAO_LINEN_SOURCE_UPDATED_AT&&new Date(window.GAO_LINEN_SOURCE_UPDATED_AT)>new Date(r.created_at));
+ return {quantity:orders.filter(o=>o.status!=='CANCELADA').reduce((a,o)=>a+Math.max(0,n(o.ordered_pieces)-n(o.received_pieces)),0)+receipts.reduce((a,r)=>a+n(r.accepted_pieces),0),review};
+}
 function demandQuantity(row){
- const key=String(row.produtoId||row.produtoNome),raw=demandDrafts.has(key)?demandDrafts.get(key):Math.ceil(Math.max(0,n(row.pedidoReal)));
+ const key=String(row.produtoId||row.produtoNome),raw=demandDrafts.has(key)?demandDrafts.get(key):Math.ceil(Math.max(0,n(row.pedidoReal)-readyPieceCoverage(row).quantity-n(row.receivedAfterSnapshot)));
  if(String(raw).trim()===''||!Number.isSafeInteger(Number(raw))||Number(raw)<0)throw Error('Informe uma quantidade inteira de peças, igual ou maior que zero.');
  return Number(raw);
 }
@@ -350,14 +380,14 @@ function costView(){
 }
 
 
-async function readInvoiceXML(file){
+async function readInvoiceXML(file,scope=document){
  if(!file)return;const xml=new DOMParser().parseFromString(await file.text(),'application/xml');if(xml.querySelector('parsererror'))throw Error('XML da NF inválido');
  const text=(el,tag)=>el?.getElementsByTagName(tag)[0]?.textContent?.trim()||'';
  const emit=xml.getElementsByTagName('emit')[0],cnpj=text(emit,'CNPJ'),supplier=state.suppliers.find(s=>String(s.cnpj||'').replace(/\D/g,'')===cnpj),nf=text(xml,'nNF');
  state.invoiceLines=[...xml.getElementsByTagName('det')].map(det=>{const prod=det.getElementsByTagName('prod')[0],unit=text(prod,'uCom').toUpperCase(),code=text(prod,'cProd'),description=text(prod,'xProd');if(!['M','MT','METRO','METROS'].includes(unit))return null;
  const aliases=state.aliases.filter(a=>a.active!==false&&a.homologated&&a.supplier_id===supplier?.id&&a.supplier_item_code===code&&a.supplier_item_description===description);
  return {invoice_number:nf,supplier_id:supplier?.id||'',invoice_item_code:code,invoice_item_description:description,quantity_m:text(prod,'qCom'),purchase_price_per_m:text(prod,'vUnCom'),lot_code:text(det,'nLote'),fabric_id:aliases.length===1?aliases[0].fabric_id:''};}).filter(Boolean);
- const preview=document.querySelector('[data-fw-invoice-preview]');if(preview)preview.innerHTML=state.invoiceLines.length?state.invoiceLines.map((r,i)=>'<p>'+esc(r.invoice_item_code+' — '+r.invoice_item_description)+' • '+br(r.quantity_m,3)+' m • R$ '+br(r.purchase_price_per_m,4)+'/m <button type="button" data-fw-invoice-line="'+i+'">Conferir entrada</button></p>').join(''):'Nenhum item em metros encontrado no XML. Confira a unidade antes do lançamento.';
+ const preview=scope.querySelector('[data-fw-invoice-preview]');if(preview)preview.innerHTML=state.invoiceLines.length?state.invoiceLines.map((r,i)=>'<p>'+esc(r.invoice_item_code+' — '+r.invoice_item_description)+' • '+br(r.quantity_m,3)+' m • R$ '+br(r.purchase_price_per_m,4)+'/m <button type="button" data-fw-invoice-line="'+i+'">Conferir entrada</button></p>').join(''):'Nenhum item em metros encontrado no XML. Confira a unidade antes do lançamento.';
 }
 
 const addDays=serviceOrderDueDate;
@@ -450,28 +480,29 @@ function openReconciliation(id){
  catch(err){error.textContent=err.message||String(err);error.hidden=false;}finally{dialog.dataset.saving='false';buttons.forEach(b=>b.disabled=false);}
  });
 }
-function materialPurchasePlan(){
+function materialPurchasePlan(snapshot=window.GAO_LINEN_NEED_SNAPSHOT||[]){
  const balances=liveBalances(),unlinked=[],extra=new Map();
- const trackingPending=state.tracking.filter(r=>n(r.quantity)>n(r.delivered)&&!trackingReconciled(r)),reconciliationPending=trackingPending.length>0;
- for(const x of window.GAO_LINEN_NEED_SNAPSHOT||[]){
+ const activeTracking=state.tracking.filter(r=>!/cancelad|conclu[ií]d|entregue/i.test(r.delivery_status||''));
+ const trackingPending=activeTracking.filter(r=>n(r.quantity)>n(r.delivered)&&!trackingReconciled(r)),reconciliationPending=trackingPending.length>0;
+ for(const x of snapshot){
   if(n(x.pedidoReal)<=0&&!demandDrafts.has(String(x.produtoId||x.produtoNome)))continue;
   let quantity;try{quantity=demandQuantity(x)}catch{unlinked.push({row:x,reason:'Quantidade a pedir inválida'});continue;}
-  if(!quantity)continue;
+  if(!quantity&&!readyPieceCoverage(x).review)continue;
   const recipes=state.recipes.filter(r=>r.active&&r.product_reference===String(x.produtoId||x.produtoNome)&&n(r.consumption_m_per_piece)>0&&state.fabric.some(f=>f.id===r.fabric_id));
-  const reason=!x.coverageReady?'Aguardando atualização dos pedidos em andamento':recipes.length===0?'Vincular tecido e consumo na ficha técnica':recipes.length>1?'Definir uma única ficha técnica ativa':'';
+  const reason=!x.coverageReady?'Aguardando atualização dos pedidos em andamento':readyPieceCoverage(x).review?'Conferir recebimento já incorporado ao RFID':recipes.length===0?'Vincular tecido e consumo na ficha técnica':recipes.length>1?'Definir uma única ficha técnica ativa':'';
   if(reason){const link=materialLinkInfo(x.produtoId||x.produtoNome);unlinked.push({row:x,quantity,link,reason:!x.coverageReady?reason:recipes.length===0&&link?link.resolution_note:reason});continue;}
   const r=recipes[0];extra.set(r.fabric_id,(extra.get(r.fabric_id)||0)+quantity*n(r.consumption_m_per_piece));
  }
- const trackingUnlinked=state.tracking.filter(t=>n(t.quantity)>n(t.delivered)&&state.recipes.filter(r=>r.active&&r.product_reference===t.product_reference&&n(r.consumption_m_per_piece)>0&&state.fabric.some(f=>f.id===r.fabric_id)).length!==1);
+ const trackingUnlinked=activeTracking.filter(t=>n(t.quantity)>n(t.delivered)&&state.recipes.filter(r=>r.active&&r.product_reference===t.product_reference&&n(r.consumption_m_per_piece)>0&&state.fabric.some(f=>f.id===r.fabric_id)).length!==1);
  for(const t of trackingUnlinked)unlinked.push({row:{produtoId:t.product_reference,produtoNome:t.product_name,pedidoReal:Math.max(0,n(t.quantity)-n(t.delivered))},quantity:Math.max(0,n(t.quantity)-n(t.delivered)),link:materialLinkInfo(t.product_reference),reason:'Programação sem ficha técnica única com tecido e consumo'});
  const fabrics=planningFabrics().map(f=>{
   const approved=balances.filter(l=>fabricMatches(l.fabric_id,f.id)&&l.quality_status==='APROVADO').reduce((sum,l)=>sum+l.onhand,0),reserved=balances.filter(l=>fabricMatches(l.fabric_id,f.id)&&l.quality_status==='APROVADO').reduce((sum,l)=>sum+l.reserved,0);
   let needed=[...extra.entries()].filter(([id])=>fabricMatches(id,f.id)).reduce((sum,[,value])=>sum+value,0);
   for(const i of state.items.filter(i=>fabricMatches(i.fabric_id,f.id)&&['ABERTA','PARCIAL','ENVIADA'].includes(state.orders.find(o=>o.id===i.order_id)?.status)))needed+=Math.max(0,n(i.ordered_pieces)*n(i.consumption_m_per_piece)-orderStats(i).issued);
-  for(const t of state.tracking.filter(t=>n(t.quantity)>n(t.delivered))){const rec=state.recipes.find(r=>r.active&&r.product_reference===t.product_reference);if(rec&&fabricMatches(rec.fabric_id,f.id)){const used=state.reconciliations.filter(r=>r.tracking_id===t.id).reduce((a,r)=>a+n(r.consumed_m)-n(r.returned_m),0);needed+=Math.max(0,n(t.quantity)*n(rec.consumption_m_per_piece)-used);}}
+  for(const t of activeTracking.filter(t=>n(t.quantity)>n(t.delivered))){const rec=state.recipes.find(r=>r.active&&r.product_reference===t.product_reference);if(rec&&fabricMatches(rec.fabric_id,f.id)){const used=state.reconciliations.filter(r=>r.tracking_id===t.id).reduce((a,r)=>a+n(r.consumed_m)-n(r.returned_m),0);needed+=Math.max(0,n(t.quantity)*n(rec.consumption_m_per_piece)-used);}}
   const incoming=state.purchaseItems.filter(i=>fabricMatches(i.fabric_id,f.id)&&state.purchaseOrders.some(o=>o.id===i.purchase_order_id&&o.status!=='CANCELADA'&&o.logistics_stage!=='COTACAO')).reduce((sum,i)=>sum+Math.max(0,n(i.ordered_m)-n(i.received_m)),0);
   const activeItems=state.items.filter(i=>fabricMatches(i.fabric_id,f.id)&&['ABERTA','PARCIAL','ENVIADA'].includes(state.orders.find(o=>o.id===i.order_id)?.status));
-  const coveredReserve=state.moves.filter(m=>activeItems.some(i=>i.id===m.order_item_id)&&balances.some(l=>l.id===m.lot_id&&fabricMatches(l.fabric_id,f.id))).reduce((a,m)=>a+n(m.reserved_delta_m),0)+state.reconciliations.filter(r=>state.tracking.some(t=>t.id===r.tracking_id&&n(t.quantity)>n(t.delivered))&&balances.some(l=>l.id===r.lot_id&&fabricMatches(l.fabric_id,f.id))).reduce((a,r)=>a+n(r.reserved_m),0);
+  const coveredReserve=state.moves.filter(m=>activeItems.some(i=>i.id===m.order_item_id)&&balances.some(l=>l.id===m.lot_id&&fabricMatches(l.fabric_id,f.id))).reduce((a,m)=>a+n(m.reserved_delta_m),0)+state.reconciliations.filter(r=>activeTracking.some(t=>t.id===r.tracking_id&&n(t.quantity)>n(t.delivered))&&balances.some(l=>l.id===r.lot_id&&fabricMatches(l.fabric_id,f.id))).reduce((a,r)=>a+n(r.reserved_m),0);
   const otherReserved=Math.max(0,reserved-coveredReserve);
   return {fabric:f,recorded:approved,free:reconciliationPending?null:Math.max(0,approved-reserved),reserved,needed,incoming,otherReserved,projectedFree:Math.max(0,approved-needed-otherReserved),buy:trackingUnlinked.length?null:Math.max(0,needed+otherReserved-approved-incoming)};
  }).sort((a,b)=>b.buy-a.buy);
@@ -488,8 +519,8 @@ function materialCoverageView(){
 }
 
 function incomingView(orderId){if(!state.purchaseItems.some(i=>i.purchase_order_id===orderId&&n(i.ordered_m)>n(i.received_m)))return '';return '<div class="fw-panel"><h3>Compras e entregas a caminho</h3><p>Saldo a receber considera somente metros ainda não recebidos. Cotações ficam separadas dos pedidos confirmados.</p>'+state.purchaseOrders.filter(o=>o.id===orderId&&o.status!=='CANCELADA').map(o=>{const lines=state.purchaseItems.filter(i=>i.purchase_order_id===o.id);const pending=lines.reduce((sum,i)=>sum+Math.max(0,n(i.ordered_m)-n(i.received_m)),0);if(!pending)return '';return '<details><summary>Pedido '+esc(o.order_number)+' — '+br(pending,3)+' m a receber — '+esc(o.logistics_stage)+'</summary><form data-fw-form="logistics"><input type="hidden" name="id" value="'+o.id+'"><select name="logistics_stage">'+['COTACAO','CONFIRMADO','EM_TRANSPORTE'].map(x=>'<option '+(x===o.logistics_stage?'selected':'')+'>'+x+'</option>').join('')+'</select><input name="carrier" placeholder="Transportadora" value="'+esc(o.carrier||'')+'"><input name="tracking_code" placeholder="Rastreio" value="'+esc(o.tracking_code||'')+'"><input name="expected_date" type="date" value="'+esc(o.expected_date||'')+'"><button>Salvar acompanhamento</button></form></details>'}).join('')+'</div>'}
-function trackingView(){return '<div class="fw-panel"><h3>Histórico migrado da facção</h3><p>Registros distintos preservados por linha de origem. Recebimentos históricos confirmados somente pelo Status Concluído.</p>'+state.tracking.map(r=>'<details class="fw-catalog-edit"><summary>Item '+esc(r.source_item)+' — '+esc(r.product_name)+' / '+esc(r.size)+' — '+br(r.delivered,0)+' de '+br(r.quantity,0)+' entregues — '+esc(r.delivery_status)+' <small>origem: linha '+r.source_row+'</small></summary><form data-fw-form="tracking"><input type="hidden" name="id" value="'+r.id+'"><label>Peça no mapa<select name="product_reference"><option value="">Relacionar automaticamente pela descrição</option>'+ (window.GAO_LINEN_NEED_SNAPSHOT||[]).map(p=>'<option value="'+esc(p.produtoId)+'" '+(r.product_reference===String(p.produtoId)?'selected':'')+'>'+esc(p.produtoId+' • '+p.produtoNome)+'</option>').join('')+'</select></label><label>Corte<select name="cut_status">'+['PENDENTE','CONCLUIDO'].map(x=>'<option '+(r.cut_status===x?'selected':'')+'>'+x+'</option>').join('')+'</select></label><label>Entrega<select name="delivery_status">'+['PENDENTE','PARCIAL','CONCLUIDO'].map(x=>'<option '+(r.delivery_status===x?'selected':'')+'>'+x+'</option>').join('')+'</select></label><label>Recebido acumulado<input type="number" name="delivered" min="0" max="'+r.quantity+'" value="'+r.delivered+'"></label><label>Previsão<input type="date" name="expected_date" value="'+esc(r.expected_date||'')+'"></label><label>Recebido GAO<input type="date" name="received_date" value="'+esc(r.received_date||'')+'"></label><button>Salvar no sistema</button></form></details>').join('')+'</div>'}
-function productionView(){return '<div class="fw-panel"><h3>Reserva, corte e envio por OS</h3>'+state.items.map(i=>{const order=state.orders.find(o=>o.id===i.order_id);if(order?.status==='CANCELADA')return '';const lots=liveBalances().filter(l=>fabricMatches(l.fabric_id,i.fabric_id)&&l.quality_status==='APROVADO');const options=lots.map(l=>'<option value="'+l.id+'">'+esc(l.lot_code)+' • NF '+esc(l.invoice_number||'—')+' • '+br(l.onhand,3)+' m / reservado '+br(l.reserved,3)+'</option>').join('');return '<details id="os-cut-'+i.id+'" class="fw-catalog-edit"><summary>OS '+esc(order?.order_number)+' • '+esc(i.product_name)+'</summary><form data-fw-form="reserve"><input type="hidden" name="order_item_id" value="'+i.id+'"><select name="lot_id" required>'+options+'</select><input name="quantity_m" type="number" min=".001" step=".001" placeholder="Metros a reservar" required><button>Reservar tecido</button></form><form data-fw-form="release"><input type="hidden" name="order_item_id" value="'+i.id+'"><select name="lot_id" required>'+options+'</select><input name="quantity_m" type="number" min=".001" step=".001" placeholder="Metros para liberar" required><button>Liberar reserva não utilizada</button></form><form data-fw-form="cut"><input type="hidden" name="order_item_id" value="'+i.id+'"><select name="lot_id" required>'+options+'</select><input name="consumed_m" type="number" min=".001" step=".001" placeholder="Metros efetivamente consumidos" required><input name="produced_pieces" type="number" min="1" step="1" placeholder="Peças cortadas" required><button>Concluir lote de corte</button></form>'+state.cuts.filter(c=>c.order_item_id===i.id).map(c=>{const l=state.lots.find(l=>l.id===c.lot_id),loss=Math.max(0,n(c.consumed_m)-n(c.produced_pieces)*n(i.consumption_m_per_piece));return '<div class="fw-panel"><b>Lote de corte '+esc(c.id.slice(0,8))+'</b><p>Tecido '+esc(l?.lot_code)+' • NF '+esc(l?.invoice_number)+' • '+br(c.produced_pieces,0)+' peças • '+br(c.consumed_m,3)+' m • perda '+br(loss,3)+' m ('+br(loss/n(c.consumed_m)*100,2)+'%) • R$ '+br(loss*n(l?.effective_price_per_m))+'</p>'+(c.sent_date?'<p>Enviado '+esc(c.sent_date)+' • previsão '+esc(c.expected_date)+'</p>':'<form data-fw-form="dispatch"><input type="hidden" name="id" value="'+c.id+'"><select name="supplier_id" required>'+supplierOptionList()+'</select><label>Envio<input name="sent_date" type="date" value="'+new Date().toISOString().slice(0,10)+'" required></label><label>Previsão (padrão +21 dias)<input name="expected_date" type="date"></label><input name="notes" placeholder="Justificativa se alterar prazo"><button>Enviar peças à facção</button></form>')+'</div>'}).join('')+'</details>'}).join('')+'</div>'}
+function trackingView(onlyTracking=null){return '<div class="fw-panel"><h3>Histórico migrado da facção</h3><p>Registros distintos preservados por linha de origem. Recebimentos históricos confirmados somente pelo Status Concluído.</p>'+state.tracking.filter(r=>!onlyTracking||r.id===onlyTracking).map(r=>'<details class="fw-catalog-edit"><summary>Item '+esc(r.source_item)+' — '+esc(r.product_name)+' / '+esc(r.size)+' — '+br(r.delivered,0)+' de '+br(r.quantity,0)+' entregues — '+esc(r.delivery_status)+' <small>origem: linha '+r.source_row+'</small></summary><form data-fw-form="tracking"><input type="hidden" name="id" value="'+r.id+'"><label>Peça no mapa<select name="product_reference"><option value="">Relacionar automaticamente pela descrição</option>'+ (window.GAO_LINEN_NEED_SNAPSHOT||[]).map(p=>'<option value="'+esc(p.produtoId)+'" '+(r.product_reference===String(p.produtoId)?'selected':'')+'>'+esc(p.produtoId+' • '+p.produtoNome)+'</option>').join('')+'</select></label><label>Corte<select name="cut_status">'+['PENDENTE','CONCLUIDO'].map(x=>'<option '+(r.cut_status===x?'selected':'')+'>'+x+'</option>').join('')+'</select></label><label>Entrega<select name="delivery_status">'+['PENDENTE','PARCIAL','CONCLUIDO'].map(x=>'<option '+(r.delivery_status===x?'selected':'')+'>'+x+'</option>').join('')+'</select></label><label>Recebido acumulado<input type="number" name="delivered" min="0" max="'+r.quantity+'" value="'+r.delivered+'"></label><label>Previsão<input type="date" name="expected_date" value="'+esc(r.expected_date||'')+'"></label><label>Recebido GAO<input type="date" name="received_date" value="'+esc(r.received_date||'')+'"></label><button>Salvar no sistema</button></form></details>').join('')+'</div>'}
+function productionView(onlyItem=null){return '<div class="fw-panel"><h3>Reserva, corte e envio por OS</h3>'+state.items.filter(i=>!onlyItem||i.id===onlyItem).map(i=>{const order=state.orders.find(o=>o.id===i.order_id);if(order?.status==='CANCELADA')return '';const lots=liveBalances().filter(l=>fabricMatches(l.fabric_id,i.fabric_id)&&l.quality_status==='APROVADO');const options=lots.map(l=>'<option value="'+l.id+'">'+esc(l.lot_code)+' • NF '+esc(l.invoice_number||'—')+' • '+br(l.onhand,3)+' m / reservado '+br(l.reserved,3)+'</option>').join('');return '<details id="os-cut-'+i.id+'" class="fw-catalog-edit"><summary>OS '+esc(order?.order_number)+' • '+esc(i.product_name)+'</summary><form data-fw-form="reserve"><input type="hidden" name="order_item_id" value="'+i.id+'"><select name="lot_id" required>'+options+'</select><input name="quantity_m" type="number" min=".001" step=".001" placeholder="Metros a reservar" required><button>Reservar tecido</button></form><form data-fw-form="release"><input type="hidden" name="order_item_id" value="'+i.id+'"><select name="lot_id" required>'+options+'</select><input name="quantity_m" type="number" min=".001" step=".001" placeholder="Metros para liberar" required><button>Liberar reserva não utilizada</button></form><form data-fw-form="cut"><input type="hidden" name="order_item_id" value="'+i.id+'"><select name="lot_id" required>'+options+'</select><input name="consumed_m" type="number" min=".001" step=".001" placeholder="Metros efetivamente consumidos" required><input name="produced_pieces" type="number" min="1" step="1" placeholder="Peças cortadas" required><button>Concluir lote de corte</button></form>'+state.cuts.filter(c=>c.order_item_id===i.id).map(c=>{const l=state.lots.find(l=>l.id===c.lot_id),loss=Math.max(0,n(c.consumed_m)-n(c.produced_pieces)*n(i.consumption_m_per_piece));return '<div class="fw-panel"><b>Lote de corte '+esc(c.id.slice(0,8))+'</b><p>Tecido '+esc(l?.lot_code)+' • NF '+esc(l?.invoice_number)+' • '+br(c.produced_pieces,0)+' peças • '+br(c.consumed_m,3)+' m • perda '+br(loss,3)+' m ('+br(loss/n(c.consumed_m)*100,2)+'%) • R$ '+br(loss*n(l?.effective_price_per_m))+'</p>'+(c.sent_date?'<p>Enviado '+esc(c.sent_date)+' • previsão '+esc(c.expected_date)+'</p>':'<form data-fw-form="dispatch"><input type="hidden" name="id" value="'+c.id+'"><select name="supplier_id" required>'+supplierOptionList()+'</select><label>Envio<input name="sent_date" type="date" value="'+new Date().toISOString().slice(0,10)+'" required></label><label>Previsão (padrão +21 dias)<input name="expected_date" type="date"></label><input name="notes" placeholder="Justificativa se alterar prazo"><button>Enviar peças à facção</button></form>')+'</div>'}).join('')+'</details>'}).join('')+'</div>'}
 
 function formData(form){return Object.fromEntries(new FormData(form).entries())}
 function val(d,k){return d[k]===''||d[k]===undefined?null:n(d[k])}
@@ -554,16 +585,16 @@ async function ship(id){
  for(const lot of lots){const qty=Math.min(remaining,lot.onhand-lot.reserved);if(qty<=0)continue;const cumulative=Math.round((prior+needed-remaining+qty)*1000);await rpc('fabric_post_stock_movement',{p_organization_id:state.org,p_lot_id:lot.id,p_movement_type:'ENVIO_FACCAO',p_quantity_m:qty,p_order_item_id:item.id,p_idempotency_key:'fabric-ship-'+item.id+'-'+lot.id+'-'+cumulative,p_notes:'Envio para facção • '+item.product_name});remaining-=qty;if(remaining<=0.0005)break}
  if(remaining>0.0005)throw Error('O saldo mudou durante o envio. Clique em “Completar envio” para continuar com o saldo atualizado.');
 }
-async function returnForm(id){
+async function returnForm(id,values=null){
  const item=state.items.find(x=>x.id===id);
  const shipments=state.moves.filter(x=>x.order_item_id===id&&x.movement_type==='ENVIO_FACCAO');
  const cuts=state.cuts.filter(c=>c.order_item_id===id);if(cuts.length&&!cuts.some(c=>c.sent_date))throw Error('Registre o envio das peças cortadas à facção antes do recebimento.');
- const accepted=prompt('Peças aceitas nesta entrega da facção:', '0');if(accepted===null)return;
- const rejected=prompt('Peças rejeitadas:', '0');if(rejected===null)return;
- const returned=prompt('Metros de tecido que voltaram ao estoque:', '0');if(returned===null)return;
- const faction=prompt('Custo da facção desta entrega (R$):', String(n(accepted)*n(item.faction_cost_per_piece)));if(faction===null)return;
- const extras=prompt('Custo de aviamentos desta entrega (R$):', String(n(accepted)*n(item.extras_cost_per_piece)));if(extras===null)return;
- const notes=prompt('Observação (opcional):','')||'';
+ const accepted=values?values.accepted:prompt('Peças aceitas nesta entrega da facção:', '0');if(accepted===null)return;
+ const rejected=values?values.rejected:prompt('Peças rejeitadas:', '0');if(rejected===null)return;
+ const returned=values?values.returned:prompt('Metros de tecido que voltaram ao estoque:', '0');if(returned===null)return;
+ const faction=values?values.faction:prompt('Custo da facção desta entrega (R$):', String(n(accepted)*n(item.faction_cost_per_piece)));if(faction===null)return;
+ const extras=values?values.extras:prompt('Custo de aviamentos desta entrega (R$):', String(n(accepted)*n(item.extras_cost_per_piece)));if(extras===null)return;
+ const notes=values?values.notes||'':prompt('Observação (opcional):','')||'';
  const prior=state.returns.filter(x=>x.order_item_id===id);
  let returnLeft=n(returned);
  const lots=shipments.map(m=>({lot_id:m.lot_id,remaining:n(m.quantity_m)-prior.filter(r=>r.lot_id===m.lot_id).reduce((s,r)=>s+n(r.returned_m),0)})).filter(x=>x.remaining>0);
@@ -575,7 +606,7 @@ async function returnForm(id){
  let result;
  for(let index=0;index<entries.length;index++){
   const x=entries[index];
-  result=await rpc('fabric_record_faction_return',{p_organization_id:state.org,p_order_item_id:id,p_lot_id:x.lot_id,p_accepted_pieces:index===0?n(accepted):0,p_rejected_pieces:index===0?n(rejected):0,p_returned_m:x.qty,p_faction_cost_amount:index===0?n(faction):0,p_extras_cost_amount:index===0?n(extras):0,p_notes:notes,p_idempotency_key:'fabric-return-'+id+'-'+new Date().toISOString().slice(0,16).replace(/[^0-9]/g,'')+'-'+index})
+  result=await rpc('fabric_record_faction_return',{p_organization_id:state.org,p_order_item_id:id,p_lot_id:x.lot_id,p_accepted_pieces:index===0?n(accepted):0,p_rejected_pieces:index===0?n(rejected):0,p_returned_m:x.qty,p_faction_cost_amount:index===0?n(faction):0,p_extras_cost_amount:index===0?n(extras):0,p_notes:notes,p_idempotency_key:'fabric-return-'+id+'-'+(values?.requestId||new Date().toISOString().slice(0,16).replace(/[^0-9]/g,''))+'-'+index})
  }
  return result;
 }
@@ -628,7 +659,7 @@ document.addEventListener('input',e=>{
  const q=e.target.value.trim().toLocaleLowerCase('pt-BR');document.querySelectorAll('[data-fw-catalog-row]').forEach(row=>{row.hidden=!row.dataset.search.includes(q)});
 });
 document.addEventListener('click',async e=>{
- const planPurchase=e.target.closest('[data-fw-plan-purchase]');if(planPurchase){const plan=materialPurchasePlan().fabrics.find(r=>r.fabric.id===planPurchase.dataset.fwPlanPurchase);if(plan?.buy>0)openFabricPurchaseDraft({fabric:plan.fabric,missing:plan.buy},{source_item:'Planejamento geral',product_name:plan.fabric.name});return;}
+ const planPurchase=e.target.closest('[data-fw-plan-purchase]');if(planPurchase){const plan=materialPurchasePlan(state.tab==='buying'?buyingSnapshot():undefined).fabrics.find(r=>r.fabric.id===planPurchase.dataset.fwPlanPurchase);if(plan?.buy>0)openFabricPurchaseDraft({fabric:plan.fabric,missing:plan.buy},{source_item:'Planejamento geral',product_name:plan.fabric.name});return;}
  const shortageClose=e.target.closest('[data-fw-shortage-close]');if(shortageClose){const d=shortageClose.closest('dialog');if(d.dataset.saving!=='true'){d.close();d.remove();}return;}
  if(e.target.closest('[data-fw-shortage-order]')){openShortageOrder(e.target.closest('[data-fw-reconciliation]'));return;}
  const reconcileRecipe=e.target.closest('[data-fw-reconcile-recipe]');if(reconcileRecipe){const d=reconcileRecipe.closest('dialog');d.close();d.remove();openRecipeDialog(reconcileRecipe.dataset.fwReconcileRecipe);return;}
@@ -659,11 +690,12 @@ document.addEventListener('click',async e=>{
  const lotQuality=e.target.closest('[data-fw-open-lot-quality]');if(lotQuality){const lot=state.lots.find(l=>l.id===lotQuality.dataset.fwOpenLotQuality);if(lot){state.qualityLot=lot.id;state.qualityInvoice=String(lot.invoice_number||'').trim()||'Sem NF • '+(lot.lot_code||lot.id);state.tab='quality';setFlowMode(true);render();}return;}
  if(e.target.closest('[data-fw-quality-all]')){state.qualityLot=null;render();return;}
  const tab=e.target.closest('[data-fw-tab]');if(tab){state.qualityLot=null;state.tab=tab.dataset.fwTab;setFlowMode(true);render();return}
- const xmlLine=e.target.closest('[data-fw-invoice-line]');if(xmlLine){const r=state.invoiceLines?.[Number(xmlLine.dataset.fwInvoiceLine)],form=document.querySelector('[data-fw-form=receipt]');if(r&&form)for(const [key,value] of Object.entries(r)){const input=form.elements.namedItem(key);if(input)input.value=value??'';}return;}
+ const xmlLine=e.target.closest('[data-fw-invoice-line]');if(xmlLine){const r=state.invoiceLines?.[Number(xmlLine.dataset.fwInvoiceLine)],form=(xmlLine.closest('dialog')||document).querySelector('[data-fw-form=receipt]');if(r&&form)for(const [key,value] of Object.entries(r)){const input=form.elements.namedItem(key);if(input)input.value=value??'';}return;}
  const invoiceTab=e.target.closest('[data-fw-quality-invoice]');if(invoiceTab){state.qualityInvoice=invoiceTab.dataset.fwQualityInvoice;render();return}
  if(e.target.closest('[data-fw-open]')){setFlowMode(true);render();return}
  const dimension=e.target.closest('[data-dimension-view]');if(dimension){setFlowMode(false);document.querySelectorAll('.gao-textile-subnav .active').forEach(b=>b.classList.remove('active'));dimension.classList.add('active')}
- if(e.target.closest('[data-fw-refresh]')){await run(()=>reload());return}
+ if(e.target.closest('[data-fw-buy-map]')){document.querySelector('.gao-textile-subnav [data-dimension-view=map]')?.click();return;}
+ if(e.target.closest('[data-fw-refresh]')){if(state.refreshing||state.busy)return;state.refreshing=true;state.error='';try{await (state.org?reload():init());}catch(err){state.loaded=false;state.error=err.message;}finally{state.refreshing=false;render();}return}
  if(e.target.closest('[data-fw-create-order]')){await run(createOrder);return}
  if(e.target.closest('[data-fw-add-po-line]')){const form=e.target.closest('form');form.querySelector('[data-fw-po-lines]')?.insertAdjacentHTML('beforeend',poLineHtml());refreshPurchaseReferences(form);return}
  const removePoLine=e.target.closest('[data-fw-remove-po-line]');if(removePoLine){if(removePoLine.closest('form').querySelectorAll('[data-fw-po-line]').length>1)removePoLine.closest('[data-fw-po-line]').remove();return}
@@ -685,7 +717,7 @@ document.addEventListener('change',async e=>{
   const candidates=state.fabric.filter(f=>f.active!==false&&f.code.trim().toUpperCase()===e.target.value.trim().toUpperCase());
   for(const key of ['name','fabric_type','composition','width_m']){const values=[...new Set(candidates.map(f=>String(f[key]??'')))];const input=catalogForm.elements.namedItem(key);if(!input.value&&values.length===1)input.value=values[0];}
  }
- if(e.target.matches('[data-fw-invoice-xml]')){try{await readInvoiceXML(e.target.files?.[0])}catch(err){state.error=err.message;render()}return;}
+ if(e.target.matches('[data-fw-invoice-xml]')){try{await readInvoiceXML(e.target.files?.[0],e.target.closest('dialog')||document)}catch(err){state.error=err.message;render()}return;}
 
  const form=e.target.closest('form[data-fw-form="recipe"]');if(!form)return;
  const costPicker=e.target.closest('[data-fw-cost-source]');
@@ -724,6 +756,7 @@ function mount(){
  const flowButton=nav.querySelector('[data-fw-open]');flowButton?.classList.toggle('active',state.mode);flowButton?.setAttribute('aria-pressed',String(state.mode));
  if(!shell.querySelector('#gao-fabric-flow')){const host=document.createElement('div');host.id='gao-fabric-flow';host.hidden=!state.mode;shell.appendChild(host);render();if(!state.org){init().then(render).catch(err=>{state.error=err.message;render()})}}
 }
+const buying=createBuyingController({state,buyingSnapshot,esc,n,br,rpc,reload,render,uid,materialPurchasePlan,liveBalances,fabricMatches,openRecipeDialog,productionView,trackingView,ordersTable,purchaseOrderView,stockPanels,qualityView,costView,standardsManagementView,recipeView,openFabricPurchaseDraft,submit,saveQualityBatch,returnForm,orderStats,syncOrderStatuses,refreshPurchaseReferences});
 new MutationObserver(mount).observe(document.documentElement,{childList:true,subtree:true});
 setInterval(mount,900);
 })();

@@ -543,20 +543,13 @@ function dashboardView(s, totals, movementItems, asOf) {
 }
 
 function textileMenu(){return `    <nav class="lr150-dimension-nav" aria-label="Enxoval e tecidos">
-<button type="button" data-dimension-view="movements">Movimentações</button>
+<button type="button" data-fw-tab="buying">Comprar enxoval</button>
 <button type="button" data-dimension-view="map">Mapa de peças, trocas e necessidade</button>
-<button type="button" data-fw-tab="catalog">Padronização de produtos</button>
-<button type="button" data-fw-tab="suppliers">Fornecedores</button>
-<button type="button" data-fw-tab="stock">Estoque de tecidos</button>
-<button type="button" class="fw-stock-child" data-fw-tab="material-need">↳ Necessidade de compra de tecido</button>
-<button type="button" class="fw-stock-child" data-fw-tab="purchases">↳ Pedidos de compra</button>
-<button type="button" class="fw-stock-child" data-fw-tab="receipt">↳ Receber NF</button>
-<button type="button" class="fw-stock-child" data-fw-tab="lots">↳ Lotes recebidos</button>
-<button type="button" data-fw-tab="production">Produção e facção</button>
-<button type="button" data-fw-tab="quality">Qualidade</button>
-<button type="button" data-fw-tab="cost">Custos e perdas</button>
+<button type="button" data-dimension-view="movements">Movimentações</button>
+<button type="button" data-fw-buy-tool="catalog">Cadastros</button>
 <button type="button" data-dimension-view="imports">Importações</button>
 </nav>`;}
+
 function panel() {
   if (state.error) return `${textileMenu()}<div class="lr150-shell error"><strong>Curva RFID indisponível</strong><p>${esc(state.error)}</p><p>Os arquivos-base do RFID não estão publicados neste endereço. Para recuperar os dados sem inventar números, envie o relatório RFID original em CSV, JSON ou Excel:</p><label class="lr150-upload"><input id="lr150-file" type="file" accept=".csv,.txt,.json,.xlsx,.xls"><span>Selecionar relatório RFID</span></label>${state.uploadMessage ? `<div class="lr150-message">${esc(state.uploadMessage)}</div>` : ''}<small style="display:block;margin-top:10px;color:#54708e">A planilha de produção da facção é separada e não substitui o relatório RFID.</small></div>`;
   if (!state.loaded) return '<div class="lr150-shell">Carregando curva RFID...</div>';
@@ -859,7 +852,8 @@ function render() {
   }
   const activeId = document.activeElement?.id || '';
   const activeStart = document.activeElement?.selectionStart;
-  window.GAO_LINEN_NEED_SNAPSHOT = state.rows.map(row => ({ produtoId: row.produtoId, produtoNome: row.produtoNome, pedidoReal: row.pedidoReal, coverageReady:state.coverageReady, necessidade:row.compraSugerida, pendingTracking:factionQuantityFor(row,state.trackingMap), pendingServiceOrders:factionQuantityFor(row,state.serviceOrderMap), needWithoutTracking:Math.max(0,Number(row.compraSugerida||0)-factionQuantityFor(row,state.trackingMap)), asOf: state.asOf }));
+  window.GAO_LINEN_SOURCE_UPDATED_AT = state.cloudUpdatedAt || null;
+  window.GAO_LINEN_NEED_SNAPSHOT = state.rows.map(row => ({ produtoId: row.produtoId, produtoNome: row.produtoNome, pedidoReal: row.pedidoReal, estoqueUtil:row.estoqueUtil, estoqueGao:row.estoqueGao, metaTrocas:row.mediaDiaria>0&&row.trocaReferencia>0?Math.ceil(row.mediaDiaria*row.trocaReferencia):null, coverageReady:state.coverageReady, necessidade:row.compraSugerida, pendingTracking:factionQuantityFor(row,state.trackingMap), pendingServiceOrders:factionQuantityFor(row,state.serviceOrderMap), needWithoutTracking:Math.max(0,Number(row.compraSugerida||0)-factionQuantityFor(row,state.trackingMap)), asOf: state.asOf }));
   shell.innerHTML = panel();
   mountTextileSubmenu(shell);
   bind();
