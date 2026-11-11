@@ -2,14 +2,15 @@ import {
   buildBuyingRows,
   allocateBuyingFabric,
 } from "./linen-buying-rules-v1.mjs?v=1";
-import { buyingView, buyingStyles } from "./linen-buying-view-v1.mjs?v=2";
+import { buyingView, buyingStyles, buyingSortStyles, buyingSortLabel, sortBuyingRows } from "./linen-buying-view-v1.mjs?v=3";
 import { compactDimensionKey } from "./linen-risk-rules-v150.mjs?v=226";
 export function createBuyingController(env) {
   const { state, esc, n, br, rpc, reload, render, uid } = env;
+  let sort = null;
   let query = "",
     expanded = new Set();
   const style = document.createElement("style");
-  style.textContent = buyingStyles;
+  style.textContent = buyingStyles + buyingSortStyles;
   document.head.appendChild(style);
   const day = () =>
     new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(
@@ -138,7 +139,28 @@ export function createBuyingController(env) {
       ...plan,
       ongoing: ongoingHTML() + fabricOrdersSummary(),
       query,
+      sort,
     });
+  }
+  function sortColumn(button) {
+    const key = button.dataset.fwBuySort;
+    const direction = sort?.key === key
+      ? (sort.direction === "asc" ? "desc" : "asc")
+      : (key === "name" ? "asc" : "desc");
+    sort = { key, direction };
+    const heading = button.closest(".fw-buy-heading");
+    const list = heading.nextElementSibling;
+    const rows = new Map([...list.querySelectorAll("[data-fw-buy-row]")]
+      .map((element) => [element.dataset.fwBuyKey, element]));
+    for (const row of sortBuyingRows(model().rows, sort)) {
+      const element = rows.get(row.key);
+      if (element) list.appendChild(element);
+    }
+    for (const control of heading.querySelectorAll("[data-fw-buy-sort]")) {
+      const column = control.dataset.fwBuySort;
+      control.setAttribute("aria-pressed", String(column === key));
+      control.querySelector("[data-fw-buy-sort-arrow]").textContent = buyingSortLabel(column, sort);
+    }
   }
   function restore(host) {
     for (const d of host.querySelectorAll("details[data-fw-detail-key]"))
@@ -477,6 +499,10 @@ export function createBuyingController(env) {
     (e) => {
       const b = e.target.closest("button,a");
       if (!b) return;
+      if (b.matches("[data-fw-buy-sort]")) {
+        sortColumn(b);
+        return;
+      }
       const own =
         b.matches(
           "[data-fw-buy-close],[data-fw-buy-tool],[data-fw-buy-piece],[data-fw-buy-produce],[data-fw-buy-fabric],[data-fw-buy-orders],[data-fw-buy-os],[data-fw-buy-tracking],[data-fw-buy-return],[data-fw-ready-receive],[data-fw-ready-edit],[data-fw-ready-cancel],[data-fw-ready-rfid],[data-fw-buy-open-po]",

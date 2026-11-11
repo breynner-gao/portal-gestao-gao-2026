@@ -134,3 +134,18 @@ test("compra a receber não é contada como estoque físico", () => {
   assert.equal(result.rows[0].incomingMeters, 10);
   assert.equal(result.rows[0].buyMeters, 5);
 });
+
+test("ordenação usa valores numéricos e deixa saldos a conferir por último", async () => {
+  const { sortBuyingRows } = await import("../linen-buying-view-v1.mjs");
+  const rows = [
+    { name: "Campo 10", toOrder: 1000 },
+    { name: "Campo 2", toOrder: 90 },
+    { name: "Campo 3", toOrder: null },
+    { name: "Campo 1", toOrder: 0 },
+  ];
+  const names = (key, direction) => sortBuyingRows(rows, { key, direction }).map(r => r.name);
+  assert.deepEqual(names("toOrder", "asc"), ["Campo 1", "Campo 2", "Campo 10", "Campo 3"]);
+  assert.deepEqual(names("toOrder", "desc"), ["Campo 10", "Campo 2", "Campo 1", "Campo 3"]);
+  assert.deepEqual(names("name", "asc"), ["Campo 1", "Campo 2", "Campo 3", "Campo 10"]);
+  assert.equal(rows[0].name, "Campo 10");
+});
