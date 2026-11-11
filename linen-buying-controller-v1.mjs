@@ -1,4 +1,4 @@
-import { createEnfestoControls } from "./fabric-enfesto-v1.mjs?v=1";
+import { createEnfestoControls } from "./fabric-enfesto-v1.mjs?v=2";
 import {
   buildBuyingRows,
 } from "./linen-buying-rules-v1.mjs?v=1";
@@ -27,8 +27,8 @@ export function createBuyingController(env) {
       .join("");
   const field = (label, name, type, value = "", extra = "") =>
     `<label class="fw-field">${label}<input name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
-  const form = (action, fields) =>
-    `<form data-fw-buy-form="${action}">${fields}<button type="submit">Salvar e atualizar</button><button type="button" data-fw-buy-close>Cancelar</button></form>`;
+  const form = (action, fields, submitLabel = "Salvar e atualizar") =>
+    `<form data-fw-buy-form="${action}">${fields}<button type="submit">${esc(submitLabel)}</button><button type="button" data-fw-buy-close>Cancelar</button></form>`;
   const enfesto = createEnfestoControls(env, { modal, field, form, day });
   function model() {
     const snapshot = env.buyingSnapshot();
@@ -78,6 +78,7 @@ export function createBuyingController(env) {
   function ongoingHTML(key = null) {
     const cutPieces = new Map();
     for (const cut of state.enfestos || []) {
+      if (cut.consumed_m == null) continue;
       for (const output of cut.outputs) {
         if (!output.source_id) continue;
         const source = output.source_type + ":" + output.source_id;
@@ -386,8 +387,8 @@ export function createBuyingController(env) {
           ],
           p_idempotency_key: "buy-os-" + d.dataset.request,
         });
-      } else if (action === "enfesto-create" || action === "enfesto-stock") {
-        await enfesto.save(d, formEl);
+      } else if (action?.startsWith("enfesto-")) {
+        result = await enfesto.save(d, formEl);
       } else if (action === "return") {
         await env.returnForm(values.id, {
           ...values,
@@ -431,11 +432,11 @@ export function createBuyingController(env) {
           ? "Pedido de peças registrado."
           : action === "receive"
             ? "Recebimento registrado."
-            : action === "enfesto-create"
-              ? "Lote de corte registrado."
-              : action === "enfesto-stock"
-                ? "Baixa do tecido registrada."
-                : "Alteração salva.";
+            : ({
+              "enfesto-plan": "Planejamento de corte salvo.",
+              "enfesto-finish": "Resultado do corte registrado.",
+              "enfesto-stock": "Baixa do tecido registrada.",
+            })[action] || "Alteração salva.";
       render();
       d.close();
       d.remove();
@@ -452,6 +453,7 @@ export function createBuyingController(env) {
         const openKeys = [
           ...parent.querySelectorAll("details[open][data-fw-detail-key]"),
         ].map((el) => el.dataset.fwDetailKey);
+        if (kind === "enfestos" && typeof result === "string") openKeys.push("enfesto-" + result);
         const hiddenKeys = [
           ...parent.querySelectorAll("details[hidden][data-fw-detail-key]"),
         ].map((el) => el.dataset.fwDetailKey);
