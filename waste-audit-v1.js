@@ -17,7 +17,9 @@ const objectPath=path=>path.split('/').map(encodeURIComponent).join('/');
 async function read(path){
   const response=await fetch(base+'/authenticated/waste-audit/'+objectPath(path),{headers:headers()});
   if(!response.ok){
-    const error=Error('Documento indisponível para este acesso.');
+    const error=Error(response.status===401||response.status===403
+      ?'Sua sessão ou perfil precisa ter acesso aos documentos de Resíduos.'
+      :'O Portal não conseguiu carregar o documento. Tente novamente.');
     error.status=response.status;
     throw error;
   }
@@ -94,12 +96,20 @@ function bind(root){
       frame.src=url;
       frame.addEventListener('load',()=>URL.revokeObjectURL(url),{once:true});
       content.replaceChildren(frame);
+      open.hidden=true;
     }catch(error){
       content.textContent=error.message;
       open.disabled=false;
       if(error.status===400||error.status===404) offerImport(content,open.onclick);
     }
   };
+  const loadWhenSignedIn=()=>{
+    if(!open.isConnected||open.disabled||open.hidden) return;
+    try{headers();}catch{return;}
+    void open.onclick();
+  };
+  loadWhenSignedIn();
+  if(!open.disabled) window.addEventListener('gao-chem-db-ready',loadWhenSignedIn,{once:true});
 }
 window.GAO_WASTE_DOCUMENTS={upload,download,bind};
 })();
