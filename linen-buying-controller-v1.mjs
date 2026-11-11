@@ -1,8 +1,7 @@
 import {
   buildBuyingRows,
-  allocateBuyingFabric,
 } from "./linen-buying-rules-v1.mjs?v=1";
-import { buyingView, buyingStyles, buyingSortStyles, buyingSortLabel, sortBuyingRows } from "./linen-buying-view-v1.mjs?v=3";
+import { buyingView, buyingStyles, buyingSortStyles, buyingSortLabel, sortBuyingRows } from "./linen-buying-view-v1.mjs?v=4";
 import { compactDimensionKey } from "./linen-risk-rules-v150.mjs?v=226";
 export function createBuyingController(env) {
   const { state, esc, n, br, rpc, reload, render, uid } = env;
@@ -39,10 +38,15 @@ export function createBuyingController(env) {
       pieceReceipts: state.pieceReceipts || [],
       snapshotUpdatedAt: window.GAO_LINEN_SOURCE_UPDATED_AT,
     });
-    const plan = env.materialPurchasePlan(snapshot);
+    const pools = env.fabricBuyingBalances();
     return {
-      ...allocateBuyingFabric(rows, plan.fabrics, env.fabricMatches),
-      unlinked: plan.unlinked,
+      rows: rows.map(row => ({
+        ...row,
+        pool: row.recipe
+          ? pools.find(pool => env.fabricMatches(row.recipe.fabric_id, pool.fabric.id))
+          : undefined,
+      })),
+      pools,
     };
   }
   const rowFor = (key) => model().rows.find((r) => r.key === key);
@@ -298,7 +302,7 @@ export function createBuyingController(env) {
     const qty = quantity(key);
     const d = modal(
       "Programar corte e facção",
-      `<p><b>${esc(row.name)}</b> · ${br(row.recipe.consumption_m_per_piece, 3)} m/peça.</p>` +
+      `<p><b>${esc(row.name)}</b></p>` +
         form(
           "produce",
           `<input type="hidden" name="productReference" value="${esc(key)}">${field("Peças para esta OS", "quantity", "number", qty, 'min="1" step="1" required')}<p>O sistema gera a OS ligada ao tecido GAO. Corte, envio e retorno podem ser registrados no próprio pedido. Esta programação não registra saída física de tecido.</p>`,
@@ -547,12 +551,8 @@ export function createBuyingController(env) {
           return;
         }
         if (b.dataset.fwBuyFabric) {
-          const row = rowFor(b.dataset.fwBuyFabric);
-          if (row?.buyMeters > 0)
-            env.openFabricPurchaseDraft(
-              { fabric: row.pool.fabric, missing: row.buyMeters },
-              { source_item: "Comprar enxoval", product_name: row.name },
-            );
+          const pool = env.fabricBuyingBalances().find(item => item.fabric.id === b.dataset.fwBuyFabric);
+          if (pool) env.openFabricPurchaseDraft({ fabric: pool.fabric }, {});
           return;
         }
         if (b.dataset.fwBuyOrders) {

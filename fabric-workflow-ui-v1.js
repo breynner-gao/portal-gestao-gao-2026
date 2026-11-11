@@ -1,5 +1,5 @@
 import {buildPendingProductionCoverage,applyPendingProductionCoverage,compactDimensionKey} from '/linen-risk-rules-v150.mjs?v=226';
-import {createBuyingController} from '/linen-buying-controller-v1.mjs?v=3';
+import {createBuyingController} from '/linen-buying-controller-v1.mjs?v=4';
 import { fabricCatalogVariantKey, fabricInvoiceAliasKey, summarizeFabricPurchaseOrder, groupPendingFabricLotsByInvoice, latestFabricConsumptionByVariant, fabricCostReferenceLabel, normalizeFabricNumber, serviceOrderDueDate } from '/fabric-workflow-rules-v1.mjs?v=3'; import {sameFabricStandard,groupFabricStandards,purchaseReferenceChoices} from '/fabric-standard-rules-v1.mjs?v=2';
 (() => {
 'use strict';
@@ -446,9 +446,10 @@ function openShortageOrder(origin){
 }
 function openFabricPurchaseDraft(plan,row,origin=null){
  const template=document.createElement('template');template.innerHTML=purchaseOrderView();const source=template.content.querySelector('[data-fw-form="purchaseOrder"]');
- const dialog=document.createElement('dialog');dialog.className='fw-recipe-dialog';dialog.setAttribute('data-fw-shortage-dialog','');dialog.innerHTML='<header class="fw-modal-head"><h2>Pedido de tecido faltante</h2><button type="button" data-fw-shortage-close aria-label="Fechar">×</button></header><div class="fw-panel"><p>'+esc(internalName(plan.fabric))+' • Sugestão: '+br(plan.missing,3)+' m. Confira fornecedor, quantidade e preço antes de registrar.</p><div data-fw-shortage-error class="fw-error" role="alert" hidden></div>'+source.outerHTML+'</div>';
+ const manual=plan.missing==null;
+ const dialog=document.createElement('dialog');dialog.className='fw-recipe-dialog';dialog.setAttribute('data-fw-shortage-dialog','');dialog.innerHTML='<header class="fw-modal-head"><h2>Pedido de tecido</h2><button type="button" data-fw-shortage-close aria-label="Fechar">×</button></header><div class="fw-panel"><p>'+esc(internalName(plan.fabric))+(manual?'. Informe a quantidade em metros do pedido.':' • Sugestão: '+br(plan.missing,3)+' m. Confira fornecedor, quantidade e preço antes de registrar.')+'</p><div data-fw-shortage-error class="fw-error" role="alert" hidden></div>'+source.outerHTML+'</div>';
  const form=dialog.querySelector('form'),standard=form.querySelector('[data-fw-purchase-standard]');standard.value=plan.fabric.standard_id||'';
- form.querySelector('[name="ordered_m"]').value=plan.missing;form.querySelector('[name="notes"]').value='Necessidade estimada da programação '+(row.source_item||'')+' • '+row.product_name;
+ form.querySelector('[name="ordered_m"]').value=plan.missing??'';form.querySelector('[name="notes"]').value=manual?(row.product_name||''):'Necessidade estimada da programação '+(row.source_item||'')+' • '+row.product_name;
  const allowed=state.suppliers.filter(s=>purchaseReferenceChoices(state.fabric,plan.fabric.standard_id,s.id).length>0),supplier=form.querySelector('[name="supplier_id"]');supplier.innerHTML='<option value="">Escolher fornecedor</option>'+allowed.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.trade_name||s.legal_name)+'</option>').join('');if(allowed.length===1)supplier.value=allowed[0].id;
  refreshPurchaseReferences(form);document.body.appendChild(dialog);dialog.showModal();dialog.addEventListener('cancel',e=>{if(dialog.dataset.saving==='true')e.preventDefault();else dialog.remove();});
  form.addEventListener('submit',async e=>{e.preventDefault();e.stopPropagation();if(dialog.dataset.saving==='true')return;dialog.dataset.saving='true';const buttons=[...dialog.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);const error=dialog.querySelector('[data-fw-shortage-error]');error.hidden=true;
@@ -478,6 +479,21 @@ function openReconciliation(id){
  dialog.querySelector('form').addEventListener('submit',async e=>{e.preventDefault();if(dialog.dataset.saving==='true')return;dialog.dataset.saving='true';const buttons=[...dialog.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);const error=dialog.querySelector('[data-fw-reconciliation-error]');error.hidden=true;
  try{const values=Object.fromEntries(['reserved_m','consumed_m','returned_m'].map(k=>['p_'+k,n(dialog.querySelector('[name="'+k+'"]').value)]));if(values.p_reserved_m+values.p_consumed_m<=0)throw Error('Não há reserva ou consumo para gravar. O planejamento e a falta de compra já são calculados automaticamente.');await rpc('fabric_reconcile_tracking_auto',{p_organization_id:state.org,p_tracking_id:id,...values,p_notes:dialog.querySelector('[name="notes"]').value,p_revision:dialog.dataset.request,p_expected_revision:dialog.dataset.revision||null});await reload();render();dialog.close();dialog.remove();}
  catch(err){error.textContent=err.message||String(err);error.hidden=false;}finally{dialog.dataset.saving='false';buttons.forEach(b=>b.disabled=false);}
+ });
+}
+function fabricBuyingBalances(){
+ const balances=liveBalances();
+ const confirmedOrders=new Set(state.purchaseOrders.filter(order=>
+  order.status!=='CANCELADA'&&order.logistics_stage!=='COTACAO'
+ ).map(order=>order.id));
+ return planningFabrics().map(fabric=>{
+  const lots=balances.filter(lot=>lot.quality_status==='APROVADO'&&fabricMatches(lot.fabric_id,fabric.id));
+  const recorded=lots.reduce((total,lot)=>total+lot.onhand,0);
+  const reserved=lots.reduce((total,lot)=>total+lot.reserved,0);
+  const incoming=state.purchaseItems.filter(item=>
+   confirmedOrders.has(item.purchase_order_id)&&fabricMatches(item.fabric_id,fabric.id)
+  ).reduce((total,item)=>total+Math.max(0,n(item.ordered_m)-n(item.received_m)),0);
+  return {fabric,recorded,reserved,free:Math.max(0,recorded-reserved),incoming};
  });
 }
 function materialPurchasePlan(snapshot=window.GAO_LINEN_NEED_SNAPSHOT||[]){
@@ -756,7 +772,7 @@ function mount(){
  const flowButton=nav.querySelector('[data-fw-open]');flowButton?.classList.toggle('active',state.mode);flowButton?.setAttribute('aria-pressed',String(state.mode));
  if(!shell.querySelector('#gao-fabric-flow')){const host=document.createElement('div');host.id='gao-fabric-flow';host.hidden=!state.mode;shell.appendChild(host);render();if(!state.org){init().then(render).catch(err=>{state.error=err.message;render()})}}
 }
-const buying=createBuyingController({state,buyingSnapshot,esc,n,br,rpc,reload,render,uid,materialPurchasePlan,liveBalances,fabricMatches,openRecipeDialog,productionView,trackingView,ordersTable,purchaseOrderView,stockPanels,qualityView,costView,standardsManagementView,recipeView,openFabricPurchaseDraft,submit,saveQualityBatch,returnForm,orderStats,syncOrderStatuses,refreshPurchaseReferences});
+const buying=createBuyingController({state,buyingSnapshot,esc,n,br,rpc,reload,render,uid,fabricBuyingBalances,liveBalances,fabricMatches,openRecipeDialog,productionView,trackingView,ordersTable,purchaseOrderView,stockPanels,qualityView,costView,standardsManagementView,recipeView,openFabricPurchaseDraft,submit,saveQualityBatch,returnForm,orderStats,syncOrderStatuses,refreshPurchaseReferences});
 new MutationObserver(mount).observe(document.documentElement,{childList:true,subtree:true});
 setInterval(mount,900);
 })();

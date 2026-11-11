@@ -149,3 +149,16 @@ test("ordenação usa valores numéricos e deixa saldos a conferir por último",
   assert.deepEqual(names("name", "asc"), ["Campo 1", "Campo 2", "Campo 3", "Campo 10"]);
   assert.equal(rows[0].name, "Campo 10");
 });
+
+test("compras mostra saldo registrado e deixa a quantidade de tecido para preenchimento", async () => {
+  const { buyingView } = await import("../linen-buying-view-v1.mjs");
+  const pool = { fabric: { id: "f", name: "Percal" }, free: 120, reserved: 10, incoming: 50 };
+  const html = buyingView({
+    pools: [pool],
+    rows: [{ key: "p", name: "Lençol", ready: true, toOrder: 40, pool,
+      recipe: { id: "r", consumption_m_per_piece: 999 }, buyMeters: 456 }],
+  });
+  assert.match(html, /Estoque livre do tecido<\/small><b>120 m/);
+  assert.match(html, /data-fw-buy-fabric="f">Pedir tecido em metros/);
+  assert.doesNotMatch(html, /m\/peça|456 m|999 m|Tecido livre alocado/);
+});
