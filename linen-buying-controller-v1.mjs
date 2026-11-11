@@ -1,7 +1,8 @@
+import { createEnfestoControls } from "./fabric-enfesto-v1.mjs?v=1";
 import {
   buildBuyingRows,
 } from "./linen-buying-rules-v1.mjs?v=1";
-import { buyingView, buyingStyles, buyingSortStyles, buyingSortLabel, sortBuyingRows } from "./linen-buying-view-v1.mjs?v=4";
+import { buyingView, buyingStyles, buyingSortStyles, buyingSortLabel, sortBuyingRows } from "./linen-buying-view-v1.mjs?v=5";
 import { compactDimensionKey } from "./linen-risk-rules-v150.mjs?v=226";
 export function createBuyingController(env) {
   const { state, esc, n, br, rpc, reload, render, uid } = env;
@@ -9,7 +10,8 @@ export function createBuyingController(env) {
   let query = "",
     expanded = new Set();
   const style = document.createElement("style");
-  style.textContent = buyingStyles + buyingSortStyles;
+  style.textContent = buyingStyles + buyingSortStyles +
+    ".fw-enfesto-line{display:flex;flex-wrap:wrap;gap:8px;align-items:end;width:100%;margin:8px 0}.fw-enfesto-line>.fw-field{flex:1 1 155px;min-width:0}.fw-enfesto-line input,.fw-enfesto-line select{width:100%;min-width:0}";
   document.head.appendChild(style);
   const day = () =>
     new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(
@@ -27,6 +29,7 @@ export function createBuyingController(env) {
     `<label class="fw-field">${label}<input name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
   const form = (action, fields) =>
     `<form data-fw-buy-form="${action}">${fields}<button type="submit">Salvar e atualizar</button><button type="button" data-fw-buy-close>Cancelar</button></form>`;
+  const enfesto = createEnfestoControls(env, { modal, field, form, day });
   function model() {
     const snapshot = env.buyingSnapshot();
     const rows = buildBuyingRows({
@@ -73,6 +76,16 @@ export function createBuyingController(env) {
     }</div>`;
   }
   function ongoingHTML(key = null) {
+    const cutPieces = new Map();
+    for (const cut of state.enfestos || []) {
+      for (const output of cut.outputs) {
+        if (!output.source_id) continue;
+        const source = output.source_type + ":" + output.source_id;
+        cutPieces.set(source, (cutPieces.get(source) || 0) + n(output.pieces));
+      }
+    }
+    const cutNote = source => cutPieces.has(source)
+      ? ` · ${br(cutPieces.get(source), 0)} cortadas em enfestos` : "";
     const row = key ? rowFor(key) : null,
       items = state.items.filter(
         (i) =>
@@ -90,11 +103,11 @@ export function createBuyingController(env) {
         .map((i) => {
           const o = state.orders.find((o) => o.id === i.order_id),
             s = env.orderStats(i);
-          return `<details class="fw-catalog-edit"><summary><b>OS ${esc(o?.order_number)} · ${esc(i.product_name)}</b> · ${br(s.remaining, 0)} peças pendentes</summary><p>${br(s.issued, 3)} m enviados · ${br(s.accepted, 0)} peças recebidas</p><button type="button" data-fw-buy-os="${i.id}">Abrir corte e envio</button><button type="button" data-fw-buy-return="${i.id}">Registrar retorno</button></details>`;
+          return `<details class="fw-catalog-edit"><summary><b>OS ${esc(o?.order_number)} · ${esc(i.product_name)}</b> · ${br(s.remaining, 0)} peças pendentes</summary><p>${br(s.issued, 3)} m enviados · ${br(s.accepted, 0)} peças recebidas${cutNote("os:" + i.id)}</p><button type="button" data-fw-buy-os="${i.id}">Abrir corte e envio</button><button type="button" data-fw-buy-return="${i.id}">Registrar retorno</button></details>`;
         })
         .join(
           "",
-        )}${tracking.map((t) => `<details class="fw-catalog-edit"><summary><b>Programação ${esc(t.source_item)} · ${esc(t.product_name)}</b> · ${br(n(t.quantity) - n(t.delivered), 0)} peças pendentes</summary><p>Corte: ${esc(t.cut_status)} · Previsão: ${esc(t.expected_date || "não informada")}</p><button type="button" data-fw-buy-tracking="${t.id}">Atualizar programação / recebimento</button><button type="button" data-fw-reconcile="${t.id}">Registrar consumo ou sobra</button></details>`).join("")}${!items.length && !tracking.length ? "<p>Nenhuma programação desta peça.</p>" : ""}</div>`
+        )}${tracking.map((t) => `<details class="fw-catalog-edit"><summary><b>Programação ${esc(t.source_item)} · ${esc(t.product_name)}</b> · ${br(n(t.quantity) - n(t.delivered), 0)} peças pendentes</summary><p>Corte: ${esc(t.cut_status)} · Previsão: ${esc(t.expected_date || "não informada")}${cutNote("programacao:" + t.id)}</p><button type="button" data-fw-buy-tracking="${t.id}">Atualizar programação / recebimento</button><button type="button" data-fw-reconcile="${t.id}">Registrar consumo ou sobra</button></details>`).join("")}${!items.length && !tracking.length ? "<p>Nenhuma programação desta peça.</p>" : ""}</div>`
     );
   }
   function fabricOrdersSummary(key = null) {
@@ -190,6 +203,7 @@ export function createBuyingController(env) {
     state.mode = true;
     state.tab = "buying";
     const views = {
+      enfestos: ["Lotes de corte", enfesto.history],
       stock: [
         "Estoque de tecidos",
         () =>
@@ -372,6 +386,8 @@ export function createBuyingController(env) {
           ],
           p_idempotency_key: "buy-os-" + d.dataset.request,
         });
+      } else if (action === "enfesto-create" || action === "enfesto-stock") {
+        await enfesto.save(d, formEl);
       } else if (action === "return") {
         await env.returnForm(values.id, {
           ...values,
@@ -415,7 +431,11 @@ export function createBuyingController(env) {
           ? "Pedido de peças registrado."
           : action === "receive"
             ? "Recebimento registrado."
-            : "Alteração salva.";
+            : action === "enfesto-create"
+              ? "Lote de corte registrado."
+              : action === "enfesto-stock"
+                ? "Baixa do tecido registrada."
+                : "Alteração salva.";
       render();
       d.close();
       d.remove();
@@ -424,7 +444,7 @@ export function createBuyingController(env) {
       ].at(-1);
       if (
         parent &&
-        ["purchases", "orders"].includes(parent.dataset.fwBuyDialog) &&
+        ["purchases", "orders", "enfestos"].includes(parent.dataset.fwBuyDialog) &&
         formEl.dataset.fwForm !== "supplier"
       ) {
         const kind = parent.dataset.fwBuyDialog,
@@ -503,6 +523,7 @@ export function createBuyingController(env) {
     (e) => {
       const b = e.target.closest("button,a");
       if (!b) return;
+      if (enfesto.click(b)) return;
       if (b.matches("[data-fw-buy-sort]")) {
         sortColumn(b);
         return;

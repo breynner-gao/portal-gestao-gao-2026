@@ -158,6 +158,11 @@ const fetch = async (url, opts) => {
       response = r;
     }
   }
+  if (table === "fabric_save_enfesto") {
+    calls.push(body);
+    data.fabric_cut_enfestos = [{ ...body.p_data, stock_posted_at: null }];
+    response = body.p_data.id;
+  }
   return { ok: true, text: async () => JSON.stringify(response) };
 };
 const vmContext = {
@@ -219,6 +224,24 @@ assert.equal(calls.at(-1).p_action, "receive");
 assert.match(modal().textContent, /20 \/ 50 recebidas/);
 assert.equal(row().querySelector(".fw-buy-missing").textContent, "450");
 assert.match(row().textContent, /20 recebidas após/);
+modal().querySelector("[data-fw-buy-close]").click();
+document.querySelector('[data-fw-buy-tool="enfestos"]').click();
+modal().querySelector("[data-fw-enfesto-new]").click();
+assert.match(modal().textContent, /Metros usados no total/);
+modal().querySelector('[data-fw-enfesto-add="pieces"]').click();
+const cutLines = [...modal().querySelectorAll('[data-fw-enfesto-line="pieces"]')];
+for (const [i, line] of cutLines.entries()) {
+  Object.defineProperty(line.querySelector("[data-fw-enfesto-source]"), "value", { value: "", configurable: true });
+  for (const [name, value] of Object.entries({ product_name: "Calça", size: i === 0 ? "P" : "G", pieces: "12" })) {
+    Object.defineProperty(line.querySelector(`[name=${name}]`), "value", { value, configurable: true });
+  }
+}
+await submit({ fabric_id: "fabric", consumed_m: "50.125", single_lot: "" });
+const savedCut = calls.at(-1).p_data;
+assert.equal(savedCut.consumed_m, "50.125");
+assert.deepEqual(savedCut.outputs.map(item => item.size), ["P", "G"]);
+assert.deepEqual(savedCut.allocations, []);
+assert.match(modal().textContent, /Baixa pendente de conferência/);
 modal().querySelector("[data-fw-buy-close]").click();
 document.querySelector("[data-fw-buy-map]").click();
 assert.equal(document.querySelector("#gao-fabric-flow").hidden, true);
