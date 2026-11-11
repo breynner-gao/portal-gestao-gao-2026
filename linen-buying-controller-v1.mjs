@@ -2,7 +2,7 @@ import {
   buildBuyingRows,
   allocateBuyingFabric,
 } from "./linen-buying-rules-v1.mjs?v=1";
-import { buyingView, buyingStyles } from "./linen-buying-view-v1.mjs?v=1";
+import { buyingView, buyingStyles } from "./linen-buying-view-v1.mjs?v=2";
 import { compactDimensionKey } from "./linen-risk-rules-v150.mjs?v=226";
 export function createBuyingController(env) {
   const { state, esc, n, br, rpc, reload, render, uid } = env;
@@ -293,7 +293,7 @@ export function createBuyingController(env) {
       `<p>${esc(i.product_name)} · ${br(s.remaining, 0)} peças pendentes.</p>` +
         form(
           "return",
-          `<input type="hidden" name="id" value="${id}">${field("Peças aceitas", "accepted", "number", s.remaining, 'min="0" step="1" required')}${field("Peças rejeitadas", "rejected", "number", 0, 'min="0" step="1" required')}${field("Sobra devolvida (m)", "returned", "number", 0, 'min="0" step=".001" required')}${field("Custo da facção nesta entrega (R$)", "faction", "number", s.remaining * n(i.faction_cost_per_piece), 'min="0" step=".01" required')}${field("Aviamentos nesta entrega (R$)", "extras", "number", s.remaining * n(i.extras_cost_per_piece), 'min="0" step=".01" required')}${field("Observação", "notes", "text", "")}`,
+          `<input type="hidden" name="id" value="${id}">${field("Peças aceitas", "accepted", "number", s.remaining, 'min="0" step="1" required')}${field("Peças rejeitadas", "rejected", "number", 0, 'min="0" step="1" required')}${field("Sobra devolvida (m)", "returned", "number", 0, 'min="0" step=".001" required')}${field("Custo da facção nesta entrega (R$)", "faction", "number", (s.remaining * n(i.faction_cost_per_piece)).toFixed(2), 'min="0" step=".01" required')}${field("Aviamentos nesta entrega (R$)", "extras", "number", (s.remaining * n(i.extras_cost_per_piece)).toFixed(2), 'min="0" step=".01" required')}${field("Observação", "notes", "text", "")}`,
         ),
       "return",
     );

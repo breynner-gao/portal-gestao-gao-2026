@@ -1,5 +1,5 @@
 import {buildPendingProductionCoverage,applyPendingProductionCoverage,compactDimensionKey} from '/linen-risk-rules-v150.mjs?v=226';
-import {createBuyingController} from '/linen-buying-controller-v1.mjs?v=1';
+import {createBuyingController} from '/linen-buying-controller-v1.mjs?v=2';
 import { fabricCatalogVariantKey, fabricInvoiceAliasKey, summarizeFabricPurchaseOrder, groupPendingFabricLotsByInvoice, latestFabricConsumptionByVariant, fabricCostReferenceLabel, normalizeFabricNumber, serviceOrderDueDate } from '/fabric-workflow-rules-v1.mjs?v=3'; import {sameFabricStandard,groupFabricStandards,purchaseReferenceChoices} from '/fabric-standard-rules-v1.mjs?v=2';
 (() => {
 'use strict';
@@ -695,7 +695,7 @@ document.addEventListener('click',async e=>{
  if(e.target.closest('[data-fw-open]')){setFlowMode(true);render();return}
  const dimension=e.target.closest('[data-dimension-view]');if(dimension){setFlowMode(false);document.querySelectorAll('.gao-textile-subnav .active').forEach(b=>b.classList.remove('active'));dimension.classList.add('active')}
  if(e.target.closest('[data-fw-buy-map]')){document.querySelector('.gao-textile-subnav [data-dimension-view=map]')?.click();return;}
- if(e.target.closest('[data-fw-refresh]')){if(state.refreshing||state.busy)return;state.refreshing=true;state.error='';try{await (state.org?reload():init());}catch(err){state.loaded=false;state.error=err.message;}finally{state.refreshing=false;render();}return}
+ if(e.target.closest('[data-fw-refresh]')){if(state.refreshing||state.busy)return;state.refreshing=true;state.error='';try{await window.GAO_REFRESH_LINEN_SNAPSHOT?.();await (state.org?reload():init());}catch(err){state.loaded=false;state.error=err.message;}finally{state.refreshing=false;render();}return}
  if(e.target.closest('[data-fw-create-order]')){await run(createOrder);return}
  if(e.target.closest('[data-fw-add-po-line]')){const form=e.target.closest('form');form.querySelector('[data-fw-po-lines]')?.insertAdjacentHTML('beforeend',poLineHtml());refreshPurchaseReferences(form);return}
  const removePoLine=e.target.closest('[data-fw-remove-po-line]');if(removePoLine){if(removePoLine.closest('form').querySelectorAll('[data-fw-po-line]').length>1)removePoLine.closest('[data-fw-po-line]').remove();return}

@@ -186,8 +186,8 @@ async function fetchOnlineFaction() {
 }
 window.addEventListener('gao-production-updated',fetchOnlineFaction);
 
-async function load() {
-  if (state.loaded || state.error) return;
+async function load(force = false) {
+  if (!force && (state.loaded || state.error)) return;
   const current = readCurrent();
   let shared = null;
   try {
@@ -897,3 +897,5 @@ setInterval(() => {
     mount();
   }
 }, 700);
+
+window.GAO_REFRESH_LINEN_SNAPSHOT = async () => { if (route()) { await load(true); render(); } };
