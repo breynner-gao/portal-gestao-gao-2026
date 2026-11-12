@@ -215,7 +215,7 @@ export function createBuyingController(env) {
       ],
       purchases: [
         "Pedidos e recebimentos",
-        () => readyOrdersHTML(key) + env.purchaseOrderView(),
+        () => env.purchaseOrderView(readyOrdersHTML(key)),
       ],
       receipt: ["Receber nota fiscal", () => env.stockPanels("receipt")],
       supplier: ["Cadastrar fornecedor", () => env.stockPanels("suppliers")],
@@ -245,11 +245,11 @@ export function createBuyingController(env) {
       if (row?.recipe)
         d.querySelectorAll("[data-fw-purchase-row]").forEach((el) => {
           const orderId = el.dataset.fwDetailKey?.replace(/^oc-/, "");
-          el.hidden = !state.purchaseItems.some(
+          el.toggleAttribute('data-fw-purchase-excluded', !state.purchaseItems.some(
             (i) =>
               i.purchase_order_id === orderId &&
               env.fabricMatches(i.fabric_id, row.recipe.fabric_id),
-          );
+          ));
         });
     }
     if (kind === "purchases")
@@ -454,17 +454,23 @@ export function createBuyingController(env) {
           ...parent.querySelectorAll("details[open][data-fw-detail-key]"),
         ].map((el) => el.dataset.fwDetailKey);
         if (kind === "enfestos" && typeof result === "string") openKeys.push("enfesto-" + result);
+        const excludedOrders = [...parent.querySelectorAll("[data-fw-purchase-excluded]")].map(el=>el.dataset.fwDetailKey);
         const hiddenKeys = [
           ...parent.querySelectorAll("details[hidden][data-fw-detail-key]"),
         ].map((el) => el.dataset.fwDetailKey);
+        const stage = parent.querySelector('.fw-purchase-orders')?.dataset.purchaseStage;
         parent.close();
         parent.remove();
         const refreshed = tool(kind, key);
+        refreshed.querySelectorAll('[data-fw-purchase-row]').forEach(el=>{
+          if(excludedOrders.includes(el.dataset.fwDetailKey))el.setAttribute('data-fw-purchase-excluded','');
+        });
+        if (stage) refreshed.querySelector('[data-fw-purchase-stage="'+stage+'"]')?.click();
         for (const el of refreshed.querySelectorAll(
           "details[data-fw-detail-key]",
         )) {
           if (openKeys.includes(el.dataset.fwDetailKey)) el.open = true;
-          if (hiddenKeys.includes(el.dataset.fwDetailKey)) el.hidden = true;
+          if (kind !== 'purchases' && hiddenKeys.includes(el.dataset.fwDetailKey)) el.hidden = true;
         }
       }
 
@@ -555,10 +561,11 @@ export function createBuyingController(env) {
         if (b.dataset.fwBuyOpenPo) {
           const d = tool("purchases");
           for (const el of d.querySelectorAll("[data-fw-purchase-row]")) {
-            el.hidden =
-              el.dataset.fwDetailKey !== "oc-" + b.dataset.fwBuyOpenPo;
-            if (!el.hidden) el.open = true;
+            const selected = el.dataset.fwDetailKey === "oc-" + b.dataset.fwBuyOpenPo;
+            el.toggleAttribute("data-fw-purchase-excluded", !selected);
+            if (selected) el.open = true;
           }
+          d.querySelector('[data-fw-purchase-stage="ordered"]')?.click();
           return;
         }
         if (b.dataset.fwBuyTool) {
