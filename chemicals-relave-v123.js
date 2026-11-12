@@ -57,8 +57,7 @@ body:has(#rel122) .module-tabs .active:not([data-relave-tab]),
 body:has(#rel122) nav .active:not([data-relave-tab]){background:transparent!important;color:#54708e!important}
 body:has(#rel122) #chem-v73-period,
 body:has(#rel122) #chem-v71-history,
-body:has(#rel122) #chem-v71-dashboard,
-body:has(#rel122) section.data-panel:not(#rel122){display:none!important}
+body:has(#rel122) #chem-v71-dashboard{display:none!important}
 #rel122 .r132-month-grid{grid-template-columns:repeat(5,minmax(0,1fr))!important}
 #rel122 .r132-month-types{grid-template-columns:repeat(4,minmax(0,1fr))!important}
 #rel122 .r122-filterbar .filters{flex-wrap:wrap;justify-content:flex-end}
@@ -102,21 +101,22 @@ function openRelave(){
 function restoreChemicalContent(){
  document.querySelectorAll('[data-r122-hidden="1"]').forEach(el=>{el.style.display=el.dataset.r122Display||'';delete el.dataset.r122Hidden;delete el.dataset.r122Display});
  document.querySelectorAll('[data-relave-tab]').forEach(el=>{el.classList.remove('active');el.style.background='transparent';el.style.color='#54708e'});
- document.getElementById('rel122')?.remove(); mounted=false;
+ const host=document.getElementById('rel122');
+ if(host){disposeRelaveOperation?.();disposeRelaveOperation=null;host.remove()}
+ mounted=false;
 }
 function getMountPoint(){
- const hit=findChemicalTabs(); if(!hit)return null;
- const nav=hit.bar.closest?.('nav,.module-tabs')||hit.bar;
- return {hit,nav,parent:nav.parentElement};
+ const main=document.querySelector('.gao-main');
+ if(!main||main.classList.contains('ga-route-denied')||main.querySelector('[data-access-denied]'))return null;
+ return main;
 }
-function hideForRelave(el){
- if(!el||el.id==='rel122'||el.dataset.r122Hidden==='1')return;
- el.dataset.r122Hidden='1';el.dataset.r122Display=el.style.display||'';el.style.display='none';
-}
-function isolateRelave(nav,parent){
- [...document.querySelectorAll('section,main,div')].filter(el=>el.id!=='rel122' && /CADASTRO MESTRE/.test(el.textContent||'') && el.children.length>1).sort((a,b)=>(a.textContent||'').length-(b.textContent||'').length).slice(0,1).forEach(hideForRelave);
- let el=nav.nextElementSibling; while(el){const next=el.nextElementSibling;if(el.id!=='rel122')hideForRelave(el);el=next}
- document.querySelectorAll('#chemical-history,#gao-chemical-history-stable,#chem-v73-period,#chem-v71-history,#chem-v71-dashboard,#chem-v87,#chem-v105,#chem-v106,#chem-v83,#chem-v74,section.data-panel').forEach(el=>{if(el.id==='rel122'||el.contains(nav)||nav.contains(el))return;hideForRelave(el)});
+function isolateRelave(main,host){
+ for(const child of main.children){
+  if(child===host||child.dataset.r122Hidden==='1')continue;
+  child.dataset.r122Hidden='1';
+  child.dataset.r122Display=child.style.display||'';
+  child.style.display='none';
+ }
 }
 function lineChart(points,series,label,target=null,interactive=true){
  if(!points.length)return '<div class="r122-chart">Sem dados.</div>';
@@ -451,15 +451,13 @@ function render(tab='dash',editKey){const root=document.getElementById('rel122')
 function mount(force=false){
  ensureTab();
  if(!force&&!isRelaveRoute()){restoreChemicalContent();return}
- css(); wasteCss(); const mp=getMountPoint(); if(!mp)return;
- const {hit,nav,parent}=mp,relBtn=hit.bar.querySelector('[data-relave-tab]');
- if(relBtn){relBtn.style.background='#3193d0';relBtn.style.color='#fff'}
- // Somente Relave fica ativo na barra principal. Evita "Relave + Princípios ativos" simultaneamente.
- [...hit.bar.querySelectorAll('button,a')].forEach(el=>{if(el===relBtn)return;if(!el.dataset.r128Style)el.dataset.r128Style=el.getAttribute('style')||'';el.style.background='transparent';el.style.color='#54708e';el.classList.remove('active')});
- // Oculta a tela química atual inteira abaixo da navegação. O Relave passa a ocupar o mesmo nível, sem empilhar telas.
- isolateRelave(nav,parent);
+ const main=getMountPoint();
+ if(!main){restoreChemicalContent();return}
+ css();wasteCss();
  let host=document.getElementById('rel122');
- if(!host){host=document.createElement('section');host.id='rel122';host.style.cssText='margin:18px 0 40px;width:100%';nav.insertAdjacentElement('afterend',host)}
+ if(!host){host=document.createElement('section');host.id='rel122';host.style.cssText='margin:18px 0 40px;width:100%'}
+ if(host.parentElement!==main)main.appendChild(host);
+ isolateRelave(main,host);
  render(isWasteRoute()?(location.hash==='#residuos-novo'?'waste-launch':location.hash==='#residuos-historico'?'waste-hist':'waste-dash'):'dash');mounted=true;
 }
 window.addEventListener('gao-open-waste',event=>openWaste(['dash','launch','hist'].includes(event.detail?.tab)?event.detail.tab:'dash'));
@@ -478,9 +476,9 @@ document.addEventListener('click',e=>{
 window.addEventListener('popstate',()=>setTimeout(()=>mount(),80));
 window.addEventListener('hashchange',()=>setTimeout(()=>mount(),80));
 // Em SPA o conteúdo pode ser reconstruído sem mudar a URL. Se #relave estiver ativo, remonta sempre que necessário.
-const obs=new MutationObserver(()=>{ensureTab();if(isRelaveRoute()&&!document.getElementById('rel122')){mounted=false;setTimeout(()=>mount(true),20)}});
+const obs=new MutationObserver(()=>{ensureTab();if(isRelaveRoute()&&!document.getElementById('rel122')){mounted=false;setTimeout(()=>mount(),20)}});
 obs.observe(document.documentElement,{childList:true,subtree:true});
-setInterval(()=>{ensureTab();if(isRelaveRoute()&&(!mounted||!document.getElementById('rel122')))mount(true)},500);
+setInterval(()=>{ensureTab();if(isRelaveRoute()&&(!mounted||!document.getElementById('rel122'))&&getMountPoint())mount(true)},500);
 window.addEventListener('resize',()=>fitRelave());
 setTimeout(()=>{ensureTab();mount();fitRelave()},300);
 })();
