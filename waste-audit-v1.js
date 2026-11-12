@@ -3,8 +3,6 @@
 const project='https://fquzuxdqvhecijjuxbmg.supabase.co';
 const key='sb_publishable_icrk6TaZexgiSIq63zX_ng_40JGaYlJ';
 const base=project+'/storage/v1/object';
-const snapshot='historico/auditoria-2026-06-a-2026-11.html';
-const snapshotSha256='8495d45e31eefe72971d08eab0474fda30d1cab57388b24943dfec6364cb3c01';
 const allowed={pdf:'application/pdf',png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'};
 
 function headers(){
@@ -46,74 +44,45 @@ function saveBlob(blob,name){
   setTimeout(()=>URL.revokeObjectURL(url),30000);
 }
 async function download(path,name){saveBlob(await read(path),name);}
-async function verifiedSnapshot(blob){
-  const bytes=await blob.arrayBuffer();
-  const digest=await crypto.subtle.digest('SHA-256',bytes);
-  const hex=Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
-  if(hex!==snapshotSha256) throw Error('Use a versão da auditoria que contém os nove documentos incorporados.');
-  return new TextDecoder().decode(bytes);
-}
-function offerImport(content,refresh){
-  const label=document.createElement('label');
-  label.textContent='Importar painel histórico com os documentos';
-  const input=document.createElement('input');
-  input.type='file';
-  input.accept='.html,text/html';
-  label.append(input);
-  const button=document.createElement('button');
-  button.type='button';
-  button.textContent='Importar histórico';
-  const status=document.createElement('p');
-  status.setAttribute('aria-live','polite');
-  button.onclick=async()=>{
-    const file=input.files[0];
-    if(!file){status.textContent='Selecione o HTML da auditoria de junho a novembro de 2026.';return;}
-    button.disabled=true;
-    status.textContent='Verificando e enviando o histórico…';
-    try{
-      await verifiedSnapshot(file);
-      const response=await fetch(base+'/waste-audit/'+objectPath(snapshot),{
-        method:'POST',headers:{...headers(),'Content-Type':'text/html'},body:file
-      });
-      if(!response.ok) throw Error('Não foi possível importar. Confirme que você tem permissão para gerenciar lançamentos de resíduos.');
-      await refresh();
-    }catch(error){status.textContent=error.message;}
-    finally{button.disabled=false;}
-  };
-  content.append(label,button,status);
+async function downloadHistoricalDocument(documentKey,name){
+  const response=await fetch(project+'/functions/v1/waste-audit-documents',{
+    method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({key:documentKey})
+  });
+  if(!response.ok) throw Error('Não foi possível baixar este documento. Tente novamente.');
+  saveBlob(await response.blob(),name);
 }
 function bind(root){
-  const open=root.querySelector('[data-waste-audit-open]');
-  if(!open) return;
-  open.onclick=async()=>{
-    const content=root.querySelector('[data-waste-audit-content]');
-    open.disabled=true;
-    content.textContent='Carregando dados e documentos de resíduos…';
+  const content=root.querySelector('[data-waste-audit-content]');
+  if(!content) return;
+  const status=root.querySelector('[data-waste-audit-status]');
+  const load=async()=>{
+    if(!content.isConnected||content.getAttribute('aria-busy')==='true'||status.hidden) return;
+    try{headers();}catch{return;}
     content.setAttribute('aria-busy','true');
+    status.textContent='Carregando o histórico de resíduos…';
     try{
-      const [html,theme,{mountAudit}]=await Promise.all([
-        read(snapshot).then(verifiedSnapshot),
-        fetch('/liquid-lite.css?v=1').then(response=>response.ok?response.text():'').catch(()=>''),
-        import('/waste-audit-panel-v1.mjs')
+      const query='/rest/v1/waste_audit_history?id=eq.2026-06-a-2026-11&select=records,indcom_audit,billing_titles,documents';
+      const [response,{mountAudit}]=await Promise.all([
+        fetch(project+query,{headers:headers()}),
+        import('/waste-audit-panel-v1.mjs?v=2')
       ]);
+      if(!response.ok) throw Error('Não foi possível consultar o histórico de resíduos.');
+      const [history]=await response.json();
+      if(!history) throw Error('Histórico indisponível para este perfil.');
       if(!content.isConnected) return;
-      const panel=document.createElement('div');
-      mountAudit(panel,html,theme,saveBlob);
-      content.replaceChildren(panel);
-      open.hidden=true;
+      mountAudit(content,history,downloadHistoricalDocument);
+      status.hidden=true;
     }catch(error){
-      content.textContent=error.message;
-      open.disabled=false;
-      if(error.status===400||error.status===404) offerImport(content,open.onclick);
+      if(!content.isConnected) return;
+      const retry=document.createElement('button');
+      retry.type='button';
+      retry.textContent='Tentar novamente';
+      retry.onclick=load;
+      status.replaceChildren(document.createTextNode(error.message+' '),retry);
     }finally{content.removeAttribute('aria-busy');}
   };
-  const loadWhenSignedIn=()=>{
-    if(!open.isConnected||open.disabled||open.hidden) return;
-    try{headers();}catch{return;}
-    void open.onclick();
-  };
-  loadWhenSignedIn();
-  if(!open.disabled) window.addEventListener('gao-chem-db-ready',loadWhenSignedIn,{once:true});
+  void load();
+  window.addEventListener('gao-chem-db-ready',load,{once:true});
 }
 window.GAO_WASTE_DOCUMENTS={upload,download,bind};
 })();

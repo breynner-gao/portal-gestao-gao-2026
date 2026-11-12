@@ -1,56 +1,65 @@
-// The audit snapshot provides data and documents. Rendering stays in Portal code.
-function readConstant(source,name){
-  const match=source.match(new RegExp('^const '+name+'\\s*=\\s*(.*?)(?:;|\\.map\\()', 'ms'));
-  if(!match) throw Error('O histórico está incompleto.');
-  return JSON.parse(match[1].replace(/'([^'\\]*)'/g,(_,value)=>JSON.stringify(value)));
-}
-function downloadAttachment(snapshot,name){
-  const start=snapshot.indexOf('id="file-'+name+'">');
-  if(start<0) return;
-  const from=snapshot.indexOf('>',start)+1;
-  const base64=snapshot.slice(from,snapshot.indexOf('</script>',from));
-  const chunks=[];
-  for(let offset=0;offset<base64.length;offset+=65536){
-    const decoded=atob(base64.slice(offset,offset+65536));
-    chunks.push(Uint8Array.from(decoded,character=>character.charCodeAt(0)));
+const references = {
+  workbook:'Planilha de auditoria',
+  indcom:'Manifestos INDCOM',
+  june:'Comprovantes de junho',
+  july:'Comprovantes de julho',
+  october:'Comprovantes de outubro',
+  indcomInvoice:'Nota fiscal INDCOM',
+  bioInvoice:'Nota fiscal BIOREVERSE',
+  indcomFinance:'Financeiro INDCOM',
+  bioFinance:'Financeiro BIOREVERSE',
+};
+
+export function mountAudit(root,history,downloadDocument){
+  const {records:data,indcom_audit:indcomAudit,billing_titles:billingTitles,documents:attachmentNames}=history;
+  root.innerHTML=`<div class="waste-audit-filters">
+    <label>Mês <select id="wa-month"></select></label>
+    <label>Semana ISO <select id="wa-week"></select></label>
+    <div class="waste-audit-mode">
+      <button type="button" id="wa-monthly" aria-pressed="true">Por mês</button>
+      <button type="button" id="wa-weekly" aria-pressed="false">Por semana ISO</button>
+    </div>
+  </div>
+  <div id="wa-cards" class="waste-grid"></div>
+  <section class="waste-section"><h3 id="wa-title"></h3><div class="waste-audit-scroll" id="wa-summary"></div></section>
+  <section class="waste-section"><h3>Conciliação INDCOM</h3><div class="waste-audit-scroll" id="wa-indcom"></div></section>
+  <details class="waste-section"><summary>Títulos BIOREVERSE</summary><div class="waste-audit-scroll" id="wa-bioFinance"></div></details>
+  <details class="waste-section"><summary id="wa-dailyTitle">Conferência diária</summary><div class="waste-audit-scroll" id="wa-daily"></div></details>
+  <details class="waste-section"><summary id="wa-pdfTitle">Manifestos</summary><div class="waste-audit-scroll" id="wa-pdf"></div></details>
+  <section class="waste-section"><h3 id="wa-refsTitle">Documentos de referência</h3><ul id="wa-references"></ul>
+    <p id="wa-downloadStatus" role="status"></p>
+    <p class="waste-sub">Os manifestos abrem o pacote da coletora. Use o identificador da linha para localizar o PDF. As fontes podem registrar a mesma coleta. Os PDFs usam a data do manifesto, o Forms usa a data da coleta e o SEMAND usa a data do transporte ou da emissão.</p>
+  </section>`;
+  const el=id=>root.querySelector('#wa-'+id);
+  function referenceLink(key,label){
+    const link=document.createElement('a');
+    link.href='#wa-refsTitle';
+    link.dataset.attachment=key;
+    link.textContent=label;
+    return link;
   }
-  return new Blob(chunks,{type:'application/octet-stream'});
-}
-export function mountAudit(host,snapshot,theme,saveBlob){
-  const script=snapshot.slice(snapshot.lastIndexOf('<script>')+8,snapshot.lastIndexOf('</script>'));
-  const data=JSON.parse(script.match(/^const data=(.*);$/m)[1]);
-  const attachmentNames=JSON.parse(script.match(/^const attachmentNames = (.*);$/m)[1]);
-  const indcomAudit=readConstant(script,'indcomAudit');
-  const billingTitles=readConstant(script,'bioTitles');
-  const root=host.attachShadow({mode:'open'});
-  const style=document.createElement('style');
-  const originalStyle=snapshot.match(/<style>(.*?)<\/style>/s)[1].replace(':root',':host');
-  const scopedTheme=theme
-    .replaceAll(':root',':host')
-    .replaceAll('html.liquid-lite-audit body > header','.liquid-lite-audit > header')
-    .replace('html.liquid-lite-audit {',':host {')
-    .replaceAll('html.liquid-lite-audit','.liquid-lite-audit');
-  style.textContent=originalStyle+'\n'+scopedTheme+'\n:host{display:block;min-width:0} main{padding-inline:0}';
-  const layout=document.createElement('section');
-  layout.className='liquid-lite-audit';
-  // The caller verifies the snapshot checksum before mounting its static markup.
-  layout.innerHTML=snapshot.slice(snapshot.indexOf('<header>'),snapshot.indexOf('</main>')+7);
-  root.append(style,layout);
-  root.addEventListener('click',event=>{
+  for(const [key,label] of Object.entries(references)){
+    if(!Object.hasOwn(attachmentNames,key)) continue;
+    const item=document.createElement('li');
+    item.append(referenceLink(key,label));
+    el('references').append(item);
+  }
+  root.onclick=async event=>{
     const link=event.target.closest('a');
     if(!link) return;
     const key=link.dataset.attachment;
     if(key&&Object.hasOwn(attachmentNames,key)){
       event.preventDefault();
-      const blob=downloadAttachment(snapshot,key);
-      if(blob) saveBlob(blob,attachmentNames[key]);
-    }else if(link.getAttribute('href')==='#refsTitle'){
+      const status=el('downloadStatus');
+      status.textContent='Preparando documento…';
+      try{await downloadDocument(key,attachmentNames[key]);status.textContent='Documento enviado para download.';}
+      catch(error){status.textContent=error.message;}
+    }else if(link.getAttribute('href')==='#wa-refsTitle'){
       event.preventDefault();
-      root.getElementById('refsTitle').scrollIntoView({block:'start'});
+      el('refsTitle').scrollIntoView({block:'start'});
     }
-  });
+  };
 
-  const el=id=>root.getElementById(id);
   const nf=new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const kg=x=>x===null?'—':nf.format(x/100);
   const date=s=>s.split('-').reverse().join('/');
@@ -89,12 +98,8 @@ export function mountAudit(host,snapshot,theme,saveBlob){
   const bioArchiveByMonth={'2026-06':'june','2026-07':'july','2026-10':'october'};
   function evidence(key,label){
     if(!key || label==='—') return label;
-    const source=el('ref-'+key);
-    const link=source.cloneNode(false);
-    link.removeAttribute('id');
-    link.textContent=label;
-    link.title='Baixar '+source.textContent;
-    return link;
+    if(!Object.hasOwn(attachmentNames,key)) return label;
+    return referenceLink(key,label);
   }
   function fillCell(cell,value){
     if(typeof value==='string') cell.textContent=value;
@@ -102,6 +107,7 @@ export function mountAudit(host,snapshot,theme,saveBlob){
   }
   function table(node,labels,lines){
     const t=document.createElement('table'), head=t.createTHead().insertRow();
+    t.className='waste-table';
     for(const label of labels){const th=document.createElement('th');th.scope='col';fillCell(th,label);head.append(th)}
     const body=t.createTBody();
     for(const line of lines){
@@ -158,7 +164,7 @@ export function mountAudit(host,snapshot,theme,saveBlob){
     );
     const bioCents = bioPeriod.reduce((total,[,,cents]) => total + cents,0);
     const bioCard = document.createElement('div');
-    bioCard.className = 'card key';
+    bioCard.className = 'waste-kpi waste-audit-emphasis';
     const bioLabel = document.createElement('span');
     const bioWeight = document.createElement('strong');
     const bioDetail = document.createElement('small');
@@ -169,7 +175,7 @@ export function mountAudit(host,snapshot,theme,saveBlob){
     el('cards').replaceChildren(...[0,3,6,11,'bio',9].map(i=>{
       if(i === 'bio') return bioCard;
       const card=document.createElement('div');
-      card.className='card'+([3,6].includes(i)?' key':'');
+      card.className='waste-kpi'+([3,6].includes(i)?' waste-audit-emphasis':'');
       const title=document.createElement('span'), value=document.createElement('strong');
       title.textContent=columns[i];value.textContent=totals[i]===null?'Sem dados':kg(totals[i])+' kg';
       card.append(title,value);
@@ -189,7 +195,7 @@ export function mountAudit(host,snapshot,theme,saveBlob){
       if(index===8) return evidence('indcom',label);
       if(index===10||index===11) {
         const link=document.createElement('a');
-        link.href='#refsTitle';
+        link.href='#wa-refsTitle';
         link.textContent=label;
         return link;
       }
