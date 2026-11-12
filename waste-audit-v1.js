@@ -51,6 +51,13 @@ async function downloadHistoricalDocument(documentKey,name){
   if(!response.ok) throw Error('Não foi possível baixar este documento. Tente novamente.');
   saveBlob(await response.blob(),name);
 }
+async function loadAuditSource(source){
+  const response=await fetch(project+'/rest/v1/waste_audit_details?source=eq.'+encodeURIComponent(source)+'&select=records',{headers:headers()});
+  if(!response.ok) throw Error('Não foi possível consultar os registros de origem.');
+  const [detail]=await response.json();
+  if(!detail) throw Error('Registros de origem indisponíveis para este perfil.');
+  return detail.records;
+}
 function bind(root){
   const content=root.querySelector('[data-waste-audit-content]');
   if(!content) return;
@@ -64,13 +71,13 @@ function bind(root){
       const query='/rest/v1/waste_audit_history?id=eq.2026-06-a-2026-11&select=records,indcom_audit,billing_titles,documents';
       const [response,{mountAudit}]=await Promise.all([
         fetch(project+query,{headers:headers()}),
-        import('/waste-audit-panel-v1.mjs?v=2')
+        import('/waste-audit-panel-v1.mjs?v=3')
       ]);
       if(!response.ok) throw Error('Não foi possível consultar o histórico de resíduos.');
       const [history]=await response.json();
       if(!history) throw Error('Histórico indisponível para este perfil.');
       if(!content.isConnected) return;
-      mountAudit(content,history,downloadHistoricalDocument);
+      mountAudit(content,history,downloadHistoricalDocument,loadAuditSource);
       status.hidden=true;
     }catch(error){
       if(!content.isConnected) return;

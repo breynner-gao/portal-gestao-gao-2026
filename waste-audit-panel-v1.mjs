@@ -10,7 +10,7 @@ const references = {
   bioFinance:'Financeiro BIOREVERSE',
 };
 
-export function mountAudit(root,history,downloadDocument){
+export function mountAudit(root,history,downloadDocument,loadSource){
   const {records:data,indcom_audit:indcomAudit,billing_titles:billingTitles,documents:attachmentNames}=history;
   root.innerHTML=`<div class="waste-audit-filters">
     <label>Mês <select id="wa-month"></select></label>
@@ -21,6 +21,13 @@ export function mountAudit(root,history,downloadDocument){
     </div>
   </div>
   <div id="wa-cards" class="waste-grid"></div>
+  <dialog id="wa-detail" class="waste-audit-dialog" aria-labelledby="wa-detailTitle">
+    <div class="waste-audit-dialog-head"><div><h3 id="wa-detailTitle"></h3><p id="wa-detailPeriod"></p></div>
+    <form method="dialog"><button type="submit" aria-label="Fechar detalhamento">Fechar</button></form></div>
+    <p id="wa-detailStatus" role="status"></p>
+    <label id="wa-detailFilter" hidden>Buscar no detalhamento <input id="wa-detailSearch" type="search"></label>
+    <div class="waste-audit-scroll" id="wa-detailRows"></div>
+  </dialog>
   <section class="waste-section"><h3 id="wa-title"></h3><div class="waste-audit-scroll" id="wa-summary"></div></section>
   <section class="waste-section"><h3>Conciliação INDCOM</h3><div class="waste-audit-scroll" id="wa-indcom"></div></section>
   <details class="waste-section"><summary>Títulos BIOREVERSE</summary><div class="waste-audit-scroll" id="wa-bioFinance"></div></details>
@@ -50,7 +57,7 @@ export function mountAudit(root,history,downloadDocument){
     const key=link.dataset.attachment;
     if(key&&Object.hasOwn(attachmentNames,key)){
       event.preventDefault();
-      const status=el('downloadStatus');
+      const status=link.closest('dialog')?el('detailStatus'):el('downloadStatus');
       status.textContent='Preparando documento…';
       try{await downloadDocument(key,attachmentNames[key]);status.textContent='Documento enviado para download.';}
       catch(error){status.textContent=error.message;}
@@ -154,6 +161,83 @@ export function mountAudit(root,history,downloadDocument){
     body.rows[body.rows.length-2].className='total';
     body.lastElementChild.className='total';
   }
+  const sourceCache=new Map();
+  function sourceRecords(name){
+    if(!sourceCache.has(name)){
+      sourceCache.set(name,loadSource(name).catch(error=>{sourceCache.delete(name);throw error;}));
+    }
+    return sourceCache.get(name);
+  }
+  const sourceDetails={
+    0:{name:'triagem',headers:['Data','Comanda','Cliente','Sequência','Hora da triagem','Equipe','Bruto (kg)','Líquido (kg)','Linha original'],
+      row:r=>[date(r[0]),r[1],r[2],r[3],r[4],r[5],kg(r[6]),kg(r[7]),r[8]]},
+    3:{name:'forms',headers:['Data da coleta','Coletora','Linha original','Registro no Forms','Carrinhos','Peso (kg)','Foto referenciada'],
+      row:r=>[date(r[0]),r[1],r[2],r[3],r[4]??'—',kg(r[5]),r[6]]},
+    6:{name:'semand',headers:['Data de referência','MTR','Transportadora','Fluxo','Situação','CDF','Indicado (kg)','Recebido (kg)','Considerado (kg)'],
+      include:r=>r[4]==='Recebido'||r[4]==='Salvo',
+      row:r=>[date(r[0]),r[1],r[2],r[3],r[4],r[5]??'—',kg(r[6]),kg(r[7]),kg(r[4]==='Recebido'?r[7]:r[6])]},
+  };
+  let detailRequest=0;
+  async function openDetail(id,label,weight,selected,bioPeriod,pdfs){
+    const request=++detailRequest;
+    const dialog=el('detail'),status=el('detailStatus'),container=el('detailRows'),filter=el('detailFilter'),search=el('detailSearch');
+    el('detailTitle').textContent=label+' · '+weight;
+    const month=el('month').selectedOptions[0].textContent;
+    const week=el('week').selectedOptions[0].textContent;
+    el('detailPeriod').textContent=id==='bio'?month+' · competência mensal completa':month+' · '+week;
+    status.textContent='Carregando registros…';
+    container.replaceChildren();
+    filter.hidden=true;
+    search.value='';
+    dialog.showModal();
+    try{
+      let headers,lines;
+      const source=sourceDetails[id];
+      if(source){
+        const dates=new Set(selected.map(r=>r.d));
+        headers=source.headers;
+        lines=(await sourceRecords(source.name)).filter(r=>dates.has(r[0])&&(!source.include||source.include(r))).map(source.row);
+      }else if(id===11){
+        headers=['Data','Semana ISO','Empresa','Manifesto ou arquivo','OS','Peso (kg)'];
+        lines=pdfs();
+      }else if(id==='bio'){
+        headers=['Competência','Vencimento','Valor do título','Peso estimado (kg)','Comprovante'];
+        lines=bioPeriod.map(([competence,due,cents])=>[monthName(competence),date(due),'R$ '+kg(cents),kg(cents/1.70),
+          evidence('bioFinance','Registro financeiro')]);
+      }else{
+        headers=['Data','Semana ISO','Triagem (kg)','Forms (kg)','Diferença (kg)'];
+        lines=selected.filter(r=>r.v[0]!==null||r.v[7]!==null).map(r=>{
+          const v=values([r]);
+          return [date(r.d),r.w,kg(v[0]),kg(v[3]),kg(v[9])];
+        });
+      }
+      if(!dialog.open||request!==detailRequest) return;
+      const searchable=lines.map(row=>row.map(value=>value?.textContent??String(value)).join(' ').toLocaleLowerCase('pt-BR'));
+      const renderRows=()=>{
+        const term=search.value.trim().toLocaleLowerCase('pt-BR');
+        const visible=term?lines.filter((_,index)=>searchable[index].includes(term)):lines;
+        status.textContent=visible.length?visible.length+' registro(s) no recorte.':'Nenhum registro encontrado neste recorte.';
+        if(visible.length) table(container,headers,visible);
+        else container.replaceChildren();
+      };
+      filter.hidden=lines.length<2;
+      search.oninput=renderRows;
+      renderRows();
+    }catch(error){if(dialog.open&&request===detailRequest) status.textContent=error.message;}
+  }
+  function detailCard(card,id,label,weight,selected,bioPeriod,pdfs){
+    card.type='button';
+    card.classList.add('waste-audit-detail-card');
+    card.setAttribute('aria-label',label+', '+weight+'. Ver registros de origem.');
+    card.setAttribute('aria-haspopup','dialog');
+    const action=document.createElement('small');
+    action.className='waste-audit-card-action';
+    action.textContent='Ver origem';
+    card.append(action);
+    card.onclick=()=>openDetail(id,label,weight,selected,bioPeriod,pdfs);
+    return card;
+  }
+
   function render(){
     renderIndcom();
     const selected=inMonth().filter(r=>el('week').value==='all'||r.w===el('week').value);
@@ -163,7 +247,7 @@ export function mountAudit(root,history,downloadDocument){
       month === 'all' ? months.includes(competence) : competence === month
     );
     const bioCents = bioPeriod.reduce((total,[,,cents]) => total + cents,0);
-    const bioCard = document.createElement('div');
+    const bioCard = document.createElement('button');
     bioCard.className = 'waste-kpi waste-audit-emphasis';
     const bioLabel = document.createElement('span');
     const bioWeight = document.createElement('strong');
@@ -172,9 +256,13 @@ export function mountAudit(root,history,downloadDocument){
     bioWeight.textContent = bioPeriod.length ? kg(bioCents / 1.70) + ' kg' : 'Sem título';
     bioDetail.textContent = 'Valor dos títulos ÷ R$ 1,70/kg · competência mensal completa';
     bioCard.append(bioLabel,bioWeight,bioDetail);
+    const pdfs=()=>selected.flatMap(r=>[
+      ...r.pdf.map(([n,os,p])=>[date(r.d),r.w,'INDCOM',evidence('indcom',n),os,kg(p)]),
+      ...(r.bio?[[date(r.d),r.w,'BIOREVERSE',evidence(bioArchiveByMonth[r.d.slice(0,7)],r.bio[0]),'—',kg(r.bio[1])]]:[])
+    ]);
     el('cards').replaceChildren(...[0,3,6,11,'bio',9].map(i=>{
-      if(i === 'bio') return bioCard;
-      const card=document.createElement('div');
+      if(i === 'bio') return detailCard(bioCard,i,bioLabel.textContent,bioWeight.textContent,selected,bioPeriod,pdfs);
+      const card=document.createElement('button');
       card.className='waste-kpi'+([3,6].includes(i)?' waste-audit-emphasis':'');
       const title=document.createElement('span'), value=document.createElement('strong');
       title.textContent=columns[i];value.textContent=totals[i]===null?'Sem dados':kg(totals[i])+' kg';
@@ -185,7 +273,7 @@ export function mountAudit(root,history,downloadDocument){
         detail.textContent='INDCOM '+(totals[8]===null?'sem PDFs':kg(totals[8])+' kg')+' · BIOREVERSE '+(totals[10]===null?'sem PDFs':kg(totals[10])+' kg');
         card.append(detail);
       }
-      return card;
+      return detailCard(card,i,title.textContent,value.textContent,selected,bioPeriod,pdfs);
     }));
     const weekly=mode==='weekly';
     el('title').textContent=(weekly?'Resumo por semana ISO':'Resumo mensal')+' · kg';
@@ -205,12 +293,9 @@ export function mountAudit(root,history,downloadDocument){
     body.lastElementChild.className='total';
     table(el('daily'),['Data','Semana ISO',...linkedColumns.map(link=>link.cloneNode(true))],selected.map(r=>[date(r.d),r.w,...values([r]).map(kg)]));
     el('dailyTitle').textContent='Conferência por data · '+selected.length+' dias';
-    const pdfs=selected.flatMap(r=>[
-      ...r.pdf.map(([n,os,p])=>[date(r.d),r.w,'INDCOM',evidence('indcom',n),os,kg(p)]),
-      ...(r.bio?[[date(r.d),r.w,'BIOREVERSE',evidence(bioArchiveByMonth[r.d.slice(0,7)],r.bio[0]),'—',kg(r.bio[1])]]:[])
-    ]);
-    el('pdfTitle').textContent='Manifestos INDCOM e BIOREVERSE · '+pdfs.length+' PDFs únicos';
-    if(pdfs.length) table(el('pdf'),['Data','Semana ISO','Empresa','Manifesto ou arquivo','OS','Peso (kg)'],pdfs);
+    const manifests=pdfs();
+    el('pdfTitle').textContent='Manifestos INDCOM e BIOREVERSE · '+manifests.length+' PDFs únicos';
+    if(manifests.length) table(el('pdf'),['Data','Semana ISO','Empresa','Manifesto ou arquivo','OS','Peso (kg)'],manifests);
     else el('pdf').textContent='Nenhum manifesto no recorte.';
   }
   el('month').onchange=()=>{refreshWeeks();render()};

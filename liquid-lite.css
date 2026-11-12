@@ -130,3 +130,14 @@ body .gao-auth-gate .gao-auth-card button[type="submit"] {
 .gao-shell .waste-audit td.pos {color:var(--liquid-blue);}
 .gao-shell .waste-audit summary {cursor:pointer;font-weight:700;}
 .gao-shell .waste-audit #wa-references {display:flex;flex-wrap:wrap;gap:8px 24px;}
+
+.gao-shell .waste-audit button.waste-audit-detail-card {text-align:left;font-weight:inherit;}
+.gao-shell .waste-audit button.waste-audit-detail-card:hover {border-color:var(--liquid-blue)!important;background:var(--liquid-active)!important;}
+.gao-shell .waste-audit-dialog {box-sizing:border-box;width:min(1100px,94vw);max-height:85vh;padding:18px;border:1px solid var(--liquid-line);border-radius:12px;background:var(--liquid-panel);color:var(--liquid-text);}
+.gao-shell .waste-audit-dialog::backdrop {background:#060b14b8;}
+.gao-shell .waste-audit-dialog-head {display:flex;justify-content:space-between;align-items:start;gap:12px;}
+.gao-shell .waste-audit-dialog-head h3 {margin:0;}
+.gao-shell .waste-audit-dialog-head p {margin:6px 0;color:var(--liquid-muted);}
+.gao-shell .waste-audit-dialog label[hidden] {display:none;}
+.gao-shell .waste-audit-dialog input {margin:0 0 10px 6px;max-width:100%;}
+.gao-shell .waste-audit button .waste-audit-card-action {display:block;margin-top:7px;color:var(--liquid-blue);font-weight:650;}
