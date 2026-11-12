@@ -137,7 +137,7 @@ export function renderDailyReport(records, date, logo) {
   <p class="note">${g.pending+c.pending} comanda(s) aguardando conferência do relave.</p>
   <h2>Conferência de peso na área suja</h2>
   <p class="note">Pesos líquidos. Diferença = área suja menos expedição. Situação atual das comandas do dia.</p>
-  ${table(['Comanda','Expedição','Área suja','Diferença','Situação'],checks.map(({row,check,delta,status})=>[row.command,kg(weight(row)),check?kg(check.received):'—',delta===null?'—':(delta>0?'+':'')+kg(delta),status]))}
+  ${table(['Comanda da expedição','Peso da expedição','Comanda da área suja','Peso na área suja','Diferença','Situação'],checks.map(({row,check,delta,status})=>[row.command,kg(weight(row)),check?.receivingCommand||'—',check?kg(check.received):'—',delta===null?'—':(delta>0?'+':'')+kg(delta),status]))}
   <h2>Tratativas da Qualidade</h2>
   ${table(['Comanda','Diferença','Responsável','Causa e ação','Prazo','Situação'],divergences.map(({row,check,delta,status})=>[row.command,percent(100*delta/weight(row)),check.owner||'—',check.action||'Em apuração',check.dueDate?displayDate(check.dueDate):'—',status]))}
   <h2>Motivos do relave interno na expedição</h2>
