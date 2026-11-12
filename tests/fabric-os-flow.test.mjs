@@ -99,3 +99,15 @@ test('reserva alheia à programação reduz saldo projetado sem contar reserva p
 test('campos de ajuste arredondam o cálculo para três casas decimais',()=>{const h=harness();assert.match(h.reconciliationLine({product_reference:'P'},{reserved_m:182*2.05}),/name="reserved_m"[^>]+value="373.1"/);});
 
 test('padrão Cinza e demais padrões aparecem mesmo sem referência comercial ou estoque',()=>{const h=harness();h.state.standards=[{id:'gray',active:true,code:'GAO-TEC-007',name:'CAMISARIA CINZA',material_kind:'TECIDO'},{id:'finished',active:true,code:'PA',name:'TOALHA',material_kind:'PRODUTO_ACABADO'}];const html=h.internalFabricOptions();assert.match(html,/CAMISARIA CINZA/);assert.match(html,/value="standard:gray"/);assert.doesNotMatch(html,/TOALHA/);});
+
+test('programação em estoque fica coberta; campo em branco gera tecido a comprar',()=>{
+ const h=harness();h.state.fabric=[{id:'f',name:'Padrão'}];h.state.recipes=[{active:true,product_reference:'P',fabric_id:'f',consumption_m_per_piece:2}];
+ h.state.tracking=[{id:'reserved',quantity:50,delivered:10,product_reference:'SEM-FICHA',cut_status:'PENDENTE',fabric_stock_note:' Em Estoque '},{id:'missing',quantity:30,delivered:5,product_reference:'P',cut_status:'PENDENTE',fabric_stock_note:'  '},{id:'cut',quantity:70,delivered:0,product_reference:'P',cut_status:'CONCLUIDO'}];
+ const plan=h.materialPurchasePlan();
+ assert.equal(plan.reservedCut,40);
+ assert.equal(plan.alreadyCut,70);
+ assert.equal(plan.unlinked.length,0);
+ assert.equal(plan.fabrics[0].needed,50);
+ assert.equal(plan.fabrics[0].buy,50);
+ assert.match(h.materialCoverageView(),/40 peças aguardam corte com tecido já reservado/);
+});
