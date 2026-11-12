@@ -188,29 +188,150 @@ function wastePanel(){
   <div data-waste-audit-content></div>
   </section>${rows.length?`<details class="waste-card"><summary>Indicadores dos lançamentos atuais</summary><div class="waste-ey">RESÍDUOS INFECTANTES • MEDIÇÃO E FATURAMENTO</div><h3>Faturamento e destinação</h3><div class="waste-sub">Relave e lixo são controlados separadamente. O custo consolidado considera apenas cobranças validadas.</div><div class="waste-grid"><div class="waste-kpi"><span>Valor validado</span><strong>R$ ${fmt(totalBilled)}</strong></div><div class="waste-kpi"><span>Kg de lixo validado</span><strong>${fmt(totalWaste)} kg</strong></div><div class="waste-kpi"><span>Kg de roupa lavada</span><strong>${fmt(totalWashed)} kg</strong></div><div class="waste-kpi"><span>Custo lixo/kg lavado</span><strong>${totalWashed?`R$ ${fmt(totalBilled/totalWashed,4)}`:'Não apurado'}</strong></div><div class="waste-kpi"><span>% lixo/triagem</span><strong>${tri?fmt(totalWaste/tri*100)+'%':'Não apurado'}</strong></div></div><div class="waste-section"><h3>Conferência por empresa</h3><div style="overflow:auto"><table class="waste-table"><thead><tr><th>Empresa</th><th>Kg</th><th>Valor validado</th><th>Preço médio/kg</th><th>Registros</th></tr></thead><tbody>${wasteDefaultCompanies.map(company=>{const list=valid.filter(x=>x.company===company),kg=list.reduce((a,x)=>a+n(x.wasteKg),0),value=list.reduce((a,x)=>a+n(x.billedValue),0);return `<tr><td>${company}</td><td>${fmt(kg)}</td><td>R$ ${fmt(value)}</td><td>${kg?`R$ ${fmt(value/kg,4)}`:'—'}</td><td>${list.length}</td></tr>`}).join('')}</tbody></table></div></div><div class="waste-note">Pendências de faturamento: <b>${pending}</b> • Coletas sem comprovação SEMAD/SINIR: <b>${envPending}</b>. A validação ambiental não altera o cálculo do relave.</div></details>`:''}`
 }
-function wasteLaunch(editId){const r=editId?wasteRows().find(x=>x.id===editId):null;return `${wasteTabs('launch')}<div class="waste-card"><div class="waste-ey">COLETA DE RESÍDUOS</div><h2>${r?'Editar coleta de resíduos':'Registrar coleta de resíduos'}</h2><div class="waste-sub">Informe a coleta, a cobrança e a comprovação ambiental. O sistema calcula o valor correto sem misturar com relave.</div><div class="waste-form">${wasteInput('Data da coleta','date','date')}${wasteSelect('Empresa coletora','company',[...new Set([...wasteDefaultCompanies,...(r?.company?[r.company]:[])])].map(x=>[esc(x),esc(x)]))}${wasteInput('Responsável','responsible','text')}${wasteInput('Número da nota/manifesto','invoice','text')}${wasteInput('Kg de lixo coletado','wasteKg')}${wasteInput('Kg de triagem','totalSorted')}${wasteInput('Kg no Forms','formsKg')}${wasteInput('Kg no MTR SEMAD/SINIR','manifestKg')}${wasteInput('Kg no comprovante da coletora','documentKg')}${wasteInput('Kg de roupa lavada','washedKg')}${wasteInput('Preço contratado por kg','contractedPrice')}${wasteInput('Valor cobrado','billedValue')}${wasteSelect('Situação do faturamento','billingStatus',[['PENDENTE','Pendente'],['VALIDADO','Validado'],['DIVERGENTE','Divergente'],['RECUSADO','Recusado']])}${wasteSelect('Sistema ambiental','environmentSystem',[['SEMAD','SEMAD'],['SINIR','SINIR']])}${wasteSelect('Situação ambiental','environmentStatus',[['NAO_LANCADO','Não lançado'],['LANCADO','Lançado'],['COMPROVADO','Comprovado'],['DIVERGENTE','Com divergência']])}${wasteInput('Data do lançamento ambiental','environmentDate','date')}${wasteInput('Protocolo ambiental','environmentProtocol','text')}${wasteInput('Responsável ambiental','environmentResponsible','text')}</div><div class="waste-section"><h3>Resultado calculado</h3><div class="waste-auto"><div><span>Valor correto</span><b id="waste-calculated">R$ 0,00</b></div><div><span>Diferença da cobrança</span><b id="waste-difference">R$ 0,00</b></div><div><span>Custo por kg lavado</span><b id="waste-cost">Não apurado</b></div><div><span>% lixo/triagem</span><b id="waste-percent">Não apurado</b></div></div></div><div class="waste-form"><label style="grid-column:1/-1">Observações<textarea id="waste-notes"></textarea></label></div><div class="waste-form"><label>Comprovante (PDF, imagem ou XLSX)<input id="waste-document" type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx"></label></div><p id="waste-save-status" aria-live="polite"></p><div class="waste-actions"><button class="waste-btn" data-waste-cancel>${r?'Cancelar':'Voltar'}</button><button class="waste-btn waste-primary" id="waste-save">${r?'Salvar alterações':'Salvar lançamento'}</button></div></div>`}
-function wasteHistory(){const rows=wasteRows().slice().reverse();return `${wasteTabs('hist')}<div class="waste-card"><div class="waste-ey">HISTÓRICO E AUDITORIA</div><h2>Coletas de resíduos</h2><div style="overflow:auto"><table class="waste-table"><thead><tr><th>Data</th><th>Empresa</th><th>Kg lixo</th><th>Kg triagem</th><th>Kg Forms</th><th>Kg MTR</th><th>Kg comprovante</th><th>Preço/kg</th><th>Calculado</th><th>Cobrado</th><th>Diferença</th><th>Faturamento</th><th>Ambiental</th><th>Protocolo</th><th>Ações</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${String(r.date||'').split('-').reverse().join('/')}</td><td>${esc(r.company)}</td><td>${fmt(r.wasteKg)}</td><td>${fmt(r.totalSorted)}</td>${['formsKg','manifestKg','documentKg'].map(key=>`<td>${r[key]==null||r[key]===''?'—':fmt(n(r[key]))}</td>`).join('')}<td>R$ ${fmt(r.contractedPrice,4)}</td><td>R$ ${fmt(r.calculatedValue)}</td><td>R$ ${fmt(r.billedValue)}</td><td class="${Math.abs(r.difference)>0.01?'waste-bad':'waste-ok'}">R$ ${fmt(r.difference)}</td><td><span class="waste-status ${r.billingStatus==='VALIDADO'?'waste-ok':r.billingStatus==='DIVERGENTE'?'waste-bad':''}">${esc(r.billingStatus||'PENDENTE')}</span></td><td><span class="waste-status ${r.environmentStatus==='COMPROVADO'?'waste-ok':r.environmentStatus==='DIVERGENTE'?'waste-bad':''}">${esc(r.environmentStatus||'NÃO LANÇADO')}</span></td><td>${esc(r.environmentProtocol||'—')}</td><td>${r.attachment?.path?`<button class="waste-btn" data-waste-doc="${esc(r.id)}">Comprovante</button>`:''}<button class="waste-btn" data-waste-edit="${esc(r.id)}">Editar</button><button class="waste-btn" data-waste-del="${esc(r.id)}">Excluir</button></td></tr>`).join('')||'<tr><td colspan="15">Nenhuma coleta de lixo lançada.</td></tr>'}</tbody></table></div></div>`}
-function bindWasteLaunch(root,editId){const original=editId?wasteRows().find(x=>x.id===editId):null;const ids=['date','company','responsible','invoice','wasteKg','totalSorted','formsKg','manifestKg','documentKg','washedKg','contractedPrice','billedValue','billingStatus','environmentSystem','environmentStatus','environmentDate','environmentProtocol','environmentResponsible','notes'];const el=k=>root.querySelector('#waste-'+k);if(original){ids.forEach(k=>{if(el(k))el(k).value=original[k]??''})}else if(el('date')&&!el('date').value)el('date').value=new Date().toISOString().slice(0,10);const recalc=()=>{const x={};ids.forEach(k=>x[k]=el(k)?.value||'');const c=wasteCalc(x);el('calculated').textContent='R$ '+fmt(c.calculatedValue);el('difference').textContent='R$ '+fmt(c.difference);el('cost').textContent=c.costPerWashedKg==null?'Não apurado':'R$ '+fmt(c.costPerWashedKg,4);el('percent').textContent=c.percentTriaged==null?'Não apurado':fmt(c.percentTriaged*100,2)+'%'};['wasteKg','totalSorted','washedKg','contractedPrice','billedValue'].forEach(k=>el(k)?.addEventListener('input',recalc));recalc();root.querySelector('[data-waste-cancel]')?.addEventListener('click',()=>render('waste-dash'));root.querySelector('#waste-save')?.addEventListener('click',async()=>{const x={};ids.forEach(k=>x[k]=el(k)?.value||'');if(!x.date||!x.company||!n(x.wasteKg)||!n(x.contractedPrice)||!n(x.washedKg)){alert('Informe data, empresa, kg de lixo, preço contratado e kg de roupa lavada.');return}const button=el('save'),status=el('save-status'),file=el('document')?.files[0];
-const invalid=[...root.querySelectorAll('#waste-document,input[type="number"]')].find(input=>!input.checkValidity());
-if(invalid){invalid.reportValidity();return;}
-button.disabled=true;
-try{
-  x.id=original?.id||button.dataset.entryId||(button.dataset.entryId=crypto.randomUUID());
-  x.savedAt=original?.savedAt||new Date().toISOString();
-  const previous=wasteState().entries.find(row=>row.id===x.id);
-  if(file&&button.uploadedFile!==file){
-    status.textContent='Enviando comprovante…';
-    button.attachment=await window.GAO_WASTE_DOCUMENTS.upload(file,x.id);
-    button.uploadedFile=file;
-  }
-  x.attachment=button.attachment||previous?.attachment||null;
-  if(previous) updateWaste(x.id,x);else saveWaste(x);
-  if(await confirmRemoteSave(original?'Alteração da coleta':'Lançamento da coleta')) render('waste-hist');
-  else status.textContent='Aguardando confirmação do banco. Clique em salvar para tentar novamente.';
-}catch(error){status.textContent=error.message;}finally{button.disabled=false;}})}
+function wasteLaunch(editId){
+  const r=editId?wasteRows().find(x=>x.id===editId):null;
+  const companies=[...new Set([...wasteDefaultCompanies,...(r?.company?[r.company]:[])])];
+  return `${wasteTabs('launch')}<div class="waste-card">
+  <h2>${r?'Editar coleta de resíduos':'Registrar coleta de resíduos'}</h2>
+  <div class="waste-section">
+    <h3>Manifesto de Transporte de Resíduos</h3>
+    <div class="waste-form">
+      <label>PDF do MTR emitido<input id="waste-mtr-document" type="file" accept=".pdf,application/pdf"></label>
+      <p><a href="https://mtr.meioambiente.go.gov.br/" target="_blank" rel="noopener">Abrir MTR-GO para emitir</a></p>
+    </div>
+    <p id="waste-mtr-status" class="waste-sub" role="status">${r?.mtrAttachment?'PDF do MTR já vinculado. Anexe outro PDF para substituir.':'Anexe o PDF para preencher os dados do manifesto.'}</p>
+  </div>
+  <div class="waste-form">
+    ${wasteInput('Data da coleta','date','date')}
+    ${wasteSelect('Empresa coletora','company',companies.map(x=>[esc(x),esc(x)]))}
+    ${wasteInput('Responsável pela coleta','responsible','text')}
+    ${wasteInput('Número do MTR / protocolo','environmentProtocol','text')}
+    ${wasteInput('Peso declarado no MTR (kg)','manifestKg')}
+    ${wasteInput('Peso medido na coleta (kg)','wasteKg')}
+    ${wasteSelect('Sistema ambiental','environmentSystem',[['SEMAD','SEMAD'],['SINIR','SINIR']])}
+    ${wasteSelect('Situação ambiental','environmentStatus',[['NAO_LANCADO','Não lançado'],['LANCADO','Lançado'],['COMPROVADO','Comprovado'],['DIVERGENTE','Com divergência']])}
+    ${wasteInput('Data de emissão do MTR','environmentDate','date')}
+    ${wasteInput('Responsável pela emissão','environmentResponsible','text')}
+  </div>
+  <details class="waste-section" id="waste-more"><summary>Pesagens, faturamento e comprovante da coletora</summary>
+    <div class="waste-form">
+      ${wasteInput('Kg de triagem','totalSorted')}${wasteInput('Kg no Forms','formsKg')}
+      ${wasteInput('Kg no comprovante da coletora','documentKg')}${wasteInput('Kg de roupa lavada','washedKg')}
+      ${wasteInput('Preço contratado por kg','contractedPrice')}${wasteInput('Valor cobrado','billedValue')}
+      ${wasteInput('Número da nota fiscal','invoice','text')}
+      ${wasteSelect('Situação do faturamento','billingStatus',[['PENDENTE','Pendente'],['VALIDADO','Validado'],['DIVERGENTE','Divergente'],['RECUSADO','Recusado']])}
+      <label>Comprovante da coletora (PDF, imagem ou XLSX)<input id="waste-document" type="file" accept=".pdf,.jpg,.jpeg,.png,.xlsx"></label>
+    </div>
+    <div class="waste-auto">
+      <div><span>Valor calculado</span><b id="waste-calculated">Não apurado</b></div>
+      <div><span>Diferença da cobrança</span><b id="waste-difference">Não apurada</b></div>
+      <div><span>Custo por kg lavado</span><b id="waste-cost">Não apurado</b></div>
+      <div><span>% lixo/triagem</span><b id="waste-percent">Não apurado</b></div>
+    </div>
+  </details>
+  <div class="waste-form"><label>Observações<textarea id="waste-notes"></textarea></label></div>
+  <p id="waste-save-status" aria-live="polite"></p>
+  <div class="waste-actions"><button class="waste-btn" data-waste-cancel>${r?'Cancelar':'Voltar'}</button>
+  <button class="waste-btn waste-primary" id="waste-save">${r?'Salvar alterações':'Salvar lançamento'}</button></div></div>`;
+}
+function wasteHistory(){const rows=wasteRows().slice().reverse();return `${wasteTabs('hist')}<div class="waste-card"><div class="waste-ey">HISTÓRICO E AUDITORIA</div><h2>Coletas de resíduos</h2><div style="overflow:auto"><table class="waste-table"><thead><tr><th>Data</th><th>Empresa</th><th>Kg lixo</th><th>Kg triagem</th><th>Kg Forms</th><th>Kg MTR</th><th>Kg comprovante</th><th>Preço/kg</th><th>Calculado</th><th>Cobrado</th><th>Diferença</th><th>Faturamento</th><th>Ambiental</th><th>Protocolo</th><th>Ações</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${String(r.date||'').split('-').reverse().join('/')}</td><td>${esc(r.company)}</td><td>${fmt(r.wasteKg)}</td><td>${fmt(r.totalSorted)}</td>${['formsKg','manifestKg','documentKg'].map(key=>`<td>${r[key]==null||r[key]===''?'—':fmt(n(r[key]))}</td>`).join('')}<td>R$ ${fmt(r.contractedPrice,4)}</td><td>R$ ${fmt(r.calculatedValue)}</td><td>R$ ${fmt(r.billedValue)}</td><td class="${Math.abs(r.difference)>0.01?'waste-bad':'waste-ok'}">R$ ${fmt(r.difference)}</td><td><span class="waste-status ${r.billingStatus==='VALIDADO'?'waste-ok':r.billingStatus==='DIVERGENTE'?'waste-bad':''}">${esc(r.billingStatus||'PENDENTE')}</span></td><td><span class="waste-status ${r.environmentStatus==='COMPROVADO'?'waste-ok':r.environmentStatus==='DIVERGENTE'?'waste-bad':''}">${esc(r.environmentStatus||'NÃO LANÇADO')}</span></td><td>${esc(r.environmentProtocol||'—')}</td><td>${r.mtrAttachment?.path?`<button class="waste-btn" data-waste-mtr="${esc(r.id)}">PDF do MTR</button>`:''}${r.attachment?.path?`<button class="waste-btn" data-waste-doc="${esc(r.id)}">Comprovante</button>`:''}<button class="waste-btn" data-waste-edit="${esc(r.id)}">Editar</button><button class="waste-btn" data-waste-del="${esc(r.id)}">Excluir</button></td></tr>`).join('')||'<tr><td colspan="15">Nenhuma coleta de lixo lançada.</td></tr>'}</tbody></table></div></div>`}
+function bindWasteLaunch(root,editId){
+  const original=editId?wasteRows().find(row=>row.id===editId):null;
+  const ids=['date','company','responsible','invoice','wasteKg','totalSorted','formsKg','manifestKg','documentKg','washedKg',
+    'contractedPrice','billedValue','billingStatus','environmentSystem','environmentStatus','environmentDate','environmentProtocol','environmentResponsible','notes'];
+  const el=id=>root.querySelector('#waste-'+id);
+  const fields=()=>Object.fromEntries(ids.map(id=>[id,el(id)?.value||'']));
+  if(original) ids.forEach(id=>{el(id).value=original[id]??'';});
+  else el('date').value=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  el('manifestKg').step='any';
+  const recalc=()=>{
+    const x=fields(),c=wasteCalc(x);
+    const calculated=n(x.wasteKg)>0&&n(x.contractedPrice)>0;
+    el('calculated').textContent=calculated?'R$ '+fmt(c.calculatedValue):'Não apurado';
+    el('difference').textContent=calculated&&x.billedValue!==''?'R$ '+fmt(c.difference):'Não apurada';
+    el('cost').textContent=x.billedValue===''||c.costPerWashedKg==null?'Não apurado':'R$ '+fmt(c.costPerWashedKg,4);
+    el('percent').textContent=!n(x.wasteKg)||c.percentTriaged==null?'Não apurado':fmt(c.percentTriaged*100,2)+'%';
+  };
+  ['wasteKg','totalSorted','washedKg','contractedPrice','billedValue'].forEach(id=>el(id).addEventListener('input',recalc));
+  recalc();
+  const button=el('save'),status=el('save-status'),mtr=el('mtr-document');
+  const edited=new Set(),imported=new Map();
+  let reading=false,request=0,saving=false;
+  ids.forEach(id=>el(id).addEventListener('input',()=>{edited.add(id);imported.delete(id);}));
+  mtr.onchange=async()=>{
+    const revision=++request,file=mtr.files[0],message=el('mtr-status');
+    for(const [id,value] of imported) if(el(id).value===value) el(id).value=original?.[id]??(id==='environmentStatus'?'NAO_LANCADO':id==='environmentSystem'?'SEMAD':id==='company'?wasteDefaultCompanies[0]:'');
+    imported.clear();
+    reading=!!file;button.disabled=reading||saving;
+    if(!file){message.textContent='Anexe o PDF para preencher os dados do manifesto.';return;}
+    message.textContent='Lendo o PDF do MTR…';
+    try{
+      const {readMtr}=await import('/waste-mtr-import-v1.mjs');
+      const result=await readMtr(file);
+      if(revision!==request||!mtr.isConnected) return;
+      if(!result) throw Error('Não foi possível reconhecer o texto do MTR. Preencha os dados manualmente e mantenha o PDF anexado.');
+      const suggestions={environmentProtocol:result.protocol,company:result.company,manifestKg:result.weight,
+        environmentSystem:result.system,environmentStatus:'LANCADO',environmentDate:result.issueDate,
+        environmentResponsible:result.responsible,date:result.transportDate};
+      const conflicts=[];
+      for(const [id,value] of Object.entries(suggestions)){
+        if(value===null||value===undefined) continue;
+        const existing=el(id).value;
+        if(edited.has(id)||(original?.[id]&&existing!==String(value))){if(existing!==String(value)) conflicts.push(id);continue;}
+        el(id).value=String(value);
+        imported.set(id,el(id).value);
+      }
+      if(!result.transportDate&&!original&&!edited.has('date')) el('date').value='';
+      message.textContent='MTR '+result.protocol+' identificado. '+(result.weight===null?'Confira o peso declarado. ':'Peso declarado: '+fmt(result.weight)+' kg. ')+
+        (!result.transportDate?'Confirme a data da coleta. ':'')+(conflicts.length?'Campos já preenchidos foram mantidos. Confira se correspondem ao PDF.':'Revise os dados antes de salvar.');
+      recalc();
+    }catch(error){if(revision===request)message.textContent=error.message?.startsWith('Não foi possível reconhecer')?error.message:'Não foi possível ler o PDF. Preencha os campos manualmente e mantenha o documento anexado.';}
+    finally{if(revision===request){reading=false;button.disabled=saving;}}
+  };
+  root.querySelector('[data-waste-cancel]').onclick=()=>render('waste-dash');
+  const uploads=new Map();
+  button.onclick=async()=>{
+    if(reading||saving) return;
+    const x=fields();
+    status.textContent='';
+    if(!x.date||!x.company||(!n(x.wasteKg)&&!n(x.manifestKg))){
+      status.textContent='Informe a data da coleta, a empresa e pelo menos um peso da coleta ou do MTR.';return;
+    }
+    if(x.billingStatus==='VALIDADO'&&(!n(x.wasteKg)||!n(x.contractedPrice)||!n(x.washedKg)||x.billedValue==='')){
+      el('more').open=true;
+      status.textContent='Para validar o faturamento, informe peso medido, preço, peso de roupa lavada e valor cobrado.';return;
+    }
+    const invalid=ids.map(el).find(input=>!input.checkValidity());
+    if(invalid){invalid.closest('details')?.setAttribute('open','');invalid.reportValidity();return;}
+    const previousId=original?.id||button.dataset.entryId;
+    if(x.environmentProtocol&&wasteRows().some(row=>row.id!==previousId&&row.environmentSystem===x.environmentSystem&&String(row.environmentProtocol||'').trim()===x.environmentProtocol.trim())){
+      status.textContent='Este MTR já está vinculado a um lançamento. Abra o histórico para editar o registro existente.';return;
+    }
+    saving=true;button.disabled=true;
+    try{
+      x.id=previousId||(button.dataset.entryId=crypto.randomUUID());
+      x.savedAt=original?.savedAt||new Date().toISOString();
+      const previous=wasteState().entries.find(row=>row.id===x.id);
+      for(const [field,input] of [['mtrAttachment',mtr],['attachment',el('document')]]){
+        const file=input.files[0];
+        if(file&&uploads.get(field)?.file!==file){
+          status.textContent=field==='mtrAttachment'?'Enviando MTR…':'Enviando comprovante…';
+          uploads.set(field,{file,value:await window.GAO_WASTE_DOCUMENTS.upload(file,x.id)});
+        }
+        x[field]=(file&&uploads.get(field)?.value)||previous?.[field]||null;
+      }
+      if(previous) updateWaste(x.id,x);else saveWaste(x);
+      if(await confirmRemoteSave(original?'Alteração da coleta':'Lançamento da coleta')) render('waste-hist');
+      else status.textContent='Aguardando confirmação do banco. Clique em salvar para tentar novamente.';
+    }catch(error){status.textContent=error.message;}
+    finally{saving=false;button.disabled=reading;}
+  };
+}
 function bindWasteHistory(root){
-root.querySelectorAll('[data-waste-doc]').forEach(button=>button.onclick=async()=>{
-  const attachment=wasteRows().find(row=>row.id===button.dataset.wasteDoc)?.attachment;
+root.querySelectorAll('[data-waste-doc],[data-waste-mtr]').forEach(button=>button.onclick=async()=>{
+  const isMtr=!!button.dataset.wasteMtr;
+  const row=wasteRows().find(row=>row.id===(isMtr?button.dataset.wasteMtr:button.dataset.wasteDoc));
+  const attachment=isMtr?row?.mtrAttachment:row?.attachment;
   if(!attachment)return;
   try{await window.GAO_WASTE_DOCUMENTS.download(attachment.path,attachment.name);}catch(error){alert(error.message);}
 });root.querySelectorAll('[data-waste-del]').forEach(b=>b.onclick=async()=>{if(confirm('Excluir este lançamento de lixo?')){deleteWaste(b.dataset.wasteDel);await confirmRemoteSave('Exclusão do lixo');render('waste-hist')}});root.querySelectorAll('[data-waste-edit]').forEach(b=>b.onclick=()=>render('waste-launch',b.dataset.wasteEdit))}
