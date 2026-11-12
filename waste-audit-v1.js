@@ -37,13 +37,21 @@ async function upload(file,entryId){
   if(!response.ok) throw Error('O Portal não conseguiu salvar o anexo. Confira seu acesso e tente novamente.');
   return {path,name:file.name};
 }
-async function download(path,name){
-  const url=URL.createObjectURL(await read(path));
+function saveBlob(blob,name){
+  const url=URL.createObjectURL(blob);
   const anchor=document.createElement('a');
   anchor.href=url;
   anchor.download=name;
   anchor.click();
   setTimeout(()=>URL.revokeObjectURL(url),30000);
+}
+async function download(path,name){saveBlob(await read(path),name);}
+async function verifiedSnapshot(blob){
+  const bytes=await blob.arrayBuffer();
+  const digest=await crypto.subtle.digest('SHA-256',bytes);
+  const hex=Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
+  if(hex!==snapshotSha256) throw Error('Use a versão da auditoria que contém os nove documentos incorporados.');
+  return new TextDecoder().decode(bytes);
 }
 function offerImport(content,refresh){
   const label=document.createElement('label');
@@ -63,9 +71,7 @@ function offerImport(content,refresh){
     button.disabled=true;
     status.textContent='Verificando e enviando o histórico…';
     try{
-      const digest=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());
-      const hex=Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
-      if(hex!==snapshotSha256) throw Error('Use a versão da auditoria que contém os nove documentos incorporados.');
+      await verifiedSnapshot(file);
       const response=await fetch(base+'/waste-audit/'+objectPath(snapshot),{
         method:'POST',headers:{...headers(),'Content-Type':'text/html'},body:file
       });
@@ -82,32 +88,24 @@ function bind(root){
   open.onclick=async()=>{
     const content=root.querySelector('[data-waste-audit-content]');
     open.disabled=true;
-    content.textContent='Carregando auditoria e documentos…';
+    content.textContent='Carregando dados e documentos de resíduos…';
+    content.setAttribute('aria-busy','true');
     try{
-      const [blob,theme]=await Promise.all([
-        read(snapshot),
-        fetch('/liquid-lite.css?v=1').then(response=>response.ok?response.text():'').catch(()=>'')
+      const [html,theme,{mountAudit}]=await Promise.all([
+        read(snapshot).then(verifiedSnapshot),
+        fetch('/liquid-lite.css?v=1').then(response=>response.ok?response.text():'').catch(()=>''),
+        import('/waste-audit-panel-v1.mjs')
       ]);
       if(!content.isConnected) return;
-      const csp=`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:">`;
-      const html=(await blob.text())
-        .replace(/<!doctype html>/i,'<!doctype html>'+csp)
-        .replace('<html lang="pt-BR">','<html lang="pt-BR" class="liquid-lite-audit">')
-        .replace('<header>',()=>'<style>'+theme+'</style><header>');
-      const url=URL.createObjectURL(new Blob([html],{type:'text/html;charset=utf-8'}));
-      const frame=document.createElement('iframe');
-      frame.title='Auditoria de resíduos · junho a novembro de 2026';
-      frame.setAttribute('sandbox','allow-scripts allow-downloads');
-      frame.style.cssText='width:100%;height:75vh;border:1px solid #cfe0ed;border-radius:8px;margin-top:10px';
-      frame.src=url;
-      frame.addEventListener('load',()=>URL.revokeObjectURL(url),{once:true});
-      content.replaceChildren(frame);
+      const panel=document.createElement('div');
+      mountAudit(panel,html,theme,saveBlob);
+      content.replaceChildren(panel);
       open.hidden=true;
     }catch(error){
       content.textContent=error.message;
       open.disabled=false;
       if(error.status===400||error.status===404) offerImport(content,open.onclick);
-    }
+    }finally{content.removeAttribute('aria-busy');}
   };
   const loadWhenSignedIn=()=>{
     if(!open.isConnected||open.disabled||open.hidden) return;
