@@ -1,7 +1,7 @@
 import {createFactionDesk} from '/fabric-faction-portal-v1.mjs?v=1';
 import {createFabricWorkbookImport} from '/fabric-workbook-import-v1.mjs?v=1';
 import {buildPendingProductionCoverage,applyPendingProductionCoverage,compactDimensionKey} from '/linen-risk-rules-v150.mjs?v=226';
-import {createBuyingController} from '/linen-buying-controller-v1.mjs?v=7';
+import {createBuyingController} from '/linen-buying-controller-v1.mjs?v=8';
 import { fabricCatalogVariantKey, fabricInvoiceAliasKey, summarizeFabricPurchaseOrder, groupPendingFabricLotsByInvoice, latestFabricConsumptionByVariant, fabricCostReferenceLabel, normalizeFabricNumber, serviceOrderDueDate } from '/fabric-workflow-rules-v1.mjs?v=3'; import {sameFabricStandard,groupFabricStandards,purchaseReferenceChoices} from '/fabric-standard-rules-v1.mjs?v=2';
 (() => {
 'use strict';
@@ -261,11 +261,11 @@ function purchaseStage(root,stage){
  root.dataset.purchaseStage=stage;
  root.querySelectorAll('[data-fw-purchase-stage]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.fwPurchaseStage===stage)));
  root.querySelector('[data-fw-shortages]').hidden=stage!=='need';
- root.querySelector('[data-fw-ordered]').hidden=stage!=='ordered'&&stage!=='incoming';
+ root.querySelector('[data-fw-ordered]').hidden=stage==='need';
  root.querySelector('.fw-new-order').hidden=stage!=='ordered';
  root.querySelector('[data-fw-order-summary]').hidden=stage!=='ordered';
  const readyOrders=root.querySelector('[data-fw-ready-orders]');
- if(readyOrders)readyOrders.hidden=stage!=='ordered';
+ if(readyOrders)readyOrders.hidden=stage!=='history';
  filterPurchaseRows(root);
 }
 function filterPurchaseRows(root){
@@ -273,7 +273,7 @@ function filterPurchaseRows(root){
  const query=root.querySelector('[data-fw-purchase-search]').value.trim().toLocaleLowerCase('pt-BR');
  let visible=0;
  root.querySelectorAll('[data-fw-purchase-row]').forEach(row=>{
-  row.hidden=row.hasAttribute('data-fw-purchase-excluded')||(stage==='incoming'&&row.dataset.pending!=='true')||!row.dataset.search.includes(query);
+  row.hidden=row.hasAttribute('data-fw-purchase-excluded')||((stage==='incoming'||stage==='ordered')&&row.dataset.pending!=='true')||(stage==='history'&&row.dataset.pending==='true')||!row.dataset.search.includes(query);
   if(!row.hidden)visible++;
  });
  root.querySelector('[data-fw-purchase-empty]').hidden=visible>0;
@@ -311,13 +311,14 @@ function purchaseOrderView(readyOrders=''){
  const partial=plan.unlinked.length>0;
  const unknown=!state.loaded||state.factionCountsError||plan.fabrics.some(row=>row.buy===null);
  const shortage=unknown?'Não apurado':br(plan.fabrics.reduce((sum,row)=>sum+n(row.buy),0),3)+' m';
- const confirmed=state.purchaseOrders.filter(isConfirmedPurchase);
+ const confirmed=state.purchaseOrders.filter(order=>isConfirmedPurchase(order)&&['ABERTA','PARCIAL'].includes(order.status));
  const orderIds=new Set(confirmed.map(order=>order.id));
  const pending=state.purchaseItems.filter(item=>orderIds.has(item.purchase_order_id));
  const incoming=pending.reduce((sum,item)=>sum+Math.max(0,n(item.ordered_m)-n(item.received_m)),0);
- const card=(stage,label,value,note)=>'<button type="button" data-fw-purchase-stage="'+stage+'" aria-pressed="false"><span>'+label+'</span><strong>'+value+'</strong><small>'+note+'</small></button>';
- const stages='<div class="fw-purchase-stages">'+card('need','A pedir',shortage,partial?'Previsão parcial · há vínculos pendentes':'Necessidade líquida de compra')+card('ordered','Já pedido',state.loaded?br(confirmed.length,0)+' OC':'Aguardando dados','Consultar ordens e recebimentos')+card('incoming','Falta chegar',state.loaded?br(incoming,3)+' m':'Aguardando dados','Saldo das ordens confirmadas')+'</div>';
  const pendingOrders=new Set(pending.filter(item=>n(item.ordered_m)-n(item.received_m)>0.0005).map(item=>item.purchase_order_id));
+ const historyCount=state.purchaseOrders.length-pendingOrders.size;
+ const card=(stage,label,value,note)=>'<button type="button" data-fw-purchase-stage="'+stage+'" aria-pressed="false"><span>'+label+'</span><strong>'+value+'</strong><small>'+note+'</small></button>';
+ const stages='<div class="fw-purchase-stages">'+card('need','A pedir',shortage,partial?'Previsão parcial · há vínculos pendentes':'Necessidade líquida de compra')+card('ordered','Já pedido',state.loaded?br(pendingOrders.size,0)+' OC':'Aguardando dados','Ordens ainda em andamento')+card('incoming','Falta chegar',state.loaded?br(incoming,3)+' m':'Aguardando dados','Saldo das ordens confirmadas')+card('history','Histórico',state.loaded?br(historyCount,0)+' OC':'Aguardando dados','Recebidos e demais registros')+'</div>';
  const summarized=state.purchaseOrders.map(order=>({
   order,
   summary:summarizeFabricPurchaseOrder({
