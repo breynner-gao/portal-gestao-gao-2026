@@ -63,8 +63,8 @@ function regression(points) {
   return i => Math.min(100, Math.max(0, y + slope * (i - x)));
 }
 
-function chart(buckets, projection = false) {
-  const series = [0, 1].map(j => {
+function chart(buckets, projection = false, customerOnly = false) {
+  const series = (customerOnly ? [1] : [0, 1]).map(j => {
     const observed = buckets.flatMap((b, i) => b.values[j] == null ? [] : [[i,b.values[j]]]);
     const closed = observed.filter(([i]) => !buckets[i].partial);
     const fit = regression(closed);
@@ -85,14 +85,14 @@ function chart(buckets, projection = false) {
     return `<line x1="47" x2="557" y1="${y(v)}" y2="${y(v)}" stroke="#dbe5ed"/><text x="39" y="${y(v)+3}" text-anchor="end">${v}%</text>`;
   }).join('');
   const marks = series.map(({observed,derived}, j) => {
-    const color = ['#2269a4','#087e73'][j];
+    const color = ['#2269a4','#087e73'][customerOnly ? 1 : j];
     const path = (points,dash='') => `<polyline fill="none" stroke="${color}" stroke-width="2" ${dash} points="${points.map(([i,v])=>x(i)+','+y(v)).join(' ')}"/>`;
     const dot = ([i,v],open) => `<circle cx="${x(i)}" cy="${y(v)}" r="3" stroke="${color}" fill="${open?'white':color}"/>`;
     const actual = observed.map((point, i) => (i && observed[i-1][0] === point[0]-1 ? path([observed[i-1],point]) : '') + dot(point,buckets[point[0]].partial)).join('');
     return actual + path(derived,'stroke-dasharray="5 4"') + (projection ? derived.slice(1).map(p=>dot(p,true)).join('') : '');
   }).join('');
   return `<svg viewBox="0 0 570 149" role="img" aria-label="Evolução percentual do relave">${grid}
-    <line x1="47" x2="557" y1="${y(2.5)}" y2="${y(2.5)}" stroke="#99611a" stroke-dasharray="2 3"/>
+    ${customerOnly ? "" : `<line x1="47" x2="557" y1="${y(2.5)}" y2="${y(2.5)}" stroke="#99611a" stroke-dasharray="2 3"/>`}
     ${marks}${buckets.map((b,i)=>`<text x="${x(i)}" y="140" text-anchor="middle">${html(b.label)}${b.partial?'*':''}</text>`).join('')}</svg>`;
 }
 
@@ -102,8 +102,13 @@ function table(headings, rows, widths) {
     ${rows.map(row=>`<tr>${row.map(cell=>`<td>${html(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
 }
 
-export function renderDailyReport(records, date, logo) {
+export function renderDailyReport(records, date, logo, customer = null) {
+  if (customer) {
+    if (!customer.id || !customer.name) throw Error('Selecione um cliente cadastrado.');
+    records = records.filter(row => !internal(row) && row.clientId === customer.id);
+  }
   const data = dailyReportData(records, date);
+  if (customer && !data.daily.length) throw Error('Sem ocorrência vinculada a este cliente na data selecionada.');
   const gao = data.daily.filter(internal), clients = data.daily.filter(row => !internal(row));
   const g = summary(gao), c = summary(clients);
   const checks = gao.filter(row => row.canWeigh && row.command && weight(row)>0).map(row => {
@@ -132,11 +137,29 @@ export function renderDailyReport(records, date, logo) {
       .print{display:none}
     }
   `;
+  const title = customer ? 'Relatório de relave por ocorrência' : 'Relatório diário de relave';
+  const trends = `<section class="trends">${head('Evolução do relave')}
+    ${customer ? '<p>'+html(customer.name)+'</p>' : ''}
+    <div class="legend">${customer ? '' : '<span><i style="color:#2269a4"></i>Interno GAO</span>'}<span><i style="color:#087e73"></i>Ocorrência do cliente</span>${customer ? '' : '<span><i style="border-top-style:dotted;color:#99611a"></i>Meta interna 2,50%</span>'}</div>
+    <article><h2>Dias da semana ${data.iso}</h2><p class="note">Projeção tracejada até domingo quando há pelo menos dois dias com dados.</p>${chart(data.weekdays,true,!!customer)}</article>
+    <article><h2>Semanas do mês</h2><p class="note">Tendência das semanas ISO encerradas com dados.</p>${chart(data.weeks,false,!!customer)}</article>
+    <article><h2>Meses do ano</h2><p class="note">Tendência dos meses encerrados com dados.</p>${chart(data.months,false,!!customer)}</article>
+    <p class="note">* Período parcial. Períodos sem base ficam sem ponto no gráfico.</p></section>`;
+  const customerBody = () => `
+    <p><strong>Cliente</strong> ${html(customer.name)}</p>
+    <div class="cards">${card('Relave por ocorrência',percent(c.rate),'Sobre o peso triado','')}
+    ${card('Peso triado',kg(c.sorted),'Comandas conferidas','')}
+    ${card('Peso de relave',kg(c.waste),clients.length+' comanda(s) no dia','')}</div>
+    <h2>Comandas e motivos</h2>
+    ${table(['Comanda','Enxoval','Motivo','Peso'],clients.flatMap(row=>(row.items||[]).map(item=>[row.command,item.type,item.reason,kg(item.weight)])),[20,24,34,22])}
+    <h2>Descrição e ações da Qualidade</h2>
+    ${table(['Comanda','Descrição','Ação'],clients.map(row=>[row.command,row.issue||'—',row.action||'—']),[17,41,42])}
+    ${trends}`;
   return `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>GAO • Relatório diário de relave • ${date}</title><style>${css}</style>
+  <title>GAO • ${title} • ${date}</title><style>${css}</style>
   <div class="print"><button type="button" id="save-pdf">Imprimir / salvar PDF</button></div><main>
-  ${head('Relatório diário de relave')}
-  <div class="cards">
+  ${head(title)}
+  ${customer ? customerBody() : `<div class="cards">
   ${card('Relave interno GAO',percent(g.rate),kg(g.waste)+' / '+kg(g.sorted)+' triados',g.rate===null?'Sem base conferida':g.rate<=2.5?'Dentro da meta de 2,50%':'Acima da meta de 2,50%')}
   ${card('Ocorrência do cliente',percent(c.rate),kg(c.waste)+' / '+kg(c.sorted)+' triados',clients.filter(row=>Array.isArray(row.items)).length+' comanda(s) conferida(s)')}
   ${card('Conferência de peso',divergences.length+' divergência(s)',checks.filter(x=>x.delta===null).length+' aguardando pesagem',divergences.filter(x=>!x.check.resolved).length+' em tratativa')}</div>
@@ -151,11 +174,6 @@ export function renderDailyReport(records, date, logo) {
   <h2>Ocorrências do cliente</h2>
   ${table(['Comanda','Cliente','Motivo','Triado','Relave'],clients.map(row=>[row.command,row.client,[...new Set((row.items||[]).map(i=>i.reason))].join(', ')||'—',kg(row.sorted),row.items?kg(weight(row)):'—']))}
   <p class="note">Percentuais calculados como kg de relave sobre kg triados nas comandas conferidas de cada tipo.</p>
-  <section class="trends">${head('Evolução do relave')}
-  <div class="legend"><span><i style="color:#2269a4"></i>Interno GAO</span><span><i style="color:#087e73"></i>Ocorrência do cliente</span><span><i style="border-top-style:dotted;color:#99611a"></i>Meta interna 2,50%</span></div>
-  <article><h2>Dias da semana ${data.iso}</h2><p class="note">Projeção tracejada até domingo quando há pelo menos dois dias com dados.</p>${chart(data.weekdays,true)}</article>
-  <article><h2>Semanas do mês</h2><p class="note">Semanas ISO recortadas no mês. Tendências usam apenas períodos encerrados com dados.</p>${chart(data.weeks)}</article>
-  <article><h2>Meses do ano</h2><p class="note">Tendência tracejada para cada tipo de relave.</p>${chart(data.months)}</article>
-  <p class="note">* Período parcial. Dias ou períodos sem base ficam sem ponto no gráfico.</p></section>
+  ${trends}`}
   </main></html>`;
 }
