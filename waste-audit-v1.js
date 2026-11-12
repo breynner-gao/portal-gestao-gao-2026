@@ -84,10 +84,16 @@ function bind(root){
     open.disabled=true;
     content.textContent='Carregando auditoria e documentos…';
     try{
-      const blob=await read(snapshot);
+      const [blob,theme]=await Promise.all([
+        read(snapshot),
+        fetch('/liquid-lite.css?v=1').then(response=>response.ok?response.text():'').catch(()=>'')
+      ]);
       if(!content.isConnected) return;
-      const csp=`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">`;
-      const html=(await blob.text()).replace(/<!doctype html>/i,'<!doctype html>'+csp);
+      const csp=`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:">`;
+      const html=(await blob.text())
+        .replace(/<!doctype html>/i,'<!doctype html>'+csp)
+        .replace('<html lang="pt-BR">','<html lang="pt-BR" class="liquid-lite-audit">')
+        .replace('<header>',()=>'<style>'+theme+'</style><header>');
       const url=URL.createObjectURL(new Blob([html],{type:'text/html;charset=utf-8'}));
       const frame=document.createElement('iframe');
       frame.title='Auditoria de resíduos · junho a novembro de 2026';
