@@ -389,7 +389,7 @@ function operationRecord(row){
  const legacyWeight=historicalItems.reduce((sum,item)=>sum+item.weight,0);
  const difference=Math.round((row.relaveTotal-legacyWeight)*100)/100;
  if(difference>0)historicalItems.push({type:'Outros',reason:'Saldo do histórico',weight:difference});
- return {key:row.__key,command:String(row.command??''),date:row.date,kind:row.kind||'internal',client:row.client||'',responsible:row.responsible||'',sorted:n(row.totalSorted),items:row.relaveItems||(difference<0?[{type:'Outros',reason:'Total registrado no histórico',weight:row.relaveTotal}]:historicalItems),canWeigh:Array.isArray(row.relaveItems),weighing:row.weighing};
+ return {key:row.__key,command:String(row.command??''),date:row.date,kind:row.kind||'internal',client:row.client||'',clientId:row.clientId||null,issue:row.issue||'',action:row.action||'',responsible:row.responsible||'',sorted:n(row.totalSorted),items:row.relaveItems||(difference<0?[{type:'Outros',reason:'Total registrado no histórico',weight:row.relaveTotal}]:historicalItems),canWeigh:Array.isArray(row.relaveItems),weighing:row.weighing};
 }
 async function syncRelaveOperation(){
  try{if(!window.GAO_CHEM_DB_SYNC)throw Error();await window.GAO_CHEM_DB_SYNC()}
@@ -398,7 +398,7 @@ async function syncRelaveOperation(){
 async function saveOperationRecord(record,key){
  const previous=all().find(row=>row.__key!==key&&(row.kind||'internal')===record.kind&&row.date===record.date&&String(row.command).toLowerCase()===record.command.toLowerCase());
  if(previous){
-  if(JSON.stringify(previous.relaveItems)!==JSON.stringify(record.items)||n(previous.totalSorted)!==record.sorted||previous.client!==record.client||previous.responsible!==record.responsible)throw Error('Já existe um lançamento desse tipo para esta comanda e data.');
+  if(JSON.stringify(previous.relaveItems)!==JSON.stringify(record.items)||n(previous.totalSorted)!==record.sorted||previous.client!==record.client||(previous.clientId||null)!==record.clientId||(previous.issue||'')!==record.issue||(previous.action||'')!==record.action||previous.responsible!==record.responsible)throw Error('Já existe um lançamento desse tipo para esta comanda e data.');
   await syncRelaveOperation();
   return operationRecord(previous);
  }
@@ -432,20 +432,34 @@ async function excludeOperationRecord(record){
  deleteEntry(record.key);
  await syncRelaveOperation();
 }
+async function loadRelaveClients(){
+ const session=await window.GAO_AUTH_READY;
+ const headers={apikey:'sb_publishable_icrk6TaZexgiSIq63zX_ng_40JGaYlJ',Authorization:'Bearer '+(window.GAO_AUTH_SESSION||session).access_token};
+ const clients=[];
+ const limit=250;
+ for(let offset=0;;offset+=limit){
+  const query=new URLSearchParams({select:'id,name,active',order:'name,id',limit:String(limit),offset:String(offset)});
+  const response=await fetch('https://fquzuxdqvhecijjuxbmg.supabase.co/rest/v1/laundry_clients?'+query,{headers});
+  if(!response.ok)throw Error('Cadastro de clientes indisponível.');
+  const rows=await response.json();
+  clients.push(...rows.filter(row=>row.active!==false&&row.name));
+  if(rows.length<limit)return clients;
+ }
+}
 async function loadRelaveOperation(root){
  const host=document.createElement('div');
  root.replaceChildren(host);
  host.textContent='Carregando painel de relave…';
  try{
   const [{mountRelave},{mergeRelaveArchive}]=await Promise.all([
-   import('/relave-operation-v1.mjs?v=7'),import('/relave-archive-v1.mjs?v=2')
+   import('/relave-operation-v1.mjs?v=8'),import('/relave-archive-v1.mjs?v=2')
   ]);
   let archive,archiveError=false;
   try{archive=await window.GAO_RELAVE_ARCHIVE?.()}
   catch(error){archiveError=true;console.error('[GAO Relave histórico]',error)}
   if(!host.isConnected)return;
   const records=all().filter(row=>/^\d{4}-\d{2}-\d{2}$/.test(row.date)).map(operationRecord);
-  disposeRelaveOperation=mountRelave(host,{records:mergeRelaveArchive(records,archive?.rows||[],archive?.excludedRows),archiveError,excludeRecord:excludeOperationRecord,saveRecord:saveOperationRecord,saveWeighing:saveOperationWeighing,openHistory:()=>render('hist')});
+  disposeRelaveOperation=mountRelave(host,{records:mergeRelaveArchive(records,archive?.rows||[],archive?.excludedRows),archiveError,excludeRecord:excludeOperationRecord,saveRecord:saveOperationRecord,saveWeighing:saveOperationWeighing,loadClients:loadRelaveClients,openHistory:()=>render('hist')});
  }catch(error){
   if(!host.isConnected)return;
   console.error('[GAO Relave]',error);
