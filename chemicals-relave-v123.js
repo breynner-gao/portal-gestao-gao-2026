@@ -10,7 +10,7 @@ const gaoKeys=['surgicalTorn','surgicalClean','surgicalGlue','surgicalPermanent'
 let historical=[], mounted=false, dashboardWeek=null, comparisonWeek=null, dashboardMode="weekly", dashboardMonth=null;
 const wasteDefaultCompanies=['INDCOM','BIOREVERSE'];
 function stableId(x,i=0){return x.id||['relave',x.date||'sem-data',x.command||'sem-comanda',x.savedAt||i].join('-').replace(/[^\w.-]+/g,'_')}
-function calc(x){const sum=ks=>ks.reduce((a,k)=>a+n(x[k]),0),cht=sum(chtKeys),gao=sum(gaoKeys),other=n(x.otherRelave),priv=n(x.privateRelave),computed=cht+gao+other,tri=n(x.totalSorted),isHist=x.__historical===true,total=isHist&&n(x.relaveTotal)?n(x.relaveTotal):computed;return {...x,chtKg:isHist&&x.chtKg!=null?n(x.chtKg):cht,gaoKg:isHist&&x.gaoKg!=null?n(x.gaoKg):gao,relaveTotal:total,pctTotal:tri?total/tri:0,pctCHT:tri?(isHist&&x.chtKg!=null?n(x.chtKg):cht)/tri:0,pctGAO:tri?(isHist&&x.gaoKg!=null?n(x.gaoKg):gao)/tri:0,sheetTotal:isHist&&x.sheetTotal!=null?n(x.sheetTotal):sum(fields.sheet.map(x=>x[0])),surgicalTotal:isHist&&x.surgicalTotal!=null?n(x.surgicalTotal):sum(fields.surgical.map(x=>x[0])),privateRelave:priv}}
+function calc(x){const sum=ks=>ks.reduce((a,k)=>a+n(x[k]),0),cht=sum(chtKeys),gao=sum(gaoKeys),other=n(x.otherRelave),priv=n(x.privateRelave),computed=cht+gao+other,tri=n(x.totalSorted),isHist=x.__historical===true,total=Array.isArray(x.relaveItems)?x.relaveItems.reduce((a,i)=>a+n(i.weight),0):isHist&&n(x.relaveTotal)?n(x.relaveTotal):computed;return {...x,chtKg:isHist&&x.chtKg!=null?n(x.chtKg):cht,gaoKg:isHist&&x.gaoKg!=null?n(x.gaoKg):gao,relaveTotal:total,pctTotal:tri?total/tri:0,pctCHT:tri?(isHist&&x.chtKg!=null?n(x.chtKg):cht)/tri:0,pctGAO:tri?(isHist&&x.gaoKg!=null?n(x.gaoKg):gao)/tri:0,sheetTotal:isHist&&x.sheetTotal!=null?n(x.sheetTotal):sum(fields.sheet.map(x=>x[0])),surgicalTotal:isHist&&x.surgicalTotal!=null?n(x.surgicalTotal):sum(fields.surgical.map(x=>x[0])),privateRelave:priv}}
 function normalizeState(s){const entries=(Array.isArray(s.entries)?s.entries:[]).map((x,i)=>({...x,id:stableId(x,i),savedAt:x.savedAt||x.createdAt||new Date().toISOString(),week:x.week||weekNo(x.date)}));return {...s,entries,overrides:s.overrides||{},deleted:(Array.isArray(s.deleted)?s.deleted:[]).filter(k=>k&&k!=='l:undefined')}}
 function state(){try{return normalizeState(JSON.parse(localStorage.getItem(STORE)||'{}'))}catch{return {entries:[],overrides:{},deleted:[]}}}
 function local(){return state().entries}
@@ -338,7 +338,7 @@ root.querySelectorAll('[data-waste-doc],[data-waste-mtr]').forEach(button=>butto
 function bindWasteTabs(root){root.querySelectorAll('[data-waste-tab]').forEach(b=>b.onclick=()=>render('waste-'+b.dataset.wasteTab))}
 function input(label,id,type='number'){return `<label>${label}<input id="r122-${id}" type="${type}" ${type==='number'?'min="0" step="0.01"':''}></label>`}
 function launch(){return `<div class="r122-card"><div class="r122-ey">LANÇAMENTO DIÁRIO</div><h2>Registrar Relave</h2><div class="r122-sub">Lance apenas os pesos das causas. Relave CHT, Relave GAO, Relave Total e percentuais são calculados automaticamente.</div><div class="r122-form">${input('Data','date','date')}${input('Responsável','responsible','text')}${input('Comanda','command','text')}${input('Total triado (kg)','totalSorted')}</div><div class="r122-groups"><div class="r122-group"><h3>Cirúrgico</h3><div class="r122-causes">${fields.surgical.map(([k,l])=>input(l,k)).join('')}</div></div><div class="r122-group"><h3>Lençol</h3><div class="r122-causes">${fields.sheet.map(([k,l])=>input(l,k)).join('')}</div></div></div><div class="r122-form" style="margin-top:14px">${input('Relave Outros','otherRelave')}${input('Relave Privativos','privateRelave')}</div><div class="r122-auto"><div>Relave CHT<b id="r122-cht">0,00 kg</b></div><div>Relave GAO<b id="r122-gao">0,00 kg</b></div><div>Relave total<b id="r122-total">0,00 kg</b></div><div>% total de relave<b id="r122-pct">0,00%</b></div></div><div class="r122-note"><b>CHT:</b> Cirúrgico Óleo + Sangue + Resíduo + Lençol Amarelo + Sangue + Resíduo. <b>GAO:</b> Rasgado + Limpo + Cola/Fita + Permanente + Passadoria + Tinta + Nó, conforme a lógica da planilha oficial.</div><div class="r122-actions"><button class="r122-btn r122-primary" id="r122-save">Salvar lançamento</button></div></div>`}
-function history(){const rows=all().slice().reverse();return `<div class="r122-card"><div class="r122-ey">HISTÓRICO</div><h2>Relave do Dia</h2><div style="overflow:auto"><table class="r122-table"><thead><tr><th>Data</th><th>Semana</th><th>Responsável</th><th>Comanda</th><th>Total triado</th><th>Relave total</th><th>% Relave</th><th>CHT</th><th>GAO</th><th>Lençol</th><th>Cirúrgico</th><th>Ações</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${String(r.date).split('-').reverse().join('/')}</td><td>${r.week||weekNo(r.date)}</td><td>${esc(r.responsible)}</td><td>${esc(r.command)}</td><td>${fmt(r.totalSorted)} kg</td><td><b>${fmt(r.relaveTotal)} kg</b></td><td>${pct(r.pctTotal)}</td><td>${fmt(r.chtKg)} kg</td><td>${fmt(r.gaoKg)} kg</td><td>${fmt(r.sheetTotal)} kg</td><td>${fmt(r.surgicalTotal)} kg</td><td><button class="r128-edit" data-edit="${esc(r.__key)}">Editar</button><button class="r128-del" data-del="${esc(r.__key)}">Excluir</button></td></tr>`).join('')}</tbody></table></div></div>`}
+function history(){const rows=all().slice().reverse();return `<div class="r122-card"><div class="r122-ey">HISTÓRICO</div><h2>Relave do Dia</h2><div style="overflow:auto"><table class="r122-table"><thead><tr><th>Data</th><th>Semana</th><th>Responsável</th><th>Comanda</th><th>Total triado</th><th>Relave total</th><th>% Relave</th><th>CHT</th><th>GAO</th><th>Lençol</th><th>Cirúrgico</th><th>Ações</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${String(r.date).split('-').reverse().join('/')}</td><td>${r.week||weekNo(r.date)}</td><td>${esc(r.responsible)}</td><td>${esc(r.command)}</td><td>${fmt(r.totalSorted)} kg</td><td><b>${fmt(r.relaveTotal)} kg</b></td><td>${pct(r.pctTotal)}</td><td>${fmt(r.chtKg)} kg</td><td>${fmt(r.gaoKg)} kg</td><td>${fmt(r.sheetTotal)} kg</td><td>${fmt(r.surgicalTotal)} kg</td><td>${Array.isArray(r.relaveItems)?'':`<button class="r128-edit" data-edit="${esc(r.__key)}">Editar</button>`}<button class="r128-del" data-del="${esc(r.__key)}">Excluir</button></td></tr>`).join('')}</tbody></table></div></div>`}
 function bindHistory(root){root.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{if(confirm('Excluir este lançamento do histórico?')){deleteEntry(b.dataset.del);await confirmRemoteSave('Exclusão');render('hist')}});root.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{const r=all().find(x=>x.__key===b.dataset.edit);if(r)render('launch',r.__key)})}
 function bindLaunch(root,editKey){const original=editKey?all().find(x=>x.__key===editKey):null;const causeIds=[...fields.surgical,...fields.sheet].map(x=>x[0]).concat(['otherRelave','privateRelave']);const ids=causeIds.concat(['totalSorted']);const recalc=()=>{const x={};ids.forEach(k=>x[k]=n(root.querySelector('#r122-'+k)?.value));const c=calc(x);root.querySelector('#r122-cht').textContent=fmt(c.chtKg)+' kg';root.querySelector('#r122-gao').textContent=fmt(c.gaoKg)+' kg';root.querySelector('#r122-total').textContent=fmt(c.relaveTotal)+' kg';root.querySelector('#r122-pct').textContent=pct(c.pctTotal)};ids.forEach(k=>root.querySelector('#r122-'+k)?.addEventListener('input',recalc));const d=root.querySelector('#r122-date');if(original){root.querySelector('h2').textContent='Editar Relave';root.querySelector('#r122-save').textContent='Salvar alterações';['date','responsible','command',...ids].forEach(k=>{const el=root.querySelector('#r122-'+k);if(el)el.value=original[k]==null?'':String(original[k])});recalc();const cancel=document.createElement('button');cancel.className='r122-btn';cancel.textContent='Cancelar';cancel.onclick=()=>render('hist');root.querySelector('.r122-actions').prepend(cancel)}else if(d&&!d.value)d.value=new Date().toISOString().slice(0,10);root.querySelector('#r122-save').onclick=async()=>{const x={};['date','responsible','command',...ids].forEach(k=>x[k]=root.querySelector('#r122-'+k)?.value||'');if(!x.date||!n(x.totalSorted)){alert('Informe a data e o total triado.');return}x.week=weekNo(x.date);x.savedAt=new Date().toISOString();x.id=original?.id||crypto.randomUUID?.()||Date.now().toString(36);const checked=calc({...x,__historical:false});if(checked.relaveTotal>checked.totalSorted){alert('Confira o lançamento: o relave total ('+fmt(checked.relaveTotal)+' kg) ficou maior que o total triado ('+fmt(checked.totalSorted)+' kg). Corrija o total triado ou os pesos de relave antes de salvar.');return}if(original){const changedCauses=causeIds.some(k=>n(x[k])!==n(original[k]));const updated={...original,...x};if(changedCauses){const computed=calc({...updated,__historical:false});['chtKg','gaoKg','relaveTotal','sheetTotal','surgicalTotal'].forEach(k=>updated[k]=computed[k])}updateEntry(editKey,updated);await confirmRemoteSave('Alteração');render('hist')}else{saveEntry(checked);await confirmRemoteSave('Lançamento de relave');render('dash')}};}
 function bindDashboard(root){
@@ -374,7 +374,66 @@ function bindDashboard(root){
  root.querySelectorAll('[data-type-tab]').forEach(b=>b.onclick=()=>{root.querySelectorAll('[data-type-tab]').forEach(x=>x.classList.remove('active'));b.classList.add('active');detail(b.dataset.typeTab)});detail('sheetTotal');
 }
 function fitRelave(){const root=document.getElementById('rel122');if(!root)return;root.style.width='100%';root.style.maxWidth='1240px';root.style.marginLeft='auto';root.style.marginRight='auto';root.style.zoom='1';root.style.transform='none';}
-function render(tab='dash',editKey){const root=document.getElementById('rel122');if(!root)return;const isWaste=tab.startsWith('waste-'),wasteTab=isWaste?tab.slice(6):'';const tabs=tab==='dash'||isWaste?'':`<div class="r122-tabs"><button data-t="dash">Painel relave</button><button data-t="launch" class="${tab==='launch'?'active':''}">Lançamento relave</button><button data-t="hist" class="${tab==='hist'?'active':''}">Histórico relave</button></div>`;root.innerHTML=isWaste?(wasteTab==='dash'?wastePanel():wasteTab==='launch'?wasteLaunch(editKey):wasteHistory()):tabs+(tab==='dash'?dashboard():tab==='launch'?launch():history());root.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>render(b.dataset.t));if(tab==='launch')bindLaunch(root,editKey);if(tab==='dash')bindDashboard(root);if(tab==='hist')bindHistory(root);if(isWaste){try{window.history.replaceState(window.history.state,'','/quimicos'+location.search+(wasteTab==='launch'?'#residuos-novo':wasteTab==='hist'?'#residuos-historico':'#residuos'))}catch{}window.dispatchEvent(new CustomEvent('gao-waste-view',{detail:{tab:wasteTab}}));bindWasteTabs(root);window.GAO_WASTE_DOCUMENTS?.bind(root);if(wasteTab==='launch')bindWasteLaunch(root,editKey);if(wasteTab==='hist')bindWasteHistory(root)}fitRelave()}
+let disposeRelaveOperation;
+function operationRecord(row){
+ const historicalItems=[...fields.sheet.map(([key,reason])=>({type:'Lençol',reason,weight:n(row[key])})),...fields.surgical.map(([key,reason])=>({type:'Cirúrgico',reason,weight:n(row[key])})),{type:'Outros',reason:'Outros',weight:n(row.otherRelave)}].filter(item=>item.weight>0);
+ const legacyWeight=historicalItems.reduce((sum,item)=>sum+item.weight,0);
+ const difference=Math.round((row.relaveTotal-legacyWeight)*100)/100;
+ if(difference>0)historicalItems.push({type:'Outros',reason:'Saldo do histórico',weight:difference});
+ return {key:row.__key,command:String(row.command??''),date:row.date,kind:row.kind||'internal',client:row.client||'',responsible:row.responsible||'',sorted:n(row.totalSorted),items:row.relaveItems||(difference<0?[{type:'Outros',reason:'Total registrado no histórico',weight:row.relaveTotal}]:historicalItems),canWeigh:Array.isArray(row.relaveItems),weighing:row.weighing};
+}
+async function syncRelaveOperation(){
+ try{if(!window.GAO_CHEM_DB_SYNC)throw Error();await window.GAO_CHEM_DB_SYNC()}
+ catch{throw Error('Dados gravados neste dispositivo. A sincronização está pendente. Tente salvar novamente.')}
+}
+async function saveOperationRecord(record,key){
+ const previous=all().find(row=>row.__key!==key&&(row.kind||'internal')===record.kind&&row.date===record.date&&String(row.command).toLowerCase()===record.command.toLowerCase());
+ if(previous){
+  if(JSON.stringify(previous.relaveItems)!==JSON.stringify(record.items)||n(previous.totalSorted)!==record.sorted||previous.client!==record.client||previous.responsible!==record.responsible)throw Error('Já existe um lançamento desse tipo para esta comanda e data.');
+  await syncRelaveOperation();
+  return operationRecord(previous);
+ }
+ const current=key&&all().find(row=>row.__key===key);
+ if(key&&!current)throw Error('Lançamento indisponível para edição.');
+ const id=current?.id||crypto.randomUUID();
+ const {items,sorted,...details}=record;
+ const weightOf=type=>items.filter(item=>item.type===type).reduce((sum,item)=>sum+item.weight,0);
+ const payload={...details,id,totalSorted:sorted,relaveItems:items,privateRelave:weightOf('Privativo'),sheetTotal:weightOf('Lençol'),surgicalTotal:weightOf('Cirúrgico'),otherRelave:weightOf('Outros')};
+ if(current){
+  const weighing=current.weighing;
+  if(weighing&&(record.kind!==current.kind||record.command!==String(current.command)||record.date!==current.date))throw Error('A comanda, a data e o tipo ficam vinculados à pesagem registrada.');
+  const weightChanged=Math.round(n(current.relaveTotal)*100)!==Math.round(items.reduce((sum,i)=>sum+i.weight,0)*100);
+  updateEntry(key,{...current,...payload,week:weekNo(record.date),weighing:weightChanged&&weighing?{...weighing,resolved:false}:weighing});
+ }else saveEntry(payload);
+ await syncRelaveOperation();
+ return operationRecord(all().find(row=>row.id===id));
+}
+async function saveOperationWeighing(record,weighing){
+ const row=all().find(entry=>entry.__key===record.key);
+ if(!row||row.kind==='customer'||!Array.isArray(row.relaveItems))throw Error('Comanda indisponível para conferência.');
+ updateEntry(row.__key,{...row,weighing});
+ await syncRelaveOperation();
+}
+async function loadRelaveOperation(root){
+ const host=document.createElement('div');
+ root.replaceChildren(host);
+ host.textContent='Carregando painel de relave…';
+ try{
+  const {mountRelave}=await import('/relave-operation-v1.mjs?v=1');
+  if(!host.isConnected)return;
+  const records=all().filter(row=>/^\d{4}-\d{2}-\d{2}$/.test(row.date)).map(operationRecord);
+  disposeRelaveOperation=mountRelave(host,{records,saveRecord:saveOperationRecord,saveWeighing:saveOperationWeighing,openHistory:()=>render('hist')});
+ }catch(error){
+  if(!host.isConnected)return;
+  console.error('[GAO Relave]',error);
+  host.textContent='O novo painel de relave não pôde ser carregado.';
+  const button=document.createElement('button');
+  button.textContent='Abrir histórico';
+  button.onclick=()=>render('hist');
+  host.append(button);
+ }
+}
+function render(tab='dash',editKey){const root=document.getElementById('rel122');if(!root)return;disposeRelaveOperation?.();disposeRelaveOperation=null;if(tab==='dash'){void loadRelaveOperation(root);fitRelave();return}const isWaste=tab.startsWith('waste-'),wasteTab=isWaste?tab.slice(6):'';const tabs=tab==='dash'||isWaste?'':`<div class="r122-tabs"><button data-t="dash">Painel relave</button><button data-t="hist" class="${tab==='hist'?'active':''}">Histórico relave</button></div>`;root.innerHTML=isWaste?(wasteTab==='dash'?wastePanel():wasteTab==='launch'?wasteLaunch(editKey):wasteHistory()):tabs+(tab==='dash'?dashboard():tab==='launch'?launch():history());root.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>render(b.dataset.t));if(tab==='launch')bindLaunch(root,editKey);if(tab==='dash')bindDashboard(root);if(tab==='hist')bindHistory(root);if(isWaste){try{window.history.replaceState(window.history.state,'','/quimicos'+location.search+(wasteTab==='launch'?'#residuos-novo':wasteTab==='hist'?'#residuos-historico':'#residuos'))}catch{}window.dispatchEvent(new CustomEvent('gao-waste-view',{detail:{tab:wasteTab}}));bindWasteTabs(root);window.GAO_WASTE_DOCUMENTS?.bind(root);if(wasteTab==='launch')bindWasteLaunch(root,editKey);if(wasteTab==='hist')bindWasteHistory(root)}fitRelave()}
 function mount(force=false){
  ensureTab();
  if(!force&&!isRelaveRoute()){restoreChemicalContent();return}
