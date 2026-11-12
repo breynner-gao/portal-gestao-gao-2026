@@ -105,7 +105,7 @@ function render(){
  };
  const quickLinks=(shortcuts[state.tab]||[]).map(([id,label])=>'<button type="button" data-fw-tab="'+id+'">'+label+'</button>').join('');
  const body=state.tab==='overview'?overviewView():state.tab==='faction-desk'?factionDesk.view():state.tab==='workbook'?workbookImport.view():state.tab==='buying'?buying.view():state.tab==='material-need'?materialCoverageView():state.tab==='production'||state.tab==='demand'?demandView()+productionView()+trackingView():['stock','purchases','receipt','lots'].includes(state.tab)?stockPanels(state.tab):state.tab==='suppliers'?stockPanels('suppliers'):state.tab==='catalog'?standardsManagementView()+'<details class="fw-panel"><summary>Referências comerciais e códigos de NF</summary>'+stockPanels('catalog')+'</details>'+recipeView():state.tab==='quality'?qualityView():state.tab==='recipes'?recipeView():costView();
- host.innerHTML='<section class="fw-shell"><header class="fw-head"><div><small>ENXOVAL • PRODUÇÃO TÊXTIL</small><h2>'+esc(({overview:'Gestão de Tecidos e Produção de Enxoval',buying:'Necessidades','material-need':'Necessidade de compra de tecido',stock:'Estoque de tecidos',purchases:'Pedidos de compra',receipt:'Receber nota fiscal',lots:'Lotes recebidos',catalog:'Padronização de produtos',suppliers:'Fornecedores',quality:'Qualidade de tecidos',production:'Produção e facção',cost:'Custos e perdas',workbook:'Gestão de Tecidos e Produção de Enxoval','faction-desk':'Portal da facção'})[state.tab]||'Produção têxtil')+'</h2><p>'+esc(({overview:'Planejamento, compras, estoque e ordens da facção.',buying:'Necessidade, estoque, corte/facção e compras no mesmo lugar.','material-need':'Quanto tecido falta comprar, em metros, descontando estoque e compras a receber.',stock:'Saldo disponível e reservado de cada tecido.',purchases:'Pedidos em andamento, entregas previstas e histórico.',receipt:'Importe o XML ou registre o material recebido.',lots:'Consulte os lotes e a avaliação por nota fiscal.'})[state.tab]||'Demanda ligada a estoque, produção e custo real.')+'</p></div><button type="button" data-fw-refresh>Atualizar dados</button></header>'+(state.error?'<div class="fw-error">'+esc(state.error)+'</div>':'')+(state.busy?'<div class="fw-note">Salvando no banco…</div>':'')+(state.notice?'<div class="fw-note" role="status">'+esc(state.notice)+'</div>':'')+(quickLinks?'<div class="fw-tabs" aria-label="Atalhos do módulo">'+quickLinks+'</div>':'')+body+'</section>';
+ host.innerHTML='<section class="fw-shell"><header class="fw-head"><div><small>ENXOVAL • PRODUÇÃO TÊXTIL</small><h2>'+esc(({overview:'Gestão de Tecidos e Produção de Enxoval',buying:'Necessidades','material-need':'Necessidade de compra de tecido',stock:'Estoque de tecidos',purchases:'Pedidos de compra',receipt:'Receber nota fiscal',lots:'Lotes recebidos',catalog:'Padronização de produtos',suppliers:'Fornecedores',quality:'Qualidade de tecidos',production:'Produção e facção',cost:'Custos e perdas',workbook:'Gestão de Tecidos e Produção de Enxoval','faction-desk':'Portal da facção'})[state.tab]||'Produção têxtil')+'</h2><p>'+esc(({overview:'Planejamento, compras, estoque e ordens da facção.',buying:'Necessidade, estoque, corte/facção e compras no mesmo lugar.','material-need':'Quanto tecido falta comprar, em metros, descontando estoque e compras a receber.',stock:'Saldo disponível e reservado de cada tecido.',purchases:'Pedidos em andamento, entregas previstas e histórico.',receipt:'Importe o XML ou registre o material recebido.',lots:'Consulte os lotes e a avaliação por nota fiscal.'})[state.tab]||'Demanda ligada a estoque, produção e custo real.')+'</p></div><div class="fw-tabs">'+(state.tab==='overview'?'':'<button type="button" data-fw-back>← Voltar</button>')+'<button type="button" data-fw-refresh>Atualizar dados</button></div></header>'+(state.error?'<div class="fw-error">'+esc(state.error)+'</div>':'')+(state.busy?'<div class="fw-note">Salvando no banco…</div>':'')+(state.notice?'<div class="fw-note" role="status">'+esc(state.notice)+'</div>':'')+(quickLinks?'<div class="fw-tabs" aria-label="Atalhos do módulo">'+quickLinks+'</div>':'')+body+'</section>';
  for(const d of host.querySelectorAll('details[data-fw-detail-key]'))if(expanded.includes(d.dataset.fwDetailKey))d.open=true;
  buying.restore(host);
  if(state.tab==='workbook')workbookImport.bind(host);
@@ -655,6 +655,38 @@ async function returnForm(id,values=null){
  }
  return result;
 }
+const screenHistory=[];
+let dimensionScreen='map';
+let restoringScreen=false;
+function rememberScreen(){
+ screenHistory.push({mode:state.mode,tab:state.tab,dimension:dimensionScreen,lot:state.qualityLot,invoice:state.qualityInvoice});
+}
+function changeWorkflowScreen(tab,lot=null,invoice=state.qualityInvoice){
+ if(!state.mode||state.tab!==tab||state.qualityLot!==lot)rememberScreen();
+ state.tab=tab;state.qualityLot=lot;state.qualityInvoice=invoice;
+ setFlowMode(true);
+ render();
+}
+function returnToScreen(){
+ const previous=screenHistory.pop();
+ if(!previous||previous.mode){
+  state.tab=previous?.tab||'overview';
+  state.qualityLot=previous?.lot||null;
+  if(previous)state.qualityInvoice=previous.invoice;
+  setFlowMode(true);
+  render();
+ }else{
+  restoringScreen=true;
+  try{
+   const button=document.querySelector('.gao-textile-subnav [data-dimension-view="'+previous.dimension+'"]');
+   if(button)button.click();
+   else changeWorkflowScreen('overview');
+  }finally{restoringScreen=false;}
+ }
+ const target=document.querySelector(state.mode?'#gao-fabric-flow .fw-head':'#gao-linen-risk-shell .lr150-return');
+ target?.scrollIntoView({block:'start'});
+ target?.querySelector('[data-fw-back]')?.focus({preventScroll:true});
+}
 function setFlowMode(enabled){
  state.mode=enabled;if(enabled)document.querySelectorAll('[data-dimension-view].active').forEach(b=>b.classList.remove('active'));
 
@@ -732,13 +764,14 @@ document.addEventListener('click',async e=>{
   await run(()=>catalogAction(action,id));return;
  }
 
- const lotQuality=e.target.closest('[data-fw-open-lot-quality]');if(lotQuality){const lot=state.lots.find(l=>l.id===lotQuality.dataset.fwOpenLotQuality);if(lot){state.qualityLot=lot.id;state.qualityInvoice=String(lot.invoice_number||'').trim()||'Sem NF • '+(lot.lot_code||lot.id);state.tab='quality';setFlowMode(true);render();}return;}
+ const lotQuality=e.target.closest('[data-fw-open-lot-quality]');if(lotQuality){const lot=state.lots.find(l=>l.id===lotQuality.dataset.fwOpenLotQuality);if(lot){changeWorkflowScreen('quality',lot.id,String(lot.invoice_number||'').trim()||'Sem NF • '+(lot.lot_code||lot.id));}return;}
  if(e.target.closest('[data-fw-quality-all]')){state.qualityLot=null;render();return;}
- const tab=e.target.closest('[data-fw-tab]');if(tab){state.qualityLot=null;state.tab=tab.dataset.fwTab;setFlowMode(true);render();return}
+ if(e.target.closest('[data-fw-back]')){returnToScreen();return;}
+ const tab=e.target.closest('[data-fw-tab]');if(tab){changeWorkflowScreen(tab.dataset.fwTab);return}
  const xmlLine=e.target.closest('[data-fw-invoice-line]');if(xmlLine){const r=state.invoiceLines?.[Number(xmlLine.dataset.fwInvoiceLine)],form=(xmlLine.closest('dialog')||document).querySelector('[data-fw-form=receipt]');if(r&&form)for(const [key,value] of Object.entries(r)){const input=form.elements.namedItem(key);if(input)input.value=value??'';}return;}
  const invoiceTab=e.target.closest('[data-fw-quality-invoice]');if(invoiceTab){state.qualityInvoice=invoiceTab.dataset.fwQualityInvoice;render();return}
  if(e.target.closest('[data-fw-open]')){setFlowMode(true);render();return}
- const dimension=e.target.closest('[data-dimension-view]');if(dimension){setFlowMode(false);document.querySelectorAll('.gao-textile-subnav .active').forEach(b=>b.classList.remove('active'));dimension.classList.add('active')}
+ const dimension=e.target.closest('[data-dimension-view]');if(dimension){if(!restoringScreen&&(state.mode||dimensionScreen!==dimension.dataset.dimensionView))rememberScreen();dimensionScreen=dimension.dataset.dimensionView;setFlowMode(false);document.querySelectorAll('.gao-textile-subnav .active').forEach(b=>b.classList.remove('active'));dimension.classList.add('active')}
  if(e.target.closest('[data-fw-buy-map]')){document.querySelector('.gao-textile-subnav [data-dimension-view=map]')?.click();return;}
  if(e.target.closest('[data-fw-refresh]')){if(state.refreshing||state.busy)return;state.refreshing=true;state.error='';try{await window.GAO_REFRESH_LINEN_SNAPSHOT?.();await (state.org?reload():init());}catch(err){state.loaded=false;state.error=err.message;}finally{state.refreshing=false;render();}return}
  if(e.target.closest('[data-fw-create-order]')){await run(createOrder);return}
@@ -797,6 +830,7 @@ function mount(){
  const nav=document.querySelector('.gao-textile-subnav');
  if(!nav)return;
 
+ if(state.mode)nav.querySelectorAll('[data-dimension-view].active').forEach(b=>b.classList.remove('active'));
  nav.querySelectorAll('[data-fw-tab]').forEach(b=>{const active=state.mode&&b.dataset.fwTab===state.tab;if(b.classList.contains('active')!==active)b.classList.toggle('active',active)});
  const flowButton=nav.querySelector('[data-fw-open]');flowButton?.classList.toggle('active',state.mode);flowButton?.setAttribute('aria-pressed',String(state.mode));
  if(!shell.querySelector('#gao-fabric-flow')){const host=document.createElement('div');host.id='gao-fabric-flow';host.hidden=!state.mode;shell.appendChild(host);render();if(!state.org){init().then(render).catch(err=>{state.error=err.message;render()})}}
