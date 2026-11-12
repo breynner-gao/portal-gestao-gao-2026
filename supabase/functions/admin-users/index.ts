@@ -88,6 +88,11 @@ const updateProfileSchema = z.object({
   }).strict(),
 }).strict()
 
+const deleteLoginSchema = z.object({
+  action: z.literal('delete-login'),
+  input: z.object({ profileId: dbUuid, organizationId: dbUuid }).strict(),
+}).strict()
+
 const deleteUserSchema = z.object({
   action: z.literal('delete-user'),
   input: z.object({
@@ -115,6 +120,7 @@ const requestSchema = z.discriminatedUnion('action', [
   updateProfileSchema,
   savePermissionsSchema,
   deleteUserSchema,
+  deleteLoginSchema,
 ])
 
 type AdminClient = ReturnType<typeof createClient>
@@ -362,6 +368,21 @@ async function validateUnitsBelongToOrganization(
     throw new Error(
       'Uma ou mais unidades não pertencem à organização selecionada.'
     )
+  }
+}
+
+async function requireEditableAccount(admin: AdminClient, actorId: string, organizationId: string, profileId: string) {
+  const actor = await requirePermission(admin,actorId,organizationId,'admin.users.manage')
+  if(actor.role_name!=='Administrador Geral'||profileId===actorId) {
+    throw Error('Somente o Administrador Geral pode administrar o login de outro usuário.')
+  }
+  const {data: links,error}=await admin.from('memberships').select('organization_id,role_name').eq('profile_id',profileId)
+  if(error) throw error
+  if((links??[]).some((link:any)=>link.organization_id!==organizationId||link.role_name==='Administrador Geral')){
+    throw Error('Conta protegida ou vinculada a outra organização.')
+  }
+  if(!links?.length && !(await removedAccounts(admin,[organizationId],profileId)).length){
+    throw Error('Perfil sem vínculo recuperável nesta organização.')
   }
 }
 
@@ -823,16 +844,17 @@ Deno.serve(async req => {
 
       if (authError) throw authError
 
-      const blocked = new Set(authUsers.users.filter(user=>user.banned_until && Date.parse(user.banned_until)>Date.now()).map(user=>user.id))
+      const liveUsers = authUsers.users.filter(user=>!(user as typeof user & {deleted_at?: string}).deleted_at)
+      const blocked = new Set(liveUsers.filter(user=>user.banned_until && Date.parse(user.banned_until)>Date.now()).map(user=>user.id))
       const emailMap = new Map(
-        authUsers.users.map(user => [
+        liveUsers.map(user => [
           user.id,
           user.email ?? '',
         ])
       )
 
       const result =
-        (memberships ?? []).map(
+        (memberships ?? []).filter((membership:any)=>emailMap.has(membership.profile_id)).map(
           (membership: any) => {
             const profile =
               Array.isArray(membership.profiles)
@@ -945,19 +967,11 @@ Deno.serve(async req => {
 
     if(parsed.data.action==='update-profile'){
       const {profileId,organizationId,fullName,email}=parsed.data.input
-      const actor=await requirePermission(admin,actorProfileId,organizationId,'admin.users.manage')
-      if(actor.role_name!=='Administrador Geral'||profileId===actorProfileId) throw Error('Somente o Administrador Geral pode editar os dados de outro usuário.')
-      const {data: links,error: linksError}=await admin.from('memberships').select('organization_id,role_name').eq('profile_id',profileId)
-      if(linksError) throw linksError
-      if((links??[]).some((link:any)=>link.organization_id!==organizationId||link.role_name==='Administrador Geral')) throw Error('Conta protegida ou vinculada a outra organização.')
-      if(!links?.length){
-        const origin=await removedAccounts(admin,[organizationId],profileId)
-        if(!origin.length) throw Error('Perfil sem vínculo recuperável nesta organização.')
-      }
+      await requireEditableAccount(admin,actorProfileId,organizationId,profileId)
       const {data: profile,error: profileError}=await admin.from('profiles').select('email,full_name').eq('id',profileId).single()
       if(profileError||!profile) throw Error('Perfil não localizado.')
       const {data: auth,error: authError}=await admin.auth.admin.getUserById(profileId)
-      if(authError||!auth.user?.email) throw Error('Conta de login não localizada.')
+      if(authError||!auth.user?.email||(auth.user as typeof auth.user & {deleted_at?: string}).deleted_at) throw Error('Conta de login não localizada.')
       const previousEmail=auth.user.email
       if(previousEmail!==email){
         const {error}=await admin.auth.admin.updateUserById(profileId,{email})
@@ -972,6 +986,28 @@ Deno.serve(async req => {
         throw saveError
       }
       await audit(admin,actorProfileId,organizationId,'usuario',profileId,'atualizar_dados',{fullName,email},correlationId)
+      return json({success:true})
+    }
+
+    if(parsed.data.action==='delete-login'){
+      const {profileId,organizationId}=parsed.data.input
+      await requireEditableAccount(admin,actorProfileId,organizationId,profileId)
+      const {data: auth,error: authError}=await admin.auth.admin.getUserById(profileId)
+      if(authError||!auth.user) throw Error('Conta de login não localizada.')
+      if((auth.user as typeof auth.user & {deleted_at?: string}).deleted_at) return json({success:true})
+
+      // Block Portal access before deleting the Auth login, preserving historical links.
+      const {error: membershipError}=await admin.from('memberships').update({active:false})
+        .eq('profile_id',profileId).eq('organization_id',organizationId).neq('role_name','Administrador Geral')
+      if(membershipError) throw membershipError
+      const {error: profileError}=await admin.from('profiles').update({active:false}).eq('id',profileId)
+      if(profileError) throw profileError
+      const {error: deleteError}=await admin.auth.admin.deleteUser(profileId,true)
+      if(deleteError) {
+        console.error(JSON.stringify({correlationId,stage:'delete-login',message:deleteError.message}))
+        throw Error('O acesso ao Portal foi desativado, mas o serviço de login recusou a exclusão. Tente novamente ou encaminhe o protocolo '+correlationId+'.')
+      }
+      await audit(admin,actorProfileId,organizationId,'usuario',profileId,'excluir_login',{loginDeleted:true},correlationId)
       return json({success:true})
     }
 
@@ -1334,7 +1370,7 @@ Deno.serve(async req => {
       let restoreLogin=false
       if(input.active){
         const {data: auth,error}=await admin.auth.admin.getUserById(profileId)
-        if(error||!auth.user) throw Error('Conta de login não localizada.')
+        if(error||!auth.user||(auth.user as typeof auth.user & {deleted_at?: string}).deleted_at) throw Error('Conta de login não localizada.')
         if(auth.user.banned_until && Date.parse(auth.user.banned_until)>Date.now()){
           const {data: external,error: externalError}=await admin.from('memberships').select('id').eq('profile_id',profileId).neq('organization_id',input.organizationId).limit(1)
           if(externalError) throw externalError
