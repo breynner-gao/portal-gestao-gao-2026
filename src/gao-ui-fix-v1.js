@@ -22,6 +22,10 @@
     .gao-subnav{display:none!important;margin:0 0 8px 14px!important;padding:7px 0 4px 14px!important;border-left:1px solid rgba(255,255,255,.35)!important;gap:2px!important}
     .gao-subnav.gao-menu-open{display:grid!important}
     .gao-subnav:has(a.active){display:grid!important}
+    .gao-sidebar .gao-nav [data-gao-submenu-collapsed]{display:none!important}
+    .gao-nav>a[data-gao-submenu-toggle]{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:12px}
+    .gao-nav>a[data-gao-submenu-toggle]::after{content:"";display:block;flex:0 0 8px;height:8px;margin-inline:5px;border:solid currentColor;border-width:0 2px 2px 0;transform:rotate(45deg)}
+    .gao-nav>a[data-gao-submenu-toggle][aria-expanded="true"]::after{transform:rotate(225deg)}
     .gao-subnav a{color:#dceefa!important;padding:10px 12px!important;border-radius:9px!important;font-size:15px!important}
     .gao-subnav a:hover,.gao-subnav a.active{background:#2f6f9e!important;color:#fff!important}
     .gao-body{min-width:0!important}
@@ -85,11 +89,44 @@
     setOpen(!document.body.classList.contains('gao-mobile-menu-closed'),false);
     if(!toggle.dataset.bound){toggle.addEventListener('click',()=>setOpen(document.body.classList.contains('gao-mobile-menu-closed')));backdrop.addEventListener('click',()=>setOpen(false));document.addEventListener('keydown',e=>{if(e.key==='Escape'&&mobile())setOpen(false)});document.addEventListener('click',e=>{if(!mobile())return;const link=e.target.closest?.('.gao-nav a,.gao-textile-subnav button,.gao-chemical-subnav button');if(!link)return;const isModuleHome=['/rouparia','/enxoval-tecidos','/quimicos'].includes(link.getAttribute('href'));if(!isModuleHome)setOpen(false)});toggle.dataset.bound='true'}
   }
+  const submenuSelector='.gao-subnav,.gao-chemical-subnav,.gao-textile-subnav';
+  const collapsedSubmenus=new Set();
+  function setupSubmenus(side){
+    for(const link of side.querySelectorAll('.gao-nav > a[href]')){
+      const submenu=link.nextElementSibling;
+      if(!submenu?.matches(submenuSelector)){
+        if(link.hasAttribute('data-gao-submenu-toggle')){
+          link.removeAttribute('data-gao-submenu-toggle');
+          link.removeAttribute('aria-expanded');
+          link.removeAttribute('aria-controls');
+        }
+        continue;
+      }
+      const path=link.getAttribute('href');
+      const expanded=!collapsedSubmenus.has(path);
+      submenu.id='gao-submenu-'+path.replace(/[^a-z0-9-]/gi,'-');
+      submenu.toggleAttribute('data-gao-submenu-collapsed',!expanded);
+      link.setAttribute('data-gao-submenu-toggle','');
+      link.setAttribute('aria-expanded',String(expanded));
+      link.setAttribute('aria-controls',submenu.id);
+    }
+  }
+  document.addEventListener('click',event=>{
+    const link=event.target.closest?.('.gao-nav > a[data-gao-submenu-toggle]');
+    if(!link||event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const path=link.getAttribute('href');
+    if(collapsedSubmenus.has(path))collapsedSubmenus.delete(path);
+    else collapsedSubmenus.add(path);
+    setupSubmenus(link.closest('.gao-sidebar'));
+  },true);
   function setup(){
     injectStyle();
     const side=document.querySelector('.gao-sidebar');if(!side)return;
     ensureBrand(side);
     ensureMobileMenu(side);
+    setupSubmenus(side);
   }
   new MutationObserver(setup).observe(document.documentElement,{childList:true,subtree:true});
   window.addEventListener('load',setup);
