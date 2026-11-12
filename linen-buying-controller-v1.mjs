@@ -560,12 +560,16 @@ export function createBuyingController(env) {
         }
         if (b.dataset.fwBuyOpenPo) {
           const d = tool("purchases");
+          let stage = "ordered";
           for (const el of d.querySelectorAll("[data-fw-purchase-row]")) {
             const selected = el.dataset.fwDetailKey === "oc-" + b.dataset.fwBuyOpenPo;
             el.toggleAttribute("data-fw-purchase-excluded", !selected);
-            if (selected) el.open = true;
+            if (selected) {
+              el.open = true;
+              if (el.dataset.pending !== "true") stage = "history";
+            }
           }
-          d.querySelector('[data-fw-purchase-stage="ordered"]')?.click();
+          d.querySelector('[data-fw-purchase-stage="'+stage+'"]')?.click();
           return;
         }
         if (b.dataset.fwBuyTool) {
