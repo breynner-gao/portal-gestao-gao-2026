@@ -429,7 +429,7 @@ async function loadRelaveOperation(root){
  host.textContent='Carregando painel de relave…';
  try{
   const [{mountRelave},{mergeRelaveArchive}]=await Promise.all([
-   import('/relave-operation-v1.mjs?v=5'),import('/relave-archive-v1.mjs?v=2')
+   import('/relave-operation-v1.mjs?v=6'),import('/relave-archive-v1.mjs?v=2')
   ]);
   let archive,archiveError=false;
   try{archive=await window.GAO_RELAVE_ARCHIVE?.()}

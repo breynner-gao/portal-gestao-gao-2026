@@ -96,9 +96,9 @@ function chart(buckets, projection = false) {
     ${marks}${buckets.map((b,i)=>`<text x="${x(i)}" y="140" text-anchor="middle">${html(b.label)}${b.partial?'*':''}</text>`).join('')}</svg>`;
 }
 
-function table(headings, rows) {
+function table(headings, rows, widths) {
   if (!rows.length) return '<p class="note">Sem registros no dia.</p>';
-  return `<table><thead><tr>${headings.map(h=>`<th>${html(h)}</th>`).join('')}</tr></thead><tbody>
+  return `<table>${widths ? `<colgroup>${widths.map(width=>`<col style="width:${width}%">`).join('')}</colgroup>` : ''}<thead><tr>${headings.map(h=>`<th>${html(h)}</th>`).join('')}</tr></thead><tbody>
     ${rows.map(row=>`<tr>${row.map(cell=>`<td>${html(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
 }
 
@@ -122,9 +122,15 @@ export function renderDailyReport(records, date, logo) {
     @page{size:A4;margin:11mm}*{box-sizing:border-box}body{margin:0;background:#edf2f6;color:#102d45;font:12px Arial,sans-serif}main{max-width:760px;margin:18px auto;padding:24px;background:#fff}
     header{background:#102d45;color:#fff;border-radius:9px;padding:16px 20px;margin-bottom:13px;break-inside:avoid}.brand{display:flex;align-items:center;gap:14px;color:#a1dfe7;letter-spacing:.06em;font-size:11px}.brand img{background:#fff;border-radius:5px;padding:5px;width:110px}h1{font-size:25px;margin:11px 0 5px}h2{font-size:16px;margin:14px 0 5px}p{margin:4px 0}.note,small{color:#526b80;font-size:10.5px}
     .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.cards div{background:#eef5f9;border-radius:7px;padding:9px;break-inside:avoid}.cards b,.cards span,.cards small{display:block;margin-top:4px}.cards b{font-size:19px;color:#0e6272}
-    table{width:100%;border-collapse:collapse;font-size:11px}th,td{text-align:left;padding:6px;overflow-wrap:anywhere;border-bottom:1px solid #dbe5ed}th{background:#e2edf4}tr,article{break-inside:avoid}thead{display:table-header-group}h2{break-after:avoid}section.trends{break-before:page}svg{width:100%;display:block;max-height:45mm}svg text{font:9px Arial,sans-serif;fill:#526b80}.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px}.legend i{display:inline-block;width:16px;border-top:2px solid;margin-right:4px;vertical-align:middle}
+    table{width:100%;border-collapse:collapse;font-size:11px}th,td{text-align:left;padding:6px;overflow-wrap:break-word;border-bottom:1px solid #dbe5ed}th{background:#e2edf4;overflow-wrap:normal}tr,article{break-inside:avoid}thead{display:table-header-group}h2{break-after:avoid}section.trends{break-before:page}svg{width:100%;display:block;max-height:45mm}svg text{font:9px Arial,sans-serif;fill:#526b80}.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px}.legend i{display:inline-block;width:16px;border-top:2px solid;margin-right:4px;vertical-align:middle}
     .print{position:sticky;top:0;padding:10px;background:#e2edf4;text-align:center}.print button{background:#2269a4;color:#fff;border:0;border-radius:6px;padding:9px 16px;cursor:pointer}
-    @media print{body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}main{margin:0;padding:0;max-width:none}.print{display:none}}
+    @media print{
+      body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      main{margin:0;padding:4mm 5mm;max-width:none}
+      table{table-layout:fixed}th,td{padding:5px;vertical-align:top;line-height:1.3}td{overflow-wrap:anywhere}
+      th{font-size:10px;word-break:normal}
+      .print{display:none}
+    }
   `;
   return `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>GAO • Relatório diário de relave • ${date}</title><style>${css}</style>
@@ -137,9 +143,9 @@ export function renderDailyReport(records, date, logo) {
   <p class="note">${g.pending+c.pending} comanda(s) aguardando conferência do relave.</p>
   <h2>Conferência de peso na área suja</h2>
   <p class="note">Pesos líquidos. Diferença = área suja menos expedição. Situação atual das comandas do dia.</p>
-  ${table(['Comanda da expedição','Peso da expedição','Comanda da área suja','Peso na área suja','Diferença','Situação'],checks.map(({row,check,delta,status})=>[row.command,kg(weight(row)),check?.receivingCommand||'—',check?kg(check.received):'—',delta===null?'—':(delta>0?'+':'')+kg(delta),status]))}
+  ${table(['Comanda da expedição','Peso da expedição','Comanda da área suja','Peso na área suja','Diferença','Situação'],checks.map(({row,check,delta,status})=>[row.command,kg(weight(row)),check?.receivingCommand||'—',check?kg(check.received):'—',delta===null?'—':(delta>0?'+':'')+kg(delta),status]),[18,16,18,16,14,18])}
   <h2>Tratativas da Qualidade</h2>
-  ${table(['Comanda','Diferença','Responsável','Causa e ação','Prazo','Situação'],divergences.map(({row,check,delta,status})=>[row.command,percent(100*delta/weight(row)),check.owner||'—',check.action||'Em apuração',check.dueDate?displayDate(check.dueDate):'—',status]))}
+  ${table(['Comanda','Diferença','Responsável','Causa e ação','Prazo','Situação'],divergences.map(({row,check,delta,status})=>[row.command,percent(100*delta/weight(row)),check.owner||'—',check.action||'Em apuração',check.dueDate?displayDate(check.dueDate):'—',status]),[13,13,16,28,15,15])}
   <h2>Motivos do relave interno na expedição</h2>
   ${table(['Motivo','Peso','Participação'],[...reasons].sort((a,b)=>b[1]-a[1]).map(([reason,v])=>[reason,kg(v),percent(g.waste?100*v/g.waste:null)]))}
   <h2>Ocorrências do cliente</h2>
