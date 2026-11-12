@@ -543,11 +543,18 @@ function dashboardView(s, totals, movementItems, asOf) {
 }
 
 function textileMenu(){return `    <nav class="lr150-dimension-nav" aria-label="Enxoval e tecidos">
-<button type="button" data-fw-tab="buying">Comprar enxoval</button>
+<button type="button" data-fw-tab="overview">Painel</button>
+<button type="button" data-fw-tab="buying">Necessidades</button>
+<button type="button" data-fw-tab="purchases">Compras</button>
+<button type="button" data-fw-tab="stock">Estoques</button>
+<button type="button" data-fw-tab="production">Produção</button>
+<button type="button" data-fw-tab="cost">Custos</button>
+<button type="button" data-fw-buy-tool="catalog">Cadastros</button>
+<button type="button" data-fw-tab="workbook">Importação da planilha</button>
+<button type="button" data-fw-tab="faction-desk">Portal da facção</button>
 <button type="button" data-dimension-view="map">Mapa de peças, trocas e necessidade</button>
 <button type="button" data-dimension-view="movements">Movimentações</button>
-<button type="button" data-fw-buy-tool="catalog">Cadastros</button>
-<button type="button" data-dimension-view="imports">Importações</button>
+<button type="button" data-dimension-view="imports">Importação RFID</button>
 </nav>`;}
 
 function panel() {
