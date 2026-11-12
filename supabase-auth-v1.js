@@ -44,7 +44,7 @@
     const gate=document.createElement('div');
     gate.id='gao-supabase-auth-gate';
     gate.className='gao-auth-gate';
-    gate.innerHTML='<form class="gao-auth-card"><h2>Acesso ao Portal GAO</h2><p>Entre com sua conta do Portal para carregar Rouparia, demandas e demais informações do Supabase.</p><label for="gao-auth-email">E-mail</label><input id="gao-auth-email" type="email" autocomplete="username" value="comercial@gaolavanderia.com.br" required><label for="gao-auth-password">Senha</label><input id="gao-auth-password" type="password" autocomplete="current-password" required><button type="submit">Entrar</button><div class="gao-auth-error" role="alert"></div><div class="gao-auth-note">A senha é usada somente nesta sessão e não é armazenada pelo Portal.</div></form>';
+    gate.innerHTML='<form class="gao-auth-card"><h2>Acesso ao Portal GAO</h2><p>Entre com sua conta do Portal para carregar Rouparia, demandas e demais informações do Supabase.</p><label for="gao-auth-username">Usuário</label><input id="gao-auth-username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Seu nome de usuário" required><label for="gao-auth-password">Senha</label><input id="gao-auth-password" type="password" autocomplete="current-password" required><button type="submit">Entrar</button><div class="gao-auth-error" role="alert"></div><div class="gao-auth-note">A senha é usada somente nesta sessão e não é armazenada pelo Portal.</div></form>';
     document.body.appendChild(gate);
     gate.querySelector('form').addEventListener('submit',async event=>{
       event.preventDefault();
@@ -53,12 +53,16 @@
       const error=form.querySelector('.gao-auth-error');
       button.disabled=true;button.textContent='Entrando...';error.textContent='';
       try{
-        const data=await request('/auth/v1/token?grant_type=password',{email:form.querySelector('#gao-auth-email').value.trim(),password:form.querySelector('#gao-auth-password').value});
+        const username=form.querySelector('#gao-auth-username').value.trim();
+        const password=form.querySelector('#gao-auth-password').value;
+        const data=username.includes('@')
+          ? await request('/auth/v1/token?grant_type=password',{email:username,password})
+          : await request('/functions/v1/portal-login',{username,password});
         save(data);
         resolveReady(data);
         location.reload();
       }catch(err){
-        error.textContent=err.message||'E-mail ou senha inválidos.';
+        error.textContent=err.message||'Usuário ou senha inválidos.';
         button.disabled=false;button.textContent='Entrar';
       }
     });
