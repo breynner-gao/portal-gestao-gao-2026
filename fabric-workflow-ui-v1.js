@@ -103,7 +103,7 @@ function orderStats(item){
  return {issued,accepted,rejected,returned,faction,extras,theoretical,loss,lossCost:loss*unitCost,unit:accepted?totalCost/accepted:null,remaining:Math.max(0,n(item.ordered_pieces)-accepted-rejected)};
 }
 const overviewStyle=document.createElement('style');
-overviewStyle.textContent='.fw-overview-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));gap:12px;margin:14px 0}.fw-overview-metric{background:#1b2533;color:#edf4ff;border:1px solid #35475e;border-radius:11px;padding:14px;min-width:0}.fw-overview-metric span,.fw-overview-metric small{display:block;color:#b8c9dc}.fw-overview-metric strong{display:block;margin:6px 0;font-size:clamp(17px,2vw,23px);overflow-wrap:anywhere}.fw-purchase-orders .fw-exclude-po{background:#fff3f3;color:#a12929;border:1px solid #e9b8b8;margin:8px 0 0;padding:6px 10px}.fw-purchase-orders .fw-exclude-po:hover{background:#ffe3e3}.fw-purchase-stages{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));gap:12px;margin:12px 0}.fw-purchase-stages button{background:#f2f7fc;color:#123c61;border:1px solid #bdd3e8;border-radius:10px;text-align:left;padding:14px}.fw-purchase-stages button[aria-pressed=true],.fw-purchase-stages button:hover{border-color:#2674ae;background:#dceefa}.fw-purchase-stages button span,.fw-purchase-stages button strong,.fw-purchase-stages button small{display:block}.fw-purchase-stages strong{font-size:20px;margin:5px 0}.fw-purchase-orders [hidden],.fw-purchase-orders[data-purchase-stage=incoming] [data-fw-purchase-product][data-pending=false]{display:none!important}.fw-shell>.fw-head{gap:12px;flex-wrap:wrap}.fw-shell>.fw-head>div{min-width:0}.fw-shell>.fw-panel{max-width:100%;min-width:0}';
+overviewStyle.textContent='.fw-budget-link{display:block;text-decoration:none}.fw-budget-link:hover,.fw-budget-link:focus-visible{border-color:#8ad3ff;text-decoration:underline}.fw-overview-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));gap:12px;margin:14px 0}.fw-overview-metric{background:#1b2533;color:#edf4ff;border:1px solid #35475e;border-radius:11px;padding:14px;min-width:0}.fw-overview-metric span,.fw-overview-metric small{display:block;color:#b8c9dc}.fw-overview-metric strong{display:block;margin:6px 0;font-size:clamp(17px,2vw,23px);overflow-wrap:anywhere}.fw-purchase-orders .fw-exclude-po{background:#fff3f3;color:#a12929;border:1px solid #e9b8b8;margin:8px 0 0;padding:6px 10px}.fw-purchase-orders .fw-exclude-po:hover{background:#ffe3e3}.fw-purchase-stages{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));gap:12px;margin:12px 0}.fw-purchase-stages button{background:#f2f7fc;color:#123c61;border:1px solid #bdd3e8;border-radius:10px;text-align:left;padding:14px}.fw-purchase-stages button[aria-pressed=true],.fw-purchase-stages button:hover{border-color:#2674ae;background:#dceefa}.fw-purchase-stages button span,.fw-purchase-stages button strong,.fw-purchase-stages button small{display:block}.fw-purchase-stages strong{font-size:20px;margin:5px 0}.fw-purchase-orders [hidden],.fw-purchase-orders[data-purchase-stage=incoming] [data-fw-purchase-product][data-pending=false]{display:none!important}.fw-shell>.fw-head{gap:12px;flex-wrap:wrap}.fw-shell>.fw-head>div{min-width:0}.fw-shell>.fw-panel{max-width:100%;min-width:0}';
 document.head.appendChild(overviewStyle);
 function overviewView(){
  const metric=(label,value,note)=>'<article class="fw-overview-metric"><span>'+esc(label)+'</span><strong>'+esc(value)+'</strong><small>'+esc(note)+'</small></article>';
@@ -498,13 +498,27 @@ function recipeView(){
 }
 function budgetRows(month){
  const belongs=date=>String(date||'').slice(0,7)===month;
- const fabrics=state.purchaseOrders.filter(order=>isConfirmedPurchase(order)&&belongs(order.ordered_date)).map(order=>({
-  type:'Tecido',order,amount:state.purchaseItems.filter(item=>item.purchase_order_id===order.id).reduce((sum,item)=>sum+Math.round(100*n(item.ordered_m)*n(item.purchase_price_per_m)),0)
- }));
- const pieces=state.pieceOrders.filter(order=>order.status!=='CANCELADA'&&belongs(order.ordered_date)).map(order=>({
-  type:'Peças prontas',order,amount:Math.round(100*n(order.ordered_pieces)*n(order.unit_price))
- }));
+ const line=(description,reference,quantity,unit,price)=>({description,reference,quantity,unit,price,amount:Math.round(100*quantity*price)});
+ const row=(type,order,lines)=>({type,order,lines,amount:lines.reduce((total,item)=>total+item.amount,0)});
+ const fabrics=state.purchaseOrders.filter(order=>isConfirmedPurchase(order)&&belongs(order.ordered_date)).map(order=>row('Tecido',order,
+  state.purchaseItems.filter(item=>item.purchase_order_id===order.id).map(item=>{
+   const fabric=state.fabric.find(f=>f.id===item.fabric_id);
+   return line(fabric?internalName(fabric):'Tecido sem cadastro disponível',fabric?[fabric.code,fabric.name,fabric.color_reference].filter(Boolean).join(' · '):item.fabric_id,n(item.ordered_m),'m',n(item.purchase_price_per_m));
+  })
+ ));
+ const pieces=state.pieceOrders.filter(order=>order.status!=='CANCELADA'&&belongs(order.ordered_date)).map(order=>row('Peças prontas',order,[
+  line(order.product_name,order.product_reference,n(order.ordered_pieces),'pç',n(order.unit_price))
+ ]));
  return [...fabrics,...pieces];
+}
+function budgetOrderDetails({order,type,lines,amount},money){
+ const supplier=state.suppliers.find(row=>row.id===order.supplier_id);
+ const price=value=>value.toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:4});
+ return '<details class="fw-catalog-edit" data-fw-detail-key="budget-'+esc(type)+'-'+esc(order.id)+'"><summary><b>OC '+esc(order.order_number)+'</b> · '+esc(supplier?.trade_name||supplier?.legal_name||'Fornecedor não informado')+' · '+type+' · '+money(amount)+'</summary>'+
+ '<p>Emissão: '+esc(order.ordered_date.split('-').reverse().join('/'))+'</p>'+
+ '<div class="fw-table-scroll"><table><thead><tr><th>Item comprado</th><th>Quantidade</th><th>Preço unitário</th><th>Subtotal</th></tr></thead><tbody>'+
+ (lines.map(item=>'<tr><td><b>'+esc(item.description||'Peça sem descrição')+'</b><small>'+esc(item.reference||'')+'</small></td><td>'+br(item.quantity,3)+' '+item.unit+'</td><td>'+price(item.price)+'/'+item.unit+'</td><td>'+money(item.amount)+'</td></tr>').join('')||'<tr><td colspan="4">Sem itens vinculados.</td></tr>')+
+ '</tbody><tfoot><tr><th colspan="3">Total da ordem</th><td><b>'+money(amount)+'</b></td></tr></tfoot></table></div></details>';
 }
 function budgetView(){
  const rows=budgetRows(state.budgetMonth);
@@ -517,9 +531,12 @@ function budgetView(){
  return '<section class="fw-panel"><h3>Orçamento mensal de compras</h3><p>Compras de tecido e peças prontas pelo mês de emissão da ordem. Recebimentos parciais não são somados novamente. O custo de produção é consultado abaixo.</p>'+
  '<form data-fw-form="monthlyBudget"><label>Mês <input type="month" name="month" data-fw-budget-month required value="'+esc(state.budgetMonth)+'"></label><label>Teto (R$) <input type="number" name="ceiling" min="0" max="999999999999.99" step=".01" required value="'+(budget?esc(budget.ceiling_brl):'')+'"></label><button type="submit" '+(!state.loaded||state.budgetError?'disabled':'')+'>Salvar teto</button></form>'+
  (state.budgetError?'<p role="alert">Não foi possível carregar o teto mensal. Use Atualizar dados.</p>':'')+
- '<div class="fw-overview-grid">'+metrics.map(([label,value])=>'<article class="fw-overview-metric"><span>'+label+'</span><strong>'+(state.loaded&&!state.budgetError?value:'—')+'</strong></article>').join('')+'</div>'+
- '<details><summary>Ver ordens que compõem o valor</summary><div class="fw-table-scroll"><table><thead><tr><th>Ordem</th><th>Tipo</th><th>Emissão</th><th>Valor comprometido</th></tr></thead><tbody>'+
- (rows.map(({order,type,amount})=>'<tr><td>'+esc(order.order_number)+'</td><td>'+type+'</td><td>'+esc(order.ordered_date.split('-').reverse().join('/'))+'</td><td>'+money(amount)+'</td></tr>').join('')||'<tr><td colspan="4">Sem compras confirmadas neste mês.</td></tr>')+'</tbody></table></div></details></section>';
+ '<div class="fw-overview-grid">'+metrics.map(([label,value],index)=>index===1?
+ '<a class="fw-overview-metric fw-budget-link" href="#fw-budget-orders" data-fw-budget-link><span>'+label+'</span><strong>'+(state.loaded?value:'—')+'</strong><small>Auditar compras</small></a>':
+ '<article class="fw-overview-metric"><span>'+label+'</span><strong>'+(state.loaded&&!state.budgetError?value:'—')+'</strong></article>').join('')+'</div>'+
+ '<details id="fw-budget-orders" data-fw-detail-key="budget-orders-'+esc(state.budgetMonth)+'"><summary>Ver ordens que compõem o valor</summary>'+
+ (rows.map(row=>budgetOrderDetails(row,money)).join('')||'<p>'+(state.loaded?'Sem compras confirmadas neste mês.':'Aguardando dados.')+'</p>')+
+ (rows.length?'<p><b>Total das ordens: '+money(committed)+'</b></p>':'')+'</details></section>';
 }
 function costView(){
  const rows=state.items.map(i=>{const s=orderStats(i),lots=state.lots.filter(l=>fabricMatches(l.fabric_id,i.fabric_id)),qty=lots.reduce((a,l)=>a+n(l.quantity_received_m),0),price=n(i.planned_price_per_m),planned=n(i.consumption_m_per_piece)*price+n(i.faction_cost_per_piece)+n(i.extras_cost_per_piece),o=state.orders.find(x=>x.id===i.order_id);return '<tr><td>#'+esc(o?.order_number)+' • '+esc(i.product_name)+'<small>'+esc(state.fabric.find(f=>f.id===i.fabric_id)?.color_reference||'')+' • Q'+esc(state.fabric.find(f=>f.id===i.fabric_id)?.quality_code||'')+'</small></td><td>'+br(s.accepted,0)+'</td><td>R$ '+br(planned)+'</td><td>'+(s.unit===null?'Aguardando retorno':'R$ '+br(s.unit))+'</td><td>'+br(s.loss,3)+' m<small>'+br(s.issued-s.returned>0?s.loss/(s.issued-s.returned)*100:0,2)+'% do consumo</small></td><td>R$ '+br(s.lossCost)+'</td></tr>'}).join('');
@@ -908,6 +925,15 @@ document.addEventListener('input',e=>{
  const q=e.target.value.trim().toLocaleLowerCase('pt-BR');document.querySelectorAll('[data-fw-catalog-row]').forEach(row=>{row.hidden=!row.dataset.search.includes(q)});
 });
 document.addEventListener('click',async e=>{
+ const budgetLink=e.target.closest('[data-fw-budget-link]');
+ if(budgetLink){
+  e.preventDefault();
+  const orders=budgetLink.closest('.fw-panel').querySelector('#fw-budget-orders');
+  orders.open=true;
+  orders.scrollIntoView({block:'start'});
+  orders.querySelector('summary').focus({preventScroll:true});
+  return;
+ }
  const exclude=e.target.closest('[data-fw-exclude-po]');if(exclude){e.preventDefault();await excludePurchase(exclude);return;}
  const stage=e.target.closest('[data-fw-purchase-stage]');
  if(stage){purchaseStage(stage.closest('.fw-purchase-orders'),stage.dataset.fwPurchaseStage);return;}
