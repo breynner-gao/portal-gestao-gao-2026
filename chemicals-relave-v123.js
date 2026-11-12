@@ -419,7 +419,7 @@ async function loadRelaveOperation(root){
  root.replaceChildren(host);
  host.textContent='Carregando painel de relave…';
  try{
-  const {mountRelave}=await import('/relave-operation-v1.mjs?v=1');
+  const {mountRelave}=await import('/relave-operation-v1.mjs?v=2');
   if(!host.isConnected)return;
   const records=all().filter(row=>/^\d{4}-\d{2}-\d{2}$/.test(row.date)).map(operationRecord);
   disposeRelaveOperation=mountRelave(host,{records,saveRecord:saveOperationRecord,saveWeighing:saveOperationWeighing,openHistory:()=>render('hist')});
