@@ -53,8 +53,11 @@ const listSchema = z.object({
 const updateMembershipSchema = z.object({
   action: z.literal('update-membership'),
   input: z.object({
-    membershipId: dbUuid,
+    membershipId: dbUuid.optional(),
+    profileId: dbUuid.optional(),
     organizationId: dbUuid,
+    allClients: z.boolean().optional(),
+    clientIds: z.array(dbUuid).max(300).optional(),
 
     allUnits: z.boolean().optional().default(false),
     unitIds: z.array(dbUuid).optional().default([]),
@@ -72,6 +75,16 @@ const updateMembershipSchema = z.object({
         allowed: z.boolean(),
       })
     ).optional(),
+  }).strict(),
+}).strict()
+
+const updateProfileSchema = z.object({
+  action: z.literal('update-profile'),
+  input: z.object({
+    profileId: dbUuid,
+    organizationId: dbUuid,
+    fullName: z.string().trim().min(2).max(120),
+    email: z.string().trim().toLowerCase().email().max(254),
   }).strict(),
 }).strict()
 
@@ -99,6 +112,7 @@ const requestSchema = z.discriminatedUnion('action', [
   createSchema,
   listSchema,
   updateMembershipSchema,
+  updateProfileSchema,
   savePermissionsSchema,
   deleteUserSchema,
 ])
@@ -163,6 +177,17 @@ function errorDetails(error: unknown) {
    USUÁRIO LOGADO
 ========================================================= */
 
+async function removedAccounts(admin: AdminClient, organizationIds: string[], profileId?: string) {
+  let query=admin.from('audit_events').select('organization_id,before_data')
+    .in('organization_id',organizationIds).eq('entity','vinculo').eq('action','excluir')
+    .eq('after_data->>login_blocked','true')
+  if(profileId) query=query.eq('before_data->membership->>profile_id',profileId)
+  const {data,error}=await query
+  if(error) throw error
+  return (data??[]).filter((event:any)=>dbUuid.safeParse(event.before_data?.membership?.profile_id).success &&
+    event.before_data?.membership?.role_name!=='Administrador Geral')
+}
+
 async function callerId(req: Request, admin: AdminClient) {
   const authorization = req.headers.get('Authorization')
 
@@ -179,6 +204,8 @@ async function callerId(req: Request, admin: AdminClient) {
     throw new Error('Sessão inválida.')
   }
 
+  const {data: profile,error: profileError}=await admin.from('profiles').select('active').eq('id',data.user.id).single()
+  if(profileError||!profile?.active) throw Error('O perfil da sessão está inativo.')
   return data.user.id
 }
 
@@ -685,8 +712,6 @@ Deno.serve(async req => {
       console.error(JSON.stringify({
         correlationId,
         stage: 'validation',
-        receivedBody: body,
-        issues: parsed.error.issues,
         error: parsed.error.flatten(),
       }))
 
@@ -748,6 +773,7 @@ Deno.serve(async req => {
           organization_id,
           unit_id,
           role_name,
+          access_role_id,
           active,
           all_units,
 
@@ -797,6 +823,7 @@ Deno.serve(async req => {
 
       if (authError) throw authError
 
+      const blocked = new Set(authUsers.users.filter(user=>user.banned_until && Date.parse(user.banned_until)>Date.now()).map(user=>user.id))
       const emailMap = new Map(
         authUsers.users.map(user => [
           user.id,
@@ -853,11 +880,7 @@ Deno.serve(async req => {
               username:
                 profile?.username ?? '',
 
-              email:
-                profile?.email ??
-                emailMap.get(
-                  membership.profile_id
-                ) ?? '',
+              email: emailMap.get(membership.profile_id) || profile?.email || '',
 
               fullName:
                 profile?.full_name ?? '',
@@ -865,7 +888,7 @@ Deno.serve(async req => {
               active:
                 Boolean(
                   profile?.active &&
-                  membership.active
+                  membership.active && !blocked.has(membership.profile_id)
                 ),
 
               organizationId:
@@ -874,16 +897,15 @@ Deno.serve(async req => {
               organizationName:
                 organization?.name ?? '',
 
-              roleName:
-                membership.role_name,
+              roleName: membership.role_name,
+              roleId: membership.access_role_id,
+              canEditProfile: actor.some((m:any)=>m.organization_id===membership.organization_id && m.role_name==='Administrador Geral') &&
+                membership.role_name!=='Administrador Geral' && membership.profile_id!==actorProfileId,
 
               allUnits:
                 membership.all_units === true,
 
-              unitIds:
-                units.map(
-                  (u: any) => u.id
-                ),
+              unitIds: units.length ? units.map((u:any)=>u.id) : membership.unit_id ? [membership.unit_id] : [],
 
               units,
 
@@ -892,12 +914,66 @@ Deno.serve(async req => {
           }
         )
 
+      const adminOrganizations = actor.filter((m:any)=>m.role_name==='Administrador Geral').map((m:any)=>m.organization_id)
+      if (adminOrganizations.length) {
+        const events=await removedAccounts(admin,adminOrganizations)
+        const origins=new Map<string,string>(events.map((event:any)=>[event.before_data.membership.profile_id,event.organization_id]))
+        if(origins.size){
+          const ids=[...origins.keys()]
+          const [{data: profiles,error: profilesError},{data: links,error: linksError}]=await Promise.all([
+            admin.from('profiles').select('id,full_name,email,username').eq('active',false).in('id',ids),
+            admin.from('memberships').select('profile_id').in('profile_id',ids)
+          ])
+          if(profilesError||linksError) throw profilesError||linksError
+          const linked=new Set((links??[]).map((link:any)=>link.profile_id))
+          for(const profile of profiles??[]){
+            if(linked.has(profile.id)||!emailMap.has(profile.id)) continue
+            result.push({
+              id:profile.id,membershipId:null,organizationId:origins.get(profile.id),
+              fullName:profile.full_name,username:profile.username,email:emailMap.get(profile.id)||profile.email,
+              active:false,roleName:'',allUnits:false,unitIds:[],canEditProfile:true
+            })
+          }
+        }
+      }
       return json(result)
     }
 
     /* =====================================================
        CREATE
     ===================================================== */
+
+    if(parsed.data.action==='update-profile'){
+      const {profileId,organizationId,fullName,email}=parsed.data.input
+      const actor=await requirePermission(admin,actorProfileId,organizationId,'admin.users.manage')
+      if(actor.role_name!=='Administrador Geral'||profileId===actorProfileId) throw Error('Somente o Administrador Geral pode editar os dados de outro usuário.')
+      const {data: links,error: linksError}=await admin.from('memberships').select('organization_id,role_name').eq('profile_id',profileId)
+      if(linksError) throw linksError
+      if((links??[]).some((link:any)=>link.organization_id!==organizationId||link.role_name==='Administrador Geral')) throw Error('Conta protegida ou vinculada a outra organização.')
+      if(!links?.length){
+        const origin=await removedAccounts(admin,[organizationId],profileId)
+        if(!origin.length) throw Error('Perfil sem vínculo recuperável nesta organização.')
+      }
+      const {data: profile,error: profileError}=await admin.from('profiles').select('email,full_name').eq('id',profileId).single()
+      if(profileError||!profile) throw Error('Perfil não localizado.')
+      const {data: auth,error: authError}=await admin.auth.admin.getUserById(profileId)
+      if(authError||!auth.user?.email) throw Error('Conta de login não localizada.')
+      const previousEmail=auth.user.email
+      if(previousEmail!==email){
+        const {error}=await admin.auth.admin.updateUserById(profileId,{email})
+        if(error) throw error
+      }
+      const {error: saveError}=await admin.from('profiles').update({email,full_name:fullName}).eq('id',profileId)
+      if(saveError){
+        if(previousEmail!==email){
+          const {error: rollbackError}=await admin.auth.admin.updateUserById(profileId,{email:previousEmail})
+          if(rollbackError) throw Error('O e-mail do login foi alterado, mas o cadastro ainda não foi sincronizado. Confira o e-mail exibido e salve novamente.')
+        }
+        throw saveError
+      }
+      await audit(admin,actorProfileId,organizationId,'usuario',profileId,'atualizar_dados',{fullName,email},correlationId)
+      return json({success:true})
+    }
 
     if (parsed.data.action === 'create') {
       const input = parsed.data.input
@@ -1248,25 +1324,27 @@ Deno.serve(async req => {
       const input = parsed.data.input
       await resolveRole(admin, actorProfileId, input)
 
-      const current =
-        await getMembership(
-          admin,
-          input.membershipId
-        )
-
-      await requirePermission(
-        admin,
-        actorProfileId,
-        current.organization_id,
-        'admin.users.manage',
-      )
-
-      await requirePermission(
-        admin,
-        actorProfileId,
-        input.organizationId,
-        'admin.users.manage',
-      )
+      const current=input.membershipId ? await getMembership(admin,input.membershipId) : null
+      const actor=await requirePermission(admin,actorProfileId,input.organizationId,'admin.users.manage')
+      const profileId=current?.profile_id||input.profileId
+      if(!profileId||(!current&&actor.role_name!=='Administrador Geral')) throw Error('Perfil não autorizado para recuperação.')
+      if(current&&(current.organization_id!==input.organizationId||current.role_name==='Administrador Geral')) throw Error('Vínculo protegido ou de outra organização.')
+      if(profileId===actorProfileId&&!input.active) throw Error('Você não pode desativar seu próprio acesso.')
+      if(!current&&input.allClients===undefined) throw Error('Informe o escopo da recuperação.')
+      let restoreLogin=false
+      if(input.active){
+        const {data: auth,error}=await admin.auth.admin.getUserById(profileId)
+        if(error||!auth.user) throw Error('Conta de login não localizada.')
+        if(auth.user.banned_until && Date.parse(auth.user.banned_until)>Date.now()){
+          const {data: external,error: externalError}=await admin.from('memberships').select('id').eq('profile_id',profileId).neq('organization_id',input.organizationId).limit(1)
+          if(externalError) throw externalError
+          if(input.allClients===undefined||actor.role_name!=='Administrador Geral'||external?.length||
+            !(await removedAccounts(admin,[input.organizationId],profileId)).length){
+            throw Error('A conta possui um bloqueio no serviço de autenticação.')
+          }
+          restoreLogin=true
+        }
+      }
 
       const {
         allUnits,
@@ -1304,6 +1382,22 @@ Deno.serve(async req => {
           input.permissions,
         )
       }
+
+      if(input.allClients!==undefined){
+        const {data: membershipId,error}=await admin.rpc('gao_admin_save_user_access',{
+          p_membership:current?.id??null,p_profile:profileId,p_org:input.organizationId,p_role:input.roleId,
+          p_active:input.active,p_all_units:allUnits,p_units:unitIds,p_all_clients:input.allClients,p_clients:input.clientIds??[]
+        })
+        if(error) throw error
+        if(restoreLogin){
+          const {error: authError}=await admin.auth.admin.updateUserById(profileId,{ban_duration:'none'})
+          if(authError) throw Error('O vínculo foi salvo, mas o login ainda está bloqueado. Atualize a lista e tente ativar novamente.')
+        }
+        await audit(admin,actorProfileId,input.organizationId,'vinculo',membershipId,current?'atualizar':'recuperar',
+          {profileId,roleName:input.roleName,active:input.active,allUnits,unitIds,allClients:input.allClients,clientIds:input.clientIds??[]},correlationId)
+        return json({success:true,membershipId})
+      }
+      if(!current) throw Error('Vínculo não localizado.')
 
       const legacyUnitId =
         allUnits
