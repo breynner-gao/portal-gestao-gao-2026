@@ -1,3 +1,5 @@
+import { mountWasteChart } from './waste-audit-chart-v1.mjs';
+
 const references = {
   workbook:'Planilha de auditoria',
   indcom:'Manifestos INDCOM',
@@ -21,6 +23,7 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     </div>
   </div>
   <div id="wa-cards" class="waste-grid"></div>
+  <section class="waste-section wa-chart" id="wa-chart" aria-label="Gráfico por coletora"></section>
   <dialog id="wa-detail" class="waste-audit-dialog" aria-labelledby="wa-detailTitle">
     <div class="waste-audit-dialog-head"><div><h3 id="wa-detailTitle"></h3><p id="wa-detailPeriod"></p></div>
     <form method="dialog"><button type="submit" aria-label="Fechar detalhamento">Fechar</button></form></div>
@@ -30,7 +33,7 @@ export function mountAudit(root,history,downloadDocument,loadSource){
   </dialog>
   <section class="waste-section"><h3 id="wa-title"></h3><div class="waste-audit-scroll" id="wa-summary"></div></section>
   <section class="waste-section"><h3>Conciliação INDCOM</h3><div class="waste-audit-scroll" id="wa-indcom"></div></section>
-  <details class="waste-section"><summary>Títulos BIOREVERSE</summary><div class="waste-audit-scroll" id="wa-bioFinance"></div></details>
+  <details class="waste-section"><summary id="wa-bioTitle">Títulos BIOREVERSE</summary><div class="waste-audit-scroll" id="wa-bioFinance"></div></details>
   <details class="waste-section"><summary id="wa-dailyTitle">Conferência diária</summary><div class="waste-audit-scroll" id="wa-daily"></div></details>
   <details class="waste-section"><summary id="wa-pdfTitle">Manifestos</summary><div class="waste-audit-scroll" id="wa-pdf"></div></details>
   <section class="waste-section"><h3 id="wa-refsTitle">Documentos de referência</h3><ul id="wa-references"></ul>
@@ -38,6 +41,7 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     <p class="waste-sub">Os manifestos abrem o pacote da coletora. Use o identificador da linha para localizar o PDF. As fontes podem registrar a mesma coleta. Os PDFs usam a data do manifesto, o Forms usa a data da coleta e o SEMAND usa a data do transporte ou da emissão.</p>
   </section>`;
   const el=id=>root.querySelector('#wa-'+id);
+  const updateChart=mountWasteChart(el('chart'),data);
   function referenceLink(key,label){
     const link=document.createElement('a');
     link.href='#wa-refsTitle';
@@ -178,7 +182,7 @@ export function mountAudit(root,history,downloadDocument,loadSource){
       row:r=>[date(r[0]),r[1],r[2],r[3],r[4],r[5]??'—',kg(r[6]),kg(r[7]),kg(r[4]==='Recebido'?r[7]:r[6])]},
   };
   let detailRequest=0;
-  async function openDetail(id,label,weight,selected,bioPeriod,pdfs){
+  async function openDetail(id,label,weight,selected,pdfs){
     const request=++detailRequest;
     const dialog=el('detail'),status=el('detailStatus'),container=el('detailRows'),filter=el('detailFilter'),search=el('detailSearch');
     el('detailTitle').textContent=label+' · '+weight;
@@ -197,13 +201,9 @@ export function mountAudit(root,history,downloadDocument,loadSource){
         const dates=new Set(selected.map(r=>r.d));
         headers=source.headers;
         lines=(await sourceRecords(source.name)).filter(r=>dates.has(r[0])&&(!source.include||source.include(r))).map(source.row);
-      }else if(id===11){
+      }else if(id===8||id===10){
         headers=['Data','Semana ISO','Empresa','Manifesto ou arquivo','OS','Peso (kg)'];
-        lines=pdfs();
-      }else if(id==='bio'){
-        headers=['Competência','Vencimento','Valor do título','Peso estimado (kg)','Comprovante'];
-        lines=bioPeriod.map(([competence,due,cents])=>[monthName(competence),date(due),'R$ '+kg(cents),kg(cents/1.70),
-          evidence('bioFinance','Registro financeiro')]);
+        lines=pdfs().filter(row=>row[2]===(id===8?'INDCOM':'BIOREVERSE'));
       }else{
         headers=['Data','Semana ISO','Triagem (kg)','Forms (kg)','Diferença (kg)'];
         lines=selected.filter(r=>r.v[0]!==null||r.v[7]!==null).map(r=>{
@@ -225,7 +225,7 @@ export function mountAudit(root,history,downloadDocument,loadSource){
       renderRows();
     }catch(error){if(dialog.open&&request===detailRequest) status.textContent=error.message;}
   }
-  function detailCard(card,id,label,weight,selected,bioPeriod,pdfs){
+  function detailCard(card,id,label,weight,selected,pdfs){
     card.type='button';
     card.classList.add('waste-audit-detail-card');
     card.setAttribute('aria-label',label+', '+weight+'. Ver registros de origem.');
@@ -234,7 +234,7 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     action.className='waste-audit-card-action';
     action.textContent='Ver origem';
     card.append(action);
-    card.onclick=()=>openDetail(id,label,weight,selected,bioPeriod,pdfs);
+    card.onclick=()=>openDetail(id,label,weight,selected,pdfs);
     return card;
   }
 
@@ -247,33 +247,19 @@ export function mountAudit(root,history,downloadDocument,loadSource){
       month === 'all' ? months.includes(competence) : competence === month
     );
     const bioCents = bioPeriod.reduce((total,[,,cents]) => total + cents,0);
-    const bioCard = document.createElement('button');
-    bioCard.className = 'waste-kpi waste-audit-emphasis';
-    const bioLabel = document.createElement('span');
-    const bioWeight = document.createElement('strong');
-    const bioDetail = document.createElement('small');
-    bioLabel.textContent = 'BIOREVERSE · Peso estimado';
-    bioWeight.textContent = bioPeriod.length ? kg(bioCents / 1.70) + ' kg' : 'Sem título';
-    bioDetail.textContent = 'Valor dos títulos ÷ R$ 1,70/kg · competência mensal completa';
-    bioCard.append(bioLabel,bioWeight,bioDetail);
+    el('bioTitle').textContent='Títulos BIOREVERSE · '+(bioPeriod.length?kg(bioCents/1.70)+' kg estimados':'sem título no mês');
+    updateChart(selected);
     const pdfs=()=>selected.flatMap(r=>[
       ...r.pdf.map(([n,os,p])=>[date(r.d),r.w,'INDCOM',evidence('indcom',n),os,kg(p)]),
       ...(r.bio?[[date(r.d),r.w,'BIOREVERSE',evidence(bioArchiveByMonth[r.d.slice(0,7)],r.bio[0]),'—',kg(r.bio[1])]]:[])
     ]);
-    el('cards').replaceChildren(...[0,3,6,11,'bio',9].map(i=>{
-      if(i === 'bio') return detailCard(bioCard,i,bioLabel.textContent,bioWeight.textContent,selected,bioPeriod,pdfs);
+    el('cards').replaceChildren(...[0,3,6,8,10,9].map(i=>{
       const card=document.createElement('button');
       card.className='waste-kpi'+([3,6].includes(i)?' waste-audit-emphasis':'');
       const title=document.createElement('span'), value=document.createElement('strong');
       title.textContent=columns[i];value.textContent=totals[i]===null?'Sem dados':kg(totals[i])+' kg';
       card.append(title,value);
-      if(i===11){
-        title.textContent='PDFs · INDCOM + BIOREVERSE';
-        const detail=document.createElement('small');
-        detail.textContent='INDCOM '+(totals[8]===null?'sem PDFs':kg(totals[8])+' kg')+' · BIOREVERSE '+(totals[10]===null?'sem PDFs':kg(totals[10])+' kg');
-        card.append(detail);
-      }
-      return detailCard(card,i,title.textContent,value.textContent,selected,bioPeriod,pdfs);
+      return detailCard(card,i,title.textContent,value.textContent,selected,pdfs);
     }));
     const weekly=mode==='weekly';
     el('title').textContent=(weekly?'Resumo por semana ISO':'Resumo mensal')+' · kg';

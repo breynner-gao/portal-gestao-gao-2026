@@ -71,7 +71,7 @@ function bind(root){
       const query='/rest/v1/waste_audit_history?id=eq.2026-06-a-2026-11&select=records,indcom_audit,billing_titles,documents';
       const [response,{mountAudit}]=await Promise.all([
         fetch(project+query,{headers:headers()}),
-        import('/waste-audit-panel-v1.mjs?v=3')
+        import('/waste-audit-panel-v1.mjs?v=4')
       ]);
       if(!response.ok) throw Error('Não foi possível consultar o histórico de resíduos.');
       const [history]=await response.json();

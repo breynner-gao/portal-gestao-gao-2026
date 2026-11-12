@@ -141,3 +141,23 @@ body .gao-auth-gate .gao-auth-card button[type="submit"] {
 .gao-shell .waste-audit-dialog label[hidden] {display:none;}
 .gao-shell .waste-audit-dialog input {margin:0 0 10px 6px;max-width:100%;}
 .gao-shell .waste-audit button .waste-audit-card-action {display:block;margin-top:7px;color:var(--liquid-blue);font-weight:650;}
+
+.gao-shell .wa-chart-head {display:flex;flex-wrap:wrap;justify-content:space-between;align-items:start;gap:8px 20px;}
+.gao-shell .wa-chart-head h3 {margin:0 0 6px;}
+.gao-shell .wa-chart-head p {margin:0;}
+.gao-shell .wa-chart-head label {display:grid;gap:5px;}
+.gao-shell .wa-chart-legend {display:flex;align-items:center;flex-wrap:wrap;gap:8px 20px;margin:12px 0;color:var(--liquid-muted);}
+.gao-shell .wa-chart-legend span::before {content:"";display:inline-block;width:9px;height:9px;margin-right:7px;border-radius:2px;background:#79baff;}
+.gao-shell .wa-chart-legend span:nth-child(2)::before {background:#54d9b1;}
+.gao-shell .wa-chart-scroll {overflow-x:auto;}
+.gao-shell .wa-chart-plot {position:relative;min-width:max(100%,calc(var(--wa-points) * 46px + 74px));}
+.gao-shell .wa-chart-plot canvas {display:block;width:100%;height:246px;}
+.gao-shell .wa-chart-actions,.gao-shell .wa-chart-axis {display:grid;grid-template-columns:repeat(var(--wa-points),minmax(0,1fr));}
+.gao-shell .wa-chart-actions {position:absolute;inset:10px 12px 0 62px;}
+.gao-shell .wa-chart-actions button {background:transparent!important;border:1px solid transparent!important;border-radius:5px;padding:0;cursor:pointer;}
+.gao-shell .wa-chart-actions button:is(:hover,:focus-visible) {background:#79baff15!important;border-color:#79baff80!important;}
+.gao-shell .wa-chart-axis {padding:0 12px 6px 62px;text-align:center;font-size:11px;color:var(--liquid-muted);}
+.gao-shell .wa-chart-projections {display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;}
+.gao-shell .wa-chart-projections small {display:block;margin-top:4px;color:var(--liquid-muted);}
+.gao-shell .wa-chart-projections strong {font-size:13px;}
+.gao-shell [data-wa-chart-forecast] h4 {margin:14px 0 4px;}
