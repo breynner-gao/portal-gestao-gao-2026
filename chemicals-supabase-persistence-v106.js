@@ -57,6 +57,15 @@ async function boot(){try{
  window.GAO_CHEM_DB_READY=true;window.GAO_CHEM_DB_SYNC_ERROR='';window.dispatchEvent(new Event('gao-chem-db-ready'));
  if(location.pathname.startsWith('/quimicos/'))setTimeout(()=>window.dispatchEvent(new PopStateEvent('popstate')),80);
  }catch(e){console.error('[GAO V106 persistência]',e);window.GAO_CHEM_DB_READY=false;window.GAO_CHEM_DB_SYNC_ERROR=String(e?.message||e)}finally{hydrating=false}}
+window.GAO_RELAVE_ARCHIVE=async()=>{
+ if(!token())return [];
+ const prefix='gao.chemicals.relave.archive.';
+ const endpoint=`${SB}/rest/v1/chemical_portal_state?select=payload&state_key=like.${prefix}*&order=state_key`;
+ const response=await fetch(endpoint,{headers:headers()});
+ if(!response.ok)throw Error('Histórico de expedição indisponível.');
+ const pages=await response.json();
+ return pages.flatMap(({payload})=>payload?.version===1&&Array.isArray(payload.rows)?payload.rows:[]);
+};
 window.GAO_CHEM_DB_READY=false;window.GAO_CHEM_DB_SYNC_ERROR='';
 window.GAO_CHEM_DB_SYNC=async()=>{await bootPromise;if(!window.GAO_CHEM_DB_READY)throw Error(window.GAO_CHEM_DB_SYNC_ERROR||'Banco indisponível');for(const key of [RELAVE,WASTE]){const value=rawGet.call(localStorage,key);if(value)await enqueue(key,value)}};
 bootPromise=boot();

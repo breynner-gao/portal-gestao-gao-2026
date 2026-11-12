@@ -419,10 +419,15 @@ async function loadRelaveOperation(root){
  root.replaceChildren(host);
  host.textContent='Carregando painel de relave…';
  try{
-  const {mountRelave}=await import('/relave-operation-v1.mjs?v=2');
+  const [{mountRelave},{mergeRelaveArchive}]=await Promise.all([
+   import('/relave-operation-v1.mjs?v=3'),import('/relave-archive-v1.mjs?v=1')
+  ]);
+  let archive=[],archiveError=false;
+  try{archive=await window.GAO_RELAVE_ARCHIVE?.()||[]}
+  catch(error){archiveError=true;console.error('[GAO Relave histórico]',error)}
   if(!host.isConnected)return;
   const records=all().filter(row=>/^\d{4}-\d{2}-\d{2}$/.test(row.date)).map(operationRecord);
-  disposeRelaveOperation=mountRelave(host,{records,saveRecord:saveOperationRecord,saveWeighing:saveOperationWeighing,openHistory:()=>render('hist')});
+  disposeRelaveOperation=mountRelave(host,{records:mergeRelaveArchive(records,archive),archiveError,saveRecord:saveOperationRecord,saveWeighing:saveOperationWeighing,openHistory:()=>render('hist')});
  }catch(error){
   if(!host.isConnected)return;
   console.error('[GAO Relave]',error);
