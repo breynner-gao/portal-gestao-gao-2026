@@ -1,4 +1,4 @@
-import { mountWasteChart } from './waste-audit-chart-v1.mjs?v=2';
+import { mountWasteChart } from './waste-audit-chart-v1.mjs?v=3';
 
 const references = {
   workbook:'Planilha de auditoria',

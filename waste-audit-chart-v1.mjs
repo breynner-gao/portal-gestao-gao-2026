@@ -1,6 +1,5 @@
 const companies=['INDCOM','BIOREVERSE'];
-const colors=['#79baff','#54d9b1'];
-const triageColor='#f7c66a';
+const colors=['#79baff','#54d9b1','#f7c66a'];
 const sources={
   forms:{label:'Forms · peso coletado',indices:[1,2]},
   semand:{label:'SEMAND · peso considerado',indices:[3,4]},
@@ -37,6 +36,7 @@ export function seriesFor(records,source,level){
     const triage=rows.map(row=>row.v[0]).filter(value=>value!==null);
     return {
       triaged:triage.length?triage.reduce((sum,value)=>sum+value,0):null,
+      triageComplete:triage.length===expected,
       key,rows,label:periodLabel(key,level),partial:rows.length<expected,
       weights:values.map(series=>series.some(value=>value!==null)?series.reduce((sum,value)=>sum+(value??0),0):null),
       complete:values.map(series=>series.length===expected&&series.every(value=>value!==null)),
@@ -82,9 +82,13 @@ function draw(canvas,points,source){
   const left=62,right=12,top=14,bottom=224;
   const span=(width-left-right)/Math.max(1,points.length);
   const x=index=>left+(index+.5)*span;
-  const trendPoints=source==='pdf'?points.map(point=>({...point,complete:point.weights.map(value=>value!==null)})):points;
-  const trends=companies.map((_,i)=>trendFor(trendPoints,i));
-  const max=Math.max(100,...points.flatMap(point=>[...point.weights,point.triaged].map(value=>value??0)),...trends.flatMap(trend=>trend.map(p=>p.value)));
+  const plotted=points.map(point=>({
+    ...point,
+    weights:[...point.weights,point.triaged],
+    complete:[...(source==='pdf'?point.weights.map(value=>value!==null):point.complete),point.triageComplete],
+  }));
+  const trends=colors.map((_,series)=>trendFor(plotted,series));
+  const max=Math.max(100,...plotted.flatMap(point=>point.weights.map(value=>value??0)),...trends.flatMap(trend=>trend.map(p=>p.value)));
   const ceiling=Math.ceil(max/(10**Math.floor(Math.log10(max))))*(10**Math.floor(Math.log10(max)));
   const y=value=>bottom-value/ceiling*(bottom-top);
   ctx.font='11px system-ui';
@@ -94,39 +98,24 @@ function draw(canvas,points,source){
     ctx.strokeStyle='#344255';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(left,row);ctx.lineTo(width-right,row);ctx.stroke();
     ctx.fillStyle='#b1c1d4';ctx.fillText(money.format(value/100),left-7,row+4);
   }
-  const bar=Math.max(2,Math.min(18,span*.24));
-  companies.forEach((_,company)=>{
-    ctx.fillStyle=colors[company];
-    for(const [index,point] of points.entries()){
-      const value=point.weights[company];
+  const bar=Math.max(2,Math.min(18,span*.20));
+  colors.forEach((color,series)=>{
+    ctx.fillStyle=color;
+    for(const [index,point] of plotted.entries()){
+      const value=point.weights[series];
       if(value===null) continue;
-      const center=x(index)+(company===0?-.65:.65)*bar;
+      const center=x(index)+(series-1)*1.25*bar;
       ctx.globalAlpha=point.partial ? .48 : .85;
       ctx.fillRect(center-bar/2,y(value),bar,Math.max(1,bottom-y(value)));
     }
-    ctx.globalAlpha=1;
-    const trend=trends[company];
-    if(trend.length){
-      ctx.strokeStyle=colors[company];ctx.lineWidth=2;ctx.setLineDash([5,4]);ctx.beginPath();
-      ctx.moveTo(x(trend[0].index),y(trend[0].value));ctx.lineTo(x(trend[1].index),y(trend[1].value));ctx.stroke();ctx.setLineDash([]);
-    }
   });
-  ctx.strokeStyle=triageColor;
-  ctx.fillStyle=triageColor;
-  ctx.lineWidth=2;
-  ctx.beginPath();
-  let previous=false;
-  for(const [index,point] of points.entries()){
-    if(point.triaged===null){previous=false;continue;}
-    if(previous) ctx.lineTo(x(index),y(point.triaged));
-    else ctx.moveTo(x(index),y(point.triaged));
-    previous=true;
-  }
-  ctx.stroke();
-  for(const [index,point] of points.entries()){
-    if(point.triaged===null) continue;
-    ctx.beginPath();ctx.arc(x(index),y(point.triaged),3.5,0,Math.PI*2);ctx.fill();
-  }
+  ctx.globalAlpha=1;
+  trends.forEach((trend,series)=>{
+    if(!trend.length) return;
+    ctx.strokeStyle=colors[series];ctx.lineWidth=2;ctx.setLineDash([5,4]);ctx.beginPath();
+    ctx.moveTo(x(trend[0].index),y(trend[0].value));ctx.lineTo(x(trend[1].index),y(trend[1].value));ctx.stroke();
+  });
+  ctx.setLineDash([]);
 }
 function button(label,onClick){
   const node=document.createElement('button');node.type='button';node.textContent=label;node.onclick=onClick;return node;
