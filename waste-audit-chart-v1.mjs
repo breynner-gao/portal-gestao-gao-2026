@@ -1,5 +1,6 @@
 const companies=['INDCOM','BIOREVERSE'];
 const colors=['#79baff','#54d9b1'];
+const triageColor='#f7c66a';
 const sources={
   forms:{label:'Forms · peso coletado',indices:[1,2]},
   semand:{label:'SEMAND · peso considerado',indices:[3,4]},
@@ -33,7 +34,9 @@ export function seriesFor(records,source,level){
   return [...groups].map(([key,rows])=>{
     const expected=level==='month'?new Date(Date.UTC(+key.slice(0,4),+key.slice(5,7),0)).getUTCDate():level==='week'?7:1;
     const values=sources[source].indices.map(index=>rows.map(r=>index===10?r.bio?.[1]??null:r.v[index]));
+    const triage=rows.map(row=>row.v[0]).filter(value=>value!==null);
     return {
+      triaged:triage.length?triage.reduce((sum,value)=>sum+value,0):null,
       key,rows,label:periodLabel(key,level),partial:rows.length<expected,
       weights:values.map(series=>series.some(value=>value!==null)?series.reduce((sum,value)=>sum+(value??0),0):null),
       complete:values.map(series=>series.length===expected&&series.every(value=>value!==null)),
@@ -81,7 +84,7 @@ function draw(canvas,points,source){
   const x=index=>left+(index+.5)*span;
   const trendPoints=source==='pdf'?points.map(point=>({...point,complete:point.weights.map(value=>value!==null)})):points;
   const trends=companies.map((_,i)=>trendFor(trendPoints,i));
-  const max=Math.max(100,...points.flatMap(point=>point.weights.map(value=>value??0)),...trends.flatMap(trend=>trend.map(p=>p.value)));
+  const max=Math.max(100,...points.flatMap(point=>[...point.weights,point.triaged].map(value=>value??0)),...trends.flatMap(trend=>trend.map(p=>p.value)));
   const ceiling=Math.ceil(max/(10**Math.floor(Math.log10(max))))*(10**Math.floor(Math.log10(max)));
   const y=value=>bottom-value/ceiling*(bottom-top);
   ctx.font='11px system-ui';
@@ -108,6 +111,22 @@ function draw(canvas,points,source){
       ctx.moveTo(x(trend[0].index),y(trend[0].value));ctx.lineTo(x(trend[1].index),y(trend[1].value));ctx.stroke();ctx.setLineDash([]);
     }
   });
+  ctx.strokeStyle=triageColor;
+  ctx.fillStyle=triageColor;
+  ctx.lineWidth=2;
+  ctx.beginPath();
+  let previous=false;
+  for(const [index,point] of points.entries()){
+    if(point.triaged===null){previous=false;continue;}
+    if(previous) ctx.lineTo(x(index),y(point.triaged));
+    else ctx.moveTo(x(index),y(point.triaged));
+    previous=true;
+  }
+  ctx.stroke();
+  for(const [index,point] of points.entries()){
+    if(point.triaged===null) continue;
+    ctx.beginPath();ctx.arc(x(index),y(point.triaged),3.5,0,Math.PI*2);ctx.fill();
+  }
 }
 function button(label,onClick){
   const node=document.createElement('button');node.type='button';node.textContent=label;node.onclick=onClick;return node;
@@ -115,9 +134,9 @@ function button(label,onClick){
 
 export function mountWasteChart(root,records){
   let scoped=records,month=null,week=null,source='forms',observer;
-  root.innerHTML=`<div class="wa-chart-head"><div><h3>Volume por coletora · kg</h3><p class="waste-sub" data-wa-chart-path></p></div>
+  root.innerHTML=`<div class="wa-chart-head"><div><h3>Lixo triado e volume por coletora · kg</h3><p class="waste-sub" data-wa-chart-path></p></div>
     <label>Fonte <select data-wa-chart-source></select></label></div>
-    <div class="wa-chart-legend"><span>INDCOM</span><span>BIOREVERSE</span><small>Linha tracejada · tendência</small></div>
+    <div class="wa-chart-legend"><span>INDCOM</span><span>BIOREVERSE</span><span class="wa-chart-triage">Lixo triado</span><small>Linha tracejada · tendência</small></div>
     <div data-wa-chart-content></div><div data-wa-chart-forecast></div>`;
   const get=name=>root.querySelector('[data-wa-chart-'+name+']');
   const sourceInput=get('source');
@@ -144,7 +163,7 @@ export function mountWasteChart(root,records){
       const details=document.createElement('p');details.className='waste-sub';details.setAttribute('role','status');
       details.textContent=level==='week'?'Clique na semana para ver os dias.':'Selecione um período para conferir os pesos.';
       for(const point of points){
-        const summary=point.label+' · '+companies.map((name,i)=>name+': '+formatKg(point.weights[i])).join(' · ')+(point.partial?' · período parcial':'');
+        const summary=point.label+' · '+companies.map((name,i)=>name+': '+formatKg(point.weights[i])).join(' · ')+' · Lixo triado: '+formatKg(point.triaged)+(point.partial?' · período parcial':'');
         const action=button('',()=>{
           if(level==='month'){month=point.key;render();}
           else if(level==='week'){week=point.key;render();}

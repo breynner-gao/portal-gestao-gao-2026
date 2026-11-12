@@ -149,6 +149,7 @@ body .gao-auth-gate .gao-auth-card button[type="submit"] {
 .gao-shell .wa-chart-legend {display:flex;align-items:center;flex-wrap:wrap;gap:8px 20px;margin:12px 0;color:var(--liquid-muted);}
 .gao-shell .wa-chart-legend span::before {content:"";display:inline-block;width:9px;height:9px;margin-right:7px;border-radius:2px;background:#79baff;}
 .gao-shell .wa-chart-legend span:nth-child(2)::before {background:#54d9b1;}
+.gao-shell .wa-chart-legend span.wa-chart-triage::before {background:#f7c66a;border-radius:50%;}
 .gao-shell .wa-chart-scroll {overflow-x:auto;}
 .gao-shell .wa-chart-plot {position:relative;min-width:max(100%,calc(var(--wa-points) * 46px + 74px));}
 .gao-shell .wa-chart-plot canvas {display:block;width:100%;height:246px;}
