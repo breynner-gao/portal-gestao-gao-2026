@@ -1,9 +1,10 @@
-export function mergeRelaveArchive(records, archive) {
+export function mergeRelaveArchive(records, archive, excludedRows=[]) {
   const operations = new Map();
   for (const record of records) {
     if (record.kind !== 'customer' && record.command) operations.set(record.command.trim(), record);
   }
   const imported = new Set();
+  const excluded = new Set(excludedRows.map(([command,,date])=>command+'|'+date));
   const historical = archive.map(([command, client, date, sorted, waste, details]) => {
     imported.add(command);
     const operation = operations.get(command);
@@ -16,6 +17,6 @@ export function mergeRelaveArchive(records, archive) {
       conflict:waste!==null && expedition!=null && waste!==Math.round(expedition*100)
     };
   });
-  return [...records.filter(record => record.kind==='customer'||!imported.has(record.command.trim())), ...historical]
+  return [...records.filter(record => record.kind==='customer'||(!imported.has(record.command.trim())&&!excluded.has(record.command.trim()+'|'+record.date))), ...historical]
     .sort((a,b)=>a.date.localeCompare(b.date)||a.command.localeCompare(b.command,'pt-BR',{numeric:true}));
 }

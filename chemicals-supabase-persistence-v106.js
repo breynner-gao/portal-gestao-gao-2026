@@ -58,13 +58,35 @@ async function boot(){try{
  if(location.pathname.startsWith('/quimicos/'))setTimeout(()=>window.dispatchEvent(new PopStateEvent('popstate')),80);
  }catch(e){console.error('[GAO V106 persistência]',e);window.GAO_CHEM_DB_READY=false;window.GAO_CHEM_DB_SYNC_ERROR=String(e?.message||e)}finally{hydrating=false}}
 window.GAO_RELAVE_ARCHIVE=async()=>{
- if(!token())return [];
+ if(!token())return {rows:[],excludedRows:[]};
  const prefix='gao.chemicals.relave.archive.';
  const endpoint=`${SB}/rest/v1/chemical_portal_state?select=payload&state_key=like.${prefix}*&order=state_key`;
  const response=await fetch(endpoint,{headers:headers()});
  if(!response.ok)throw Error('Histórico de expedição indisponível.');
  const pages=await response.json();
- return pages.flatMap(({payload})=>payload?.version===1&&Array.isArray(payload.rows)?payload.rows:[]);
+ const valid=pages.map(page=>page.payload).filter(payload=>payload?.version===1);
+ return {rows:valid.flatMap(payload=>payload.rows||[]),excludedRows:valid.flatMap(payload=>payload.excludedRows||[])};
+};
+window.GAO_RELAVE_ARCHIVE_EXCLUDE=async(command,date)=>{
+ if(!token()||!/^\d{4}-\d{2}-\d{2}$/.test(date))throw Error('Sessão ou data inválida.');
+ const endpoint=`${SB}/rest/v1/chemical_portal_state?state_key=eq.gao.chemicals.relave.archive.${date.slice(0,7)}`;
+ const response=await fetch(endpoint+'&select=payload,updated_at',{headers:headers()});
+ if(!response.ok)throw Error('Não foi possível consultar a comanda.');
+ const [page]=await response.json();
+ const payload=page?.payload;
+ if(!Array.isArray(payload?.rows)||!page.updated_at)throw Error('Comanda indisponível.');
+ const matches=row=>row[0]===command&&row[2]===date;
+ const removed=payload.rows.filter(matches);
+ if(!removed.length){
+  if(payload.excludedRows?.some(matches))return;
+  throw Error('Comanda indisponível.');
+ }
+ const saved=await fetch(endpoint+'&updated_at=eq.'+encodeURIComponent(page.updated_at),{
+  method:'PATCH',headers:headers({Prefer:'return=representation'}),
+  body:JSON.stringify({payload:{...payload,rows:payload.rows.filter(row=>!matches(row)),excludedRows:[...(payload.excludedRows||[]),...removed]},updated_at:new Date().toISOString()})
+ });
+ if(!saved.ok)throw Error('Não foi possível excluir a comanda. Confira sua permissão.');
+ if(!(await saved.json()).length)throw Error('O histórico foi atualizado. Tente excluir novamente.');
 };
 window.GAO_CHEM_DB_READY=false;window.GAO_CHEM_DB_SYNC_ERROR='';
 window.GAO_CHEM_DB_SYNC=async()=>{await bootPromise;if(!window.GAO_CHEM_DB_READY)throw Error(window.GAO_CHEM_DB_SYNC_ERROR||'Banco indisponível');for(const key of [RELAVE,WASTE]){const value=rawGet.call(localStorage,key);if(value)await enqueue(key,value)}};
