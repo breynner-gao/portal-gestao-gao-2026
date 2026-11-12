@@ -1,3 +1,4 @@
+import {createFactionDesk} from '../fabric-faction-portal-v1.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -7,7 +8,7 @@ import * as standards from '../fabric-standard-rules-v1.mjs';
 import {createFabricWorkbookImport} from '../fabric-workbook-import-v1.mjs';
 const source=await readFile(new URL('../fabric-workflow-ui-v1.js',import.meta.url),'utf8');
 function harness(){
- const calls=[];const context={...rules,...standards,createFabricWorkbookImport,createBuyingController:()=>({view:()=>'',restore(){}}),console,Event:class{},crypto:{randomUUID:()=> 'test-key'},window:{GAO_LINEN_NEED_SNAPSHOT:[],dispatchEvent(){}},document:{createElement:()=>({textContent:''}),head:{appendChild(){}},addEventListener(){},querySelector:()=>null,documentElement:{}},MutationObserver:class{observe(){}},setInterval(){},FormData:class{constructor(form){this.form=form}entries(){return Object.entries(this.form.values)}},fetch:async(url,options)=>{calls.push({url,body:options.body?JSON.parse(options.body):null});return{ok:true,text:async()=> '[]'}}};
+ const calls=[];const context={...rules,...standards,createFactionDesk,createFabricWorkbookImport,createBuyingController:()=>({view:()=>'',restore(){}}),console,Event:class{},crypto:{randomUUID:()=> 'test-key'},window:{GAO_LINEN_NEED_SNAPSHOT:[],dispatchEvent(){}},document:{createElement:()=>({textContent:''}),head:{appendChild(){}},addEventListener(){},querySelector:()=>null,documentElement:{}},MutationObserver:class{observe(){}},setInterval(){},FormData:class{constructor(form){this.form=form}entries(){return Object.entries(this.form.values)}},fetch:async(url,options)=>{calls.push({url,body:options.body?JSON.parse(options.body):null});return{ok:true,text:async()=> '[]'}}};
  vm.createContext(context);vm.runInContext(source.replace(/^(?:import[^\n]+\n)+/,'').replace(/\}\)\(\);\s*$/,'window.test={state,submit,orderStats,trackingView,createOrder,catalogModelValues,catalogAction,catalogManagementView,stockPanelGroup,stockLotsView,purchaseOrderView,qualityView,demandDrafts,demandQuantity,demandRequestedPieces,materialPurchasePlan,materialCoverageView,materialLinkInfo,trackingReconciled,reconciliationLine,reconciliationStockPlan,recipeSourceChoices,recipeCostValues,applyRecipeCost,internalFabricOptions,planningFabrics,standardsManagementView,recipeView};})();'),context);
  context.window.test.state.org='org';context.window.test.state.session={access_token:'session',user:{id:'user'}};return{...context.window.test,calls,document:context.document,window:context.window};
 }
