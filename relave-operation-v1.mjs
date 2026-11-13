@@ -48,7 +48,7 @@ async function openCustomerHistory(useSelection=false){
  try{
   const data=await loadCustomerHistory();
   const {events,triage}=data;
-  body.innerHTML='<p>01/08/2026 a 11/11/2026</p><div class="controls"><label>Mês<select id="ch-month"><option value="">Todo o período</option><option value="2026-08">Agosto</option><option value="2026-09">Setembro</option><option value="2026-10">Outubro</option><option value="2026-11">Novembro até dia 11</option></select></label><label>Cliente<select id="ch-client"><option value="">Todos do histórico</option></select></label><label>Indicador<select id="ch-type"><option value="all">Todas as ocorrências</option><option value="relave">Relave na descrição</option></select></label></div><p class="muted">Percentual = kg de ocorrências ÷ kg triados do mesmo cliente e período. A base inclui comandas sem ocorrência.</p><p id="ch-total" role="status"></p><div id="ch-rows"></div>';
+  body.innerHTML='<p>01/08/2026 a 11/11/2026</p><div class="controls"><label>Mês<select id="ch-month"><option value="">Todo o período</option><option value="2026-08">Agosto</option><option value="2026-09">Setembro</option><option value="2026-10">Outubro</option><option value="2026-11">Novembro até dia 11</option></select></label><label>Cliente<select id="ch-client"><option value="">Todos do histórico</option></select></label><label>Indicador<select id="ch-type"><option value="all">Todas as ocorrências</option><option value="relave">Relave na descrição</option></select></label></div><p class="muted">Percentual = kg de ocorrências ÷ kg triados do mesmo cliente e período. A base inclui comandas sem ocorrência.</p><p id="ch-total" role="status"></p><button type="button" id="ch-report" class="primary">Gerar relatório por cliente</button><p id="ch-report-status" role="status"></p><div id="ch-rows"></div>';
   const clients=Object.keys(triage).sort((a,b)=>a.localeCompare(b,'pt-BR'));
   for(const client of clients)$('ch-client').add(new Option(client,client));
   const table=(headers,rows)=>'<div class="table"><table><thead><tr>'+headers.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr></thead><tbody>'+rows.map(row=>'<tr>'+row.map(x=>'<td>'+esc(x)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>';
@@ -58,16 +58,34 @@ async function openCustomerHistory(useSelection=false){
    const selectedMonth=$('ch-month').value, client=$('ch-client').value, relave=$('ch-type').value==='relave';
    const includes=d=>d.startsWith(selectedMonth)&&(!useSelection||inPeriod(d));
    let numerator=0,denominator=0;
-   $('ch-rows').innerHTML=clients.filter(name=>!client||client===name).map(name=>{
+   const sections=clients.filter(name=>!client||client===name).map(name=>{
     const orders=triage[name].filter(row=>includes(row[0]));
     const occurrences=events.filter(row=>row.client===name&&includes(row.date)&&(!relave||isHistoricalRelave(row)));
     const sorted=orders.reduce((sum,row)=>sum+row[2],0);
     const weight=occurrences.reduce((sum,row)=>sum+Math.round(row.kg*100),0);
     numerator+=weight;denominator+=sorted;
     return '<details class="card"><summary>'+esc(name)+' · '+ratio(weight,sorted)+' · '+kg(weight/100)+' / '+kg(sorted/100)+'</summary><details><summary>Ocorrências ('+occurrences.length+')</summary>'+table(['Data','Comanda','Tipo','Peso'],occurrences.map(row=>[date(row.date),row.order,row.type,kg(row.kg)]))+'</details><details><summary>Comandas triadas ('+orders.length+')</summary>'+table(['Data','Comanda','Peso triado'],orders.map(row=>[date(row[0]),row[1],kg(row[2]/100)]))+'</details></details>';
-   }).join('');
+   });
+   $('ch-rows').innerHTML=sections.join('');
    $('ch-total').textContent=ratio(numerator,denominator)+' · '+kg(numerator/100)+' em ocorrências / '+kg(denominator/100)+' triados';
   }
+  $('ch-report').onclick=()=>{
+   const page=window.open('','_blank');
+   const status=$('ch-report-status');
+   if(!page){status.textContent='Permita pop-ups para abrir o relatório.';return;}
+   page.opener=null;
+   status.textContent='';
+   const period=useSelection?(day?date(day):week||month||'01/08/2026 a 11/11/2026'):$('ch-month').selectedOptions[0].textContent;
+   const client=$('ch-client').selectedOptions[0].textContent;
+   const indicator=$('ch-type').selectedOptions[0].textContent;
+   const content=$('ch-rows').cloneNode(true);
+   content.querySelectorAll('details').forEach(detail=>detail.open=true);
+   const logo=getComputedStyle(document.documentElement).getPropertyValue('--liquid-logo').match(/data:image\/(?:png|webp);base64,[A-Za-z0-9+/=]+/)?.[0];
+   page.document.open();
+   page.document.write('<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>GAO · Relatório de ocorrências por cliente</title><style>@page{size:A4;margin:12mm}body{font:14px system-ui;color:#102d45;margin:24px}header{border-bottom:2px solid #2269a4;margin-bottom:14px}header img{width:105px}h1{font-size:22px}details{margin:12px 0}summary{font-weight:700;overflow-wrap:anywhere}table{width:100%;border-collapse:collapse;margin:8px 0}td,th{padding:5px;text-align:left;border-bottom:1px solid #dbe5ed}th{background:#e2edf4}thead{display:table-header-group}tr{break-inside:avoid}@media print{body{margin:0;font-size:11px}button{display:none}}</style><body><button id="ch-print">Imprimir / salvar PDF</button><header>'+(logo?'<img src="'+logo+'" alt="GAO Lavanderia">':'<strong>GAO Lavanderia</strong>')+'<h1>Relatório de ocorrências por cliente</h1><p>'+esc(period)+' · '+esc(client)+' · '+esc(indicator)+'</p></header><p><strong>'+esc($('ch-total').textContent)+'</strong></p><p>Percentual = kg de ocorrências ÷ kg triados do mesmo cliente e período.</p>'+content.innerHTML+'</body></html>');
+   page.document.close();
+   page.document.getElementById('ch-print').onclick=()=>page.print();
+  };
   for(const id of ['ch-month','ch-client','ch-type'])$(id).onchange=drawHistory;
   if(useSelection){
    $('ch-type').value='relave';
