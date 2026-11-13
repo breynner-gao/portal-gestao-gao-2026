@@ -117,25 +117,41 @@ const css = `
     }
   `;
 
-export function renderDailyReport(records, date, logo, customer = null) {
-  if (customer) {
-    if (!customer.id || !customer.name) throw Error('Selecione um cliente cadastrado.');
-    records = records.filter(row => !internal(row) && row.clientId === customer.id);
-  }
-  const data = dailyReportData(records, date);
-  if (customer && !data.daily.length) throw Error('Sem ocorrência vinculada a este cliente na data selecionada.');
-  const gao = data.daily.filter(internal), clients = data.daily.filter(row => !internal(row));
-  const g = summary(gao), c = summary(clients);
-  const checks = gao.filter(row => row.canWeigh && row.command && weight(row)>0).map(row => {
+const card = (name, value, base, note) => `<div><strong>${name}</strong><b>${value}</b><span>${base}</span><small>${note}</small></div>`;
+
+function weightChecks(rows) {
+  const checks = rows.filter(row => row.canWeigh && row.command && weight(row)>0).map(row => {
     const check = row.weighing;
     const delta = check ? (Math.round(check.received*100) - Math.round(weight(row)*100))/100 : null;
     return {row,check,delta,status:delta===null?'Aguardando pesagem':delta===0?'Conferida':check.resolved?'Tratada':'Em tratativa'};
   });
   const divergences = checks.filter(x=>x.delta!==null && x.delta!==0);
+  return { checks, divergences };
+}
+
+function closingCards(g, { checks, divergences }, customer, customerNote, showScope = false) {
+  const scope = showScope ? 'Operação GAO · ' : '';
+  return `<div class="cards">
+    ${card('Relave interno GAO',percent(g.rate),kg(g.waste)+' / '+kg(g.sorted)+' triados',scope+(g.rate===null?'Sem base conferida':g.rate<=2.5?'Dentro da meta de 2,50%':'Acima da meta de 2,50%'))}
+    ${card('Ocorrência do cliente',percent(customer.rate),kg(customer.waste)+' / '+kg(customer.sorted)+' triados',customerNote)}
+    ${card('Conferência de peso',showScope&&!checks.length?'—':divergences.length+' divergência(s)',showScope&&!checks.length?'Sem pesagens para conferir':checks.filter(x=>x.delta===null).length+' aguardando pesagem',scope+(showScope&&!checks.length?'Área suja':divergences.filter(x=>!x.check.resolved).length+' em tratativa'))}
+  </div>`;
+}
+
+export function renderDailyReport(records, date, logo, customer = null) {
+  if (customer) {
+    if (!customer.id || !customer.name) throw Error('Selecione um cliente cadastrado.');
+  }
+  const data = dailyReportData(customer ? records.filter(row => internal(row) || row.clientId === customer.id) : records, date);
+  const gao = data.daily.filter(internal);
+  const clients = data.daily.filter(row => !internal(row) && (!customer || row.clientId === customer.id));
+  if (customer && !clients.length) throw Error('Sem ocorrência vinculada a este cliente na data selecionada.');
+  const customerNote = clients.filter(row=>Array.isArray(row.items)).length+' comanda(s) conferida(s)';
+  const g = summary(gao), c = summary(clients);
+  const { checks, divergences } = weightChecks(gao);
   const stamp = `Fechamento de ${displayDate(date)} · Semana ISO ${data.iso.slice(1)}`;
   const safeLogo = /^data:image\/(?:webp|png);base64,[A-Za-z0-9+/=]+$/.test(logo||'') ? `<img src="${logo}" alt="GAO Lavanderia">` : '<strong>GAO Lavanderia</strong>';
   const head = title => `<header><div class="brand">${safeLogo}<span>GESTÃO DA QUALIDADE</span></div><h1>${title}</h1><p>${stamp}</p></header>`;
-  const card = (name, value, base, note) => `<div><strong>${name}</strong><b>${value}</b><span>${base}</span><small>${note}</small></div>`;
   const reasons = new Map();
   gao.forEach(row=>(row.items||[]).forEach(item=>reasons.set(item.reason,(reasons.get(item.reason)||0)+item.weight)));
 
@@ -149,9 +165,7 @@ export function renderDailyReport(records, date, logo, customer = null) {
     <p class="note">* Período parcial. Períodos sem base ficam sem ponto no gráfico.</p></section>`;
   const customerBody = () => `
     <p><strong>Cliente</strong> ${html(customer.name)}</p>
-    <div class="cards">${card('Relave por ocorrência',percent(c.rate),'Sobre o peso triado','')}
-    ${card('Peso triado',kg(c.sorted),'Comandas conferidas','')}
-    ${card('Peso de relave',kg(c.waste),clients.length+' comanda(s) no dia','')}</div>
+    ${closingCards(g,{checks,divergences},c,customerNote,true)}
     <h2>Comandas e motivos</h2>
     ${table(['Comanda','Enxoval','Motivo','Peso'],clients.flatMap(row=>(row.items||[]).map(item=>[row.command,item.type,item.reason,kg(item.weight)])),[20,24,34,22])}
     <h2>Descrição e ações da Qualidade</h2>
@@ -161,10 +175,7 @@ export function renderDailyReport(records, date, logo, customer = null) {
   <title>GAO • ${title} • ${date}</title><style>${css}</style>
   <div class="print"><button type="button" id="save-pdf">Imprimir / salvar PDF</button></div><main>
   ${head(title)}
-  ${customer ? customerBody() : `<div class="cards">
-  ${card('Relave interno GAO',percent(g.rate),kg(g.waste)+' / '+kg(g.sorted)+' triados',g.rate===null?'Sem base conferida':g.rate<=2.5?'Dentro da meta de 2,50%':'Acima da meta de 2,50%')}
-  ${card('Ocorrência do cliente',percent(c.rate),kg(c.waste)+' / '+kg(c.sorted)+' triados',clients.filter(row=>Array.isArray(row.items)).length+' comanda(s) conferida(s)')}
-  ${card('Conferência de peso',divergences.length+' divergência(s)',checks.filter(x=>x.delta===null).length+' aguardando pesagem',divergences.filter(x=>!x.check.resolved).length+' em tratativa')}</div>
+  ${customer ? customerBody() : `${closingCards(g,{checks,divergences},c,customerNote)}
   <p class="note">${g.pending+c.pending} comanda(s) aguardando conferência do relave.</p>
   <h2>Conferência de peso na área suja</h2>
   <p class="note">Pesos líquidos. Diferença = área suja menos expedição. Situação atual das comandas do dia.</p>
@@ -190,7 +201,7 @@ function historicalPiece(type){
  return 'Peça não identificada';
 }
 
-export function renderHistoricalCustomerReport(data,client,date,indicator,logo){
+export function renderHistoricalCustomerReport(data,client,date,indicator,logo,operationalRecords=[]){
  const records=data.events.filter(row=>row.client===client&&row.date<=date&&(indicator!=='relave'||/\bRELAVE\b/i.test(row.type)));
  const triage=(data.triage[client]||[]).filter(row=>row[0]<=date);
  const time=Date.parse(date+'T00:00:00Z');
@@ -208,6 +219,10 @@ export function renderHistoricalCustomerReport(data,client,date,indicator,logo){
  for(let start=monday(startMonth);start<stopMonth;start+=7*dayMs)byWeek.push([Math.max(start,startMonth),Math.min(start+7*dayMs,stopMonth),weekLabel(start)]);
  const byMonth=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'].map((label,i)=>[Date.UTC(year,i,1),Date.UTC(year,i+1,1),label]);
  const selected=records.filter(row=>row.date===date);
+ const sorted=base(time,time+dayMs), waste=sum(time,time+dayMs);
+ const customerSummary={sorted,waste,rate:sorted>0?100*waste/sorted:null};
+ const sortedCommands=new Set(triage.filter(row=>row[0]===date).map(row=>row[1])).size;
+ const gao=operationalRecords.filter(row=>row.date===date&&internal(row));
  const safeLogo=/^data:image\/(?:webp|png);base64,[A-Za-z0-9+/=]+$/.test(logo||'')?'<img src="'+logo+'" alt="GAO Lavanderia">':'<strong>GAO Lavanderia</strong>';
  const head=title=>'<header><div class="brand">'+safeLogo+'<span>GESTÃO DA QUALIDADE</span></div><h1>'+title+'</h1><p>'+html(client)+' · Fechamento de '+displayDate(date)+' · '+weekLabel(startWeek)+'</p></header>';
  const chartFor=(buckets,type)=>chart(buckets.map(([start,stop,label])=>{
@@ -219,6 +234,7 @@ export function renderHistoricalCustomerReport(data,client,date,indicator,logo){
  return `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GAO · Ocorrências do cliente · ${date}</title><style>${css}</style>
  <div class="print"><button id="save-pdf" type="button">Imprimir / salvar PDF</button></div><main>
  ${head('Relatório diário de ocorrências do cliente')}
+ ${closingCards(summary(gao),weightChecks(gao),customerSummary,sortedCommands+' comanda(s) triada(s)',true)}
  <p>${indicator==='relave'?'Ocorrências com relave na descrição':'Todas as ocorrências'} · Histórico a partir de 01/08/2026, até o fechamento selecionado.</p>
  <h2>Resumo do dia, da semana, do mês e do ano</h2>${table(['Período','Ocorrências','Peso triado','Percentual'],totalRows)}
  <h2>Tipos de peça retornada</h2>${table(['Tipo de peça','Dia','Semana','Mês','Ano'],detailRows)}
