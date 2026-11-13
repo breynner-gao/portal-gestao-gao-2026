@@ -16,11 +16,12 @@ const num=new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFraction
 const kg=n=>num.format(n)+' kg';
 const pct=n=>num.format(n)+'%';
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-async function openCustomerHistory(){
- const dialog=$('customer-history'), body=$('customer-history-body');
- dialog.showModal();
- body.textContent='Carregando histórico…';
- try{
+let customerHistory,customerHistoryRequest,customerHistoryError=false;
+function loadCustomerHistory(){
+ if(customerHistory)return Promise.resolve(customerHistory);
+ if(customerHistoryRequest)return customerHistoryRequest;
+ customerHistoryError=false;
+ customerHistoryRequest=(async()=>{
   const session=window.GAO_AUTH_SESSION||await window.GAO_AUTH_READY;
   if(!session?.access_token)throw Error('Entre no portal para consultar o histórico.');
   const response=await fetch('https://fquzuxdqvhecijjuxbmg.supabase.co/rest/v1/chemical_portal_state?select=payload&state_key=eq.gao.chemicals.relave.customer-history.202608-20261111',{
@@ -28,7 +29,24 @@ async function openCustomerHistory(){
   });
   if(!response.ok)throw Error('Não foi possível consultar o histórico.');
   const data=(await response.json())[0]?.payload;
-  if(!data)throw Error('Histórico indisponível para esta conta.');
+  if(!data||!Array.isArray(data.events)||!data.triage)throw Error('Histórico indisponível para esta conta.');
+  customerHistory=data;
+  return data;
+ })().catch(error=>{customerHistoryError=true;throw error;}).finally(()=>{customerHistoryRequest=null;});
+ return customerHistoryRequest;
+}
+const isHistoricalRelave=row=>/\bRELAVE\b/i.test(row.type);
+function historicalTotals(data,includes){
+ const sorted=Object.values(data.triage).flat().reduce((sum,row)=>sum+(includes(row[0])?row[2]:0),0)/100;
+ const waste=data.events.reduce((sum,row)=>sum+(includes(row.date)&&isHistoricalRelave(row)?Math.round(row.kg*100):0),0)/100;
+ return {sorted,waste,rate:sorted>0?100*waste/sorted:null};
+}
+async function openCustomerHistory(useSelection=false){
+ const dialog=$('customer-history'), body=$('customer-history-body');
+ dialog.showModal();
+ body.textContent='Carregando histórico…';
+ try{
+  const data=await loadCustomerHistory();
   const {events,triage}=data;
   body.innerHTML='<p>01/08/2026 a 11/11/2026</p><div class="controls"><label>Mês<select id="ch-month"><option value="">Todo o período</option><option value="2026-08">Agosto</option><option value="2026-09">Setembro</option><option value="2026-10">Outubro</option><option value="2026-11">Novembro até dia 11</option></select></label><label>Cliente<select id="ch-client"><option value="">Todos do histórico</option></select></label><label>Indicador<select id="ch-type"><option value="all">Todas as ocorrências</option><option value="relave">Relave na descrição</option></select></label></div><p class="muted">Percentual = kg de ocorrências ÷ kg triados do mesmo cliente e período. A base inclui comandas sem ocorrência.</p><p id="ch-total" role="status"></p><div id="ch-rows"></div>';
   const clients=Object.keys(triage).sort((a,b)=>a.localeCompare(b,'pt-BR'));
@@ -37,11 +55,12 @@ async function openCustomerHistory(){
   const ratio=(a,b)=>b>0?pct(100*a/b):'Sem base de triagem';
   const date=d=>d.split('-').reverse().join('/');
   function drawHistory(){
-   const month=$('ch-month').value, client=$('ch-client').value, relave=$('ch-type').value==='relave';
+   const selectedMonth=$('ch-month').value, client=$('ch-client').value, relave=$('ch-type').value==='relave';
+   const includes=d=>d.startsWith(selectedMonth)&&(!useSelection||inPeriod(d));
    let numerator=0,denominator=0;
    $('ch-rows').innerHTML=clients.filter(name=>!client||client===name).map(name=>{
-    const orders=triage[name].filter(row=>row[0].startsWith(month));
-    const occurrences=events.filter(row=>row.client===name&&row.date.startsWith(month)&&(!relave||/\bRELAVE\b/i.test(row.type)));
+    const orders=triage[name].filter(row=>includes(row[0]));
+    const occurrences=events.filter(row=>row.client===name&&includes(row.date)&&(!relave||isHistoricalRelave(row)));
     const sorted=orders.reduce((sum,row)=>sum+row[2],0);
     const weight=occurrences.reduce((sum,row)=>sum+Math.round(row.kg*100),0);
     numerator+=weight;denominator+=sorted;
@@ -50,10 +69,15 @@ async function openCustomerHistory(){
    $('ch-total').textContent=ratio(numerator,denominator)+' · '+kg(numerator/100)+' em ocorrências / '+kg(denominator/100)+' triados';
   }
   for(const id of ['ch-month','ch-client','ch-type'])$(id).onchange=drawHistory;
+  if(useSelection){
+   $('ch-type').value='relave';
+   $('ch-month').disabled=true;
+   body.firstElementChild.textContent='Histórico importado · '+(day?date(day):week||month||'01/08/2026 a 11/11/2026');
+  }
   drawHistory();
  }catch(error){body.textContent=error.message;}
 }
-$('open-customer-history').onclick=openCustomerHistory;
+$('open-customer-history').onclick=()=>openCustomerHistory();
 $('close-customer-history').onclick=()=>$('customer-history').close();
 const dayLabel=d=>d.slice(8,10)+'/'+d.slice(5,7);
 const dateOf=d=>new Date(d+'T12:00:00Z');
@@ -68,7 +92,8 @@ const sumItems=items=>(items||[]).reduce((s,x)=>s+x.weight,0);
 function totals(rows){const done=rows.filter(r=>!r.auditOnly&&r.items!==null);const sorted=done.reduce((s,r)=>s+r.sorted,0);const waste=done.reduce((s,r)=>s+sumItems(r.items),0);return {sorted,waste,rate:sorted?100*waste/sorted:null,pending:rows.filter(r=>r.items===null&&!r.auditOnly).length}}
 const monthLabel=m=>new Intl.DateTimeFormat('pt-BR',{month:'short',year:'numeric',timeZone:'UTC'}).format(dateOf(m+'-01'));
 const weekLabel=w=>w.slice(5)+'/'+w.slice(0,4);
-const filtered=()=>entries.filter(r=>(!month||r.date.startsWith(month))&&(!week||weekOf(r.date)===week)&&(!day||r.date===day));
+const inPeriod=date=>(!month||date.startsWith(month))&&(!week||weekOf(date)===week)&&(!day||date===day);
+const filtered=()=>entries.filter(r=>inPeriod(r.date));
 function rankings(id,items,key){const agg=new Map();items.forEach(x=>agg.set(x[key],(agg.get(x[key])||0)+x.weight));const sorted=[...agg].sort((a,b)=>b[1]-a[1]);$(id).innerHTML=sorted.map(([label,v])=>'<div class="rank"><span>'+esc(label)+'</span><meter aria-label="'+esc(label)+'" max="'+sorted[0][1]+'" value="'+v+'"></meter><strong>'+kg(v)+'</strong></div>').join('')||'<p class="muted">Nenhuma ocorrência no recorte.</p>'}
 const weighing=new Map(entries.filter(r=>r.weighing).map(r=>[r,r.weighing]));
 function weightDelta(r,received){return Math.round(received*100)-Math.round(sumItems(r.items)*100)}
@@ -112,12 +137,16 @@ $('weighForm').onsubmit=async e=>{
  await commit(e.currentTarget,'weighError',async()=>{await saveWeighing(record,check);weighing.set(record,check);$('weighDialog').close();render()});
 };
 function render(){
- const rows=filtered(), internal=rows.filter(r=>kindOf(r)==='internal'), customer=rows.filter(r=>kindOf(r)==='customer'), t=totals(internal), ct=totals(customer);
+ const rows=filtered(), internal=rows.filter(r=>kindOf(r)==='internal'), customer=rows.filter(r=>kindOf(r)==='customer'), t=totals(internal);
+ const historical=customerHistory?historicalTotals(customerHistory,inPeriod):null;
+ const useHistory=historical?.rate!=null||historical?.waste>0;
+ const ct=useHistory?historical:totals(customer);
+ const customerNote=ct.rate!==null?kg(ct.waste)+' de relave / '+kg(ct.sorted)+' triados · '+(useHistory?'Histórico importado':'Lançamentos do portal'):useHistory?'Histórico sem peso triado no recorte':customerHistoryError?'Histórico indisponível · clique para tentar novamente':customerHistory?'Sem peso triado no recorte':'Carregando histórico…';
  $('scope').textContent=[month&&monthLabel(month),week&&weekLabel(week),day&&dayLabel(day)].filter(Boolean).join(' › ');
  $('back').hidden=!month;
- const kpis=[['Relave interno GAO',t.rate===null?'—':pct(t.rate),t.rate===null?'Sem base':t.rate<=2.5?'Dentro da meta':'Acima da meta',t.rate===null?'':t.rate<=2.5?'good':'bad'],['Peso de relave',kg(t.waste),'Inclui privativos',''],['Peso triado conferido',kg(t.sorted),'Uma vez por comanda',''],['Diferença para a meta',t.rate===null?'—':(t.rate>=2.5?'+':'')+num.format(t.rate-2.5)+' p.p.','Meta de 2,50%',''],['Comandas pendentes',rows.filter(r=>r.items===null).length,'Triagem registrada, relave a conferir',''],[kinds.customer,ct.rate===null?'—':pct(ct.rate),ct.rate===null?'Sem peso triado conferido':kg(ct.waste)+' de relave / '+kg(ct.sorted)+' triados','']];
+ const kpis=[['Relave interno GAO',t.rate===null?'—':pct(t.rate),t.rate===null?'Sem base':t.rate<=2.5?'Dentro da meta':'Acima da meta',t.rate===null?'':t.rate<=2.5?'good':'bad'],['Peso de relave',kg(t.waste),'Inclui privativos',''],['Peso triado conferido',kg(t.sorted),'Uma vez por comanda',''],['Diferença para a meta',t.rate===null?'—':(t.rate>=2.5?'+':'')+num.format(t.rate-2.5)+' p.p.','Meta de 2,50%',''],['Comandas pendentes',rows.filter(r=>r.items===null).length,'Triagem registrada, relave a conferir',''],[kinds.customer,ct.rate===null?'—':pct(ct.rate),customerNote,'']];
  $('cards').innerHTML=kpis.map(([label,value,note,cls])=>'<button class="card" data-command-list><span>'+label+'</span><strong class="'+cls+'">'+value+'</strong><small>'+note+'</small></button>').join('');
- view.querySelectorAll('[data-command-list]').forEach((b,i)=>b.onclick=()=>{if(i===5){showList(customer,kinds.customer);return}if(i===4){showList(rows.filter(r=>r.items===null),'Comandas pendentes');return}$('commands').scrollIntoView({behavior:'smooth'})});
+ view.querySelectorAll('[data-command-list]').forEach((b,i)=>b.onclick=()=>{if(i===5){if(!customerHistory||useHistory||!customer.length)openCustomerHistory(true).finally(()=>{if(host.isConnected)render()});else showList(customer,kinds.customer);return}if(i===4){showList(rows.filter(r=>r.items===null),'Comandas pendentes');return}$('commands').scrollIntoView({behavior:'smooth'})});
  const base=day?entries.filter(r=>r.date.startsWith(month)&&weekOf(r.date)===week):rows;
  const key=r=>!month?r.date.slice(0,7):!week?weekOf(r.date):r.date;
  const label=!month?monthLabel:!week?weekLabel:dayLabel;
@@ -310,6 +339,6 @@ $('form').onsubmit=async e=>{
  });
 };
 view.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close).close());
-const observer=new ResizeObserver(draw);observer.observe($('graph'));render();return ()=>observer.disconnect();
+const observer=new ResizeObserver(draw);observer.observe($('graph'));render();loadCustomerHistory().catch(()=>{}).finally(()=>{if(host.isConnected)render()});return ()=>observer.disconnect();
 
 }
