@@ -8,12 +8,12 @@ const status=['Em execução','Aguardando conferência','Liberada','Precisa de a
 const reason=['Costura aberta','Rasgo','Desgaste','Medida','Acabamento','Mancha','Outro'];
 const fields={
  entrada:()=>select('condition','Condição observada',reason)+select('destination','Encaminhamento',['Reparo','Remodelagem','Avaliar descarte','Outro']),
- reparo:()=>select('defect','Defeito',reason)+select('repair','Reparo realizado',['Bainha','Costura','Remendo','Troca de componente','Outro'])+select('status','Situação',status)+input('previous','Referência do serviço anterior')+input('return_reason','Motivo do retorno'),
+ reparo:()=>select('repair_group','Categoria para pontuação',['Capote','Geral'])+select('defect','Defeito',reason)+select('repair','Reparo realizado',['Bainha','Costura','Remendo','Troca de componente','Outro'])+select('status','Situação',status)+input('previous','Referência do serviço anterior')+input('return_reason','Motivo do retorno'),
  remodelagem:()=>input('original_size','Tamanho original','text',true)+input('change','Alteração realizada','text',true)+input('result_piece','Tipo resultante','text',true)+input('result_size','Tamanho resultante','text',true)+input('result_qty','Quantidade resultante','number',true)+select('status','Situação',status),
  peca_nova:()=>input('supplier','Fornecedor')+input('approved','Aprovadas','number',true)+input('pending','Pendentes','number',true)+input('rejected','Reprovadas','number',true)+select('reason','Motivo da pendência ou reprovação',reason,false)+select('finish','Costuras e acabamento',['Conformes','Com defeitos','Não verificados'])+select('register','Chipagem e cadastro',['Pendentes','Concluídos','Não se aplica'])+input('released','Liberadas para uso','number',true)+input('sample','Identificação da peça ou amostra')+select('method','Método da medição',['Peça plana retangular aberta','Outro formato ou método'],false)+['length','width','weight'].map((k,i)=>'<label>'+['Comprimento (cm)','Largura (cm)','Peso unitário sem embalagem (g)'][i]+'<input type="number" min="0.01" step="any" name="'+k+'"></label>').join('')+'<label>Gramatura (g/m²)<output name="grammage">—</output></label>',
  chipagem:()=>select('reading','Teste de leitura',['Aprovado','Falhou','Não realizado'])+select('register','Cadastro',['Pendente','Concluído']),
  troca_chip:()=>input('piece_ref','Identificação interna da peça','text',true)+input('reason','Motivo da troca','text',true)+select('reading','Teste de leitura',['Aprovado','Falhou','Não realizado'])+select('register','Cadastro',['Pendente','Concluído']),
- condicao:()=>select('condition','Condição observada',reason)+select('recommendation','Recomendação',['Continuar em uso','Reparar','Remodelar','Reavaliar','Recomendar descarte'])+select('decision','Decisão final',['Aguardando decisão','Liberada','Descarte aprovado','Descarte efetivado'])+input('authorizer','Responsável pela autorização')+input('decision_date','Data da decisão','date'),
+ condicao:()=>select('condition','Condição observada',reason)+select('recommendation','Recomendação',['Continuar em uso','Reparar','Remodelar','Reavaliar','Recomendar descarte'])+select('decision','Decisão final',['Aguardando decisão','Liberada','Descarte aprovado','Descarte efetivado'])+input('authorizer','Responsável pela autorização')+input('decision_date','Data da decisão','date')+input('discard_sent_qty','Peças efetivamente enviadas para descarte','number'),
  retirada_chip:()=>input('reason','Motivo da retirada','text',true)+input('destination','Destino do chip'),
  auditoria:()=>input('scope','O que foi conferido','text',true)+input('divergence','Divergência encontrada')+input('action','Providência')
 };
@@ -29,34 +29,48 @@ async function pages(api,table,sort,filter=''){
  }
 }
 const sewingShare=new Intl.NumberFormat('pt-BR',{style:'percent',maximumFractionDigits:1});
+function sewingScore(row){
+ const qty=row.quantity;
+ if(qty==null||!Number.isFinite(Number(qty)))return [];
+ const activity=row.source_row?historicalLabels[row.activity]:row.activity;
+ if((activity==='reparo'||activity==='remodelagem')&&['Em execução','Precisa de ajuste'].includes(row.details?.status))return [];
+ const weights={reparo:2,chipagem:1,retirada_chip:1,entrada:.5,peca_nova:.5,condicao:.5,remodelagem:3,auditoria:.5};
+ const capote=activity==='reparo'&&(row.details?.repair_group==='Capote'||(!row.details?.repair_group&&/\bcapotes?\b/i.test(row.piece_type||'')));
+ const label=activity==='reparo'?(capote?'Reparo de capote':'Reparo geral'):row.label;
+ const weight=capote?3:weights[activity];
+ const scored=weight==null?[]:[[label,Number(qty)*weight]];
+ const sent=Number(row.details?.discard_sent_qty);
+ if(activity==='condicao'&&Number.isInteger(sent)&&sent>0&&sent<=Number(qty))scored.push(['Envio para descarte',sent*.5]);
+ return scored;
+}
 function productionCards(rows,teamRows=rows){
  const teamTotals=new Map();
  for(const row of teamRows){
-  if(row.quantity!=null)teamTotals.set(row.label,(teamTotals.get(row.label)||0)+Number(row.quantity));
+  for(const [label,points] of sewingScore(row))teamTotals.set(label,(teamTotals.get(label)||0)+points);
  }
- const teamTotal=[...teamTotals.values()].reduce((sum,quantity)=>sum+quantity,0);
+ const teamTotal=[...teamTotals.values()].reduce((sum,points)=>sum+points,0);
  const people=new Map();
  for(const row of rows){
   const key=row.operator_id||row.responsible;
-  if(!people.has(key))people.set(key,{name:row.responsible,activities:new Map(),total:0,measured:false});
+  if(!people.has(key))people.set(key,{name:row.responsible,activities:new Map(),total:0,quantity:0,measured:false});
   const person=people.get(key);
-  const stats=person.activities;
-  const activity=stats.get(row.label)||{quantity:0,count:0};
-  if(row.quantity!=null){const quantity=Number(row.quantity);activity.quantity+=quantity;activity.count++;person.total+=quantity;person.measured=true;}
-  stats.set(row.label,activity);
+  if(row.quantity!=null)person.quantity+=Number(row.quantity);
+  for(const [label,points] of sewingScore(row)){
+   person.activities.set(label,(person.activities.get(label)||0)+points);
+   person.total+=points;person.measured=true;
+  }
  }
- return '<p class="sew-share-note">Cartões ordenados pelo volume lançado. O percentual total usa todas as atividades do recorte. Cada atividade também mostra sua participação no total da equipe.</p><div class="sew-production">'+[...people.values()].sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name,'pt-BR')).map(person=>
-  '<article><h3>'+escape(person.name)+'</h3><p class="sew-total"><span>Participação total</span><strong>'+(person.measured&&teamTotal>0?sewingShare.format(person.total/teamTotal):'—')+'</strong><small>'+(person.measured?number(person.total)+' de '+number(teamTotal)+' unidades lançadas':'Sem quantidade informada')+'</small></p><ul>'+[...person.activities].map(([label,value])=>
-   {
+ return '<p class="sew-share-note">Participação calculada sobre os pontos da equipe no recorte. Unidades lançadas e pontos de produção têm contagens próprias.</p><div class="sew-production">'+[...people.values()].sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name,'pt-BR')).map(person=>
+  '<article><h3>'+escape(person.name)+'</h3><p class="sew-total"><span>Participação nos pontos</span><strong>'+(person.measured&&teamTotal>0?sewingShare.format(person.total/teamTotal):'—')+'</strong><small>'+(person.measured?number(person.total)+' de '+number(teamTotal)+' pontos':'Sem pontuação no recorte')+' · '+number(person.quantity)+' unidades lançadas</small></p><ul>'+[...person.activities].map(([label,points])=>{
     const total=teamTotals.get(label);
-    const share=value.count&&total>0?sewingShare.format(value.quantity/total):'—';
-    return '<li><span>'+escape(label)+'</span><span class="sew-share"><strong>'+(value.count?number(value.quantity):'—')+'</strong><small>'+share+'</small></span></li>';
+    const share=total>0?sewingShare.format(points/total):'—';
+    return '<li><span>'+escape(label)+'</span><span class="sew-share"><strong>'+number(points)+' pts</strong><small>'+share+'</small></span></li>';
    }).join('')+'</ul></article>').join('')+'</div>';
 }
 function openProductionTV(root,loadToday){
  const dialog=document.createElement('dialog');
  dialog.className='sew-tv';
- dialog.innerHTML='<header><div><h2>Produção da Costura</h2><p data-tv-status role="status">Carregando produção…</p></div><div><button type="button" data-tv-full>Tela cheia</button> <button type="button" data-tv-close>Fechar</button></div></header><div data-tv-cards></div><p>Quantidades lançadas por atividade.</p>';
+ dialog.innerHTML='<header><div><h2>Produção da Costura</h2><p data-tv-status role="status">Carregando produção…</p></div><div><button type="button" data-tv-full>Tela cheia</button> <button type="button" data-tv-close>Fechar</button></div></header><div data-tv-cards></div><p>Pontos por atividade e unidades lançadas.</p>';
  root.append(dialog);
  const status=dialog.querySelector('[data-tv-status]');
  const cards=dialog.querySelector('[data-tv-cards]');
@@ -198,7 +212,7 @@ function renderPanel(root,rows,manage){
    title.textContent=[r.service_date,r.responsible,r.label,r.piece_type,r.quantity??r.source_quantity].filter(v=>v!=null&&v!=='').join(' · ');
    const metadata=document.createElement('p');metadata.textContent=(r.source_row?'Planilha · linha '+r.source_row+' · carimbo '+r.recorded_local:'Portal · '+r.id+' · lançado em '+new Date(r.created_at).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'}))+[r.customer,r.lot].filter(Boolean).map(v=>' · '+v).join('');
    const body=document.createElement('p');
-   const labels={condition:'Condição',destination:'Encaminhamento',defect:'Defeito',repair:'Reparo',status:'Situação',previous:'Referência anterior',return_reason:'Motivo do retorno',original_size:'Tamanho original',change:'Alteração',result_piece:'Peça resultante',result_size:'Tamanho resultante',result_qty:'Quantidade resultante',supplier:'Fornecedor',approved:'Aprovadas',pending:'Pendentes',rejected:'Reprovadas',reason:'Motivo',finish:'Costura e acabamento',register:'Cadastro',released:'Liberadas',sample:'Amostra',method:'Método',length:'Comprimento (cm)',width:'Largura (cm)',weight:'Peso (g)',grammage:'Gramatura (g/m²)',reading:'Leitura',piece_ref:'Peça',recommendation:'Recomendação',decision:'Decisão',authorizer:'Autorizador',decision_date:'Data da decisão',scope:'Conferência',divergence:'Divergência',action:'Providência',notes:'Observações'};
+   const labels={repair_group:'Categoria para pontuação',discard_sent_qty:'Peças enviadas para descarte',condition:'Condição',destination:'Encaminhamento',defect:'Defeito',repair:'Reparo',status:'Situação',previous:'Referência anterior',return_reason:'Motivo do retorno',original_size:'Tamanho original',change:'Alteração',result_piece:'Peça resultante',result_size:'Tamanho resultante',result_qty:'Quantidade resultante',supplier:'Fornecedor',approved:'Aprovadas',pending:'Pendentes',rejected:'Reprovadas',reason:'Motivo',finish:'Costura e acabamento',register:'Cadastro',released:'Liberadas',sample:'Amostra',method:'Método',length:'Comprimento (cm)',width:'Largura (cm)',weight:'Peso (g)',grammage:'Gramatura (g/m²)',reading:'Leitura',piece_ref:'Peça',recommendation:'Recomendação',decision:'Decisão',authorizer:'Autorizador',decision_date:'Data da decisão',scope:'Conferência',divergence:'Divergência',action:'Providência',notes:'Observações'};
    body.textContent=Object.entries(r.details||{}).map(([k,v])=>(labels[k]||k)+': '+v).join(' · ');
    details.append(title,metadata,body);records.append(details);
   }
@@ -260,6 +274,7 @@ export async function mountSewing(host,api){
     }
     if(activity==='remodelagem'&&Number(d.result_qty)<1)error='Informe a quantidade resultante.';
     if(activity==='condicao'&&d.decision!=='Aguardando decisão'&&(!d.authorizer.trim()||!d.decision_date))error='Informe o responsável e a data da decisão.';
+    if(activity==='condicao'&&Number(d.discard_sent_qty)>qty)error='O envio para descarte não pode exceder a quantidade avaliada neste lançamento.';
     if(error){feedback.textContent=error;return;}
     const submit=e.submitter;submit.disabled=true;feedback.textContent='Salvando…';
     try{
