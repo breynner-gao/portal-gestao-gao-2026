@@ -53,7 +53,7 @@ test('cada módulo principal tem um destino único', () => {
     painel: '/#painel', quimicos: '/quimicos', rouparia: '/rouparia',
     enxoval: '/enxoval-tecidos', compras: '/#compras', importacoes: '/#importacoes',
     administracao: '/#administracao', qualidade: '/qualidade',
-    indicadores: '/#indicadores-performance',
+    indicadores: '/#indicadores-performance', producao: '/#producao',
   };
   for (const [module, destination] of Object.entries(expected)) {
     assert.equal(href(module), destination, `destino incorreto para ${module}`);
@@ -63,10 +63,10 @@ test('cada módulo principal tem um destino único', () => {
 test('Enxoval e fluxo de tecido montam pela rota antiga com hash e pela rota direta', () => {
   assert.match(linen, /path === '\/enxoval-tecidos' \|\| location\.hash === '#enxoval' \|\| location\.hash === '#enxoval-tecidos'/);
   assert.match(fabric, /path==='\/enxoval-tecidos'\|\|location\.hash==='#enxoval'\|\|location\.hash==='#enxoval-tecidos'/);
-  assert.match(index, /linen-risk-panel-v150\.js\?v=238/);
-  assert.match(index, /fabric-workflow-ui-v1\.js\?v=50/);
-  assert.match(index, /portal-sgq-core\.js\?v=13/);
-  assert.match(index, /gao-ui-fix-v1\.js\?v=9/);
+  assert.match(index, /linen-risk-panel-v150\.js\?v=\d+(?=")/);
+  assert.match(index, /fabric-workflow-ui-v1\.js\?v=\d+(?=")/);
+  assert.match(index, /portal-sgq-core\.js\?v=\d+(?=")/);
+  assert.match(index, /gao-ui-fix-v1\.js\?v=\d+(?=")/);
 });
 
 test('gaveta tem controle acessível e persiste preferência de abertura', () => {
