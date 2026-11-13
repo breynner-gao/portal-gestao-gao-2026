@@ -102,6 +102,21 @@ function table(headings, rows, widths) {
     ${rows.map(row=>`<tr>${row.map(cell=>`<td>${html(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
 }
 
+const css = `
+    @page{size:A4;margin:11mm}*{box-sizing:border-box}body{margin:0;background:#edf2f6;color:#102d45;font:12px Arial,sans-serif}main{max-width:760px;margin:18px auto;padding:24px;background:#fff}
+    header{background:#102d45;color:#fff;border-radius:9px;padding:16px 20px;margin-bottom:13px;break-inside:avoid}.brand{display:flex;align-items:center;gap:14px;color:#a1dfe7;letter-spacing:.06em;font-size:11px}.brand img{background:#fff;border-radius:5px;padding:5px;width:110px}h1{font-size:25px;margin:11px 0 5px}h2{font-size:16px;margin:14px 0 5px}p{margin:4px 0}.note,small{color:#526b80;font-size:10.5px}
+    .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.cards div{background:#eef5f9;border-radius:7px;padding:9px;break-inside:avoid}.cards b,.cards span,.cards small{display:block;margin-top:4px}.cards b{font-size:19px;color:#0e6272}
+    table{width:100%;border-collapse:collapse;font-size:11px}th,td{text-align:left;padding:6px;overflow-wrap:break-word;border-bottom:1px solid #dbe5ed}th{background:#e2edf4;overflow-wrap:normal}tr,article{break-inside:avoid}thead{display:table-header-group}h2{break-after:avoid}section.trends{break-before:page}svg{width:100%;display:block;max-height:45mm}svg text{font:9px Arial,sans-serif;fill:#526b80}.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px}.legend i{display:inline-block;width:16px;border-top:2px solid;margin-right:4px;vertical-align:middle}
+    .print{position:sticky;top:0;padding:10px;background:#e2edf4;text-align:center}.print button{background:#2269a4;color:#fff;border:0;border-radius:6px;padding:9px 16px;cursor:pointer}
+    @media print{
+      body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      main{margin:0;padding:4mm 5mm;max-width:none}
+      table{table-layout:fixed}th,td{padding:5px;vertical-align:top;line-height:1.3}td{overflow-wrap:anywhere}
+      th{font-size:10px;word-break:normal}
+      .print{display:none}
+    }
+  `;
+
 export function renderDailyReport(records, date, logo, customer = null) {
   if (customer) {
     if (!customer.id || !customer.name) throw Error('Selecione um cliente cadastrado.');
@@ -123,20 +138,7 @@ export function renderDailyReport(records, date, logo, customer = null) {
   const card = (name, value, base, note) => `<div><strong>${name}</strong><b>${value}</b><span>${base}</span><small>${note}</small></div>`;
   const reasons = new Map();
   gao.forEach(row=>(row.items||[]).forEach(item=>reasons.set(item.reason,(reasons.get(item.reason)||0)+item.weight)));
-  const css = `
-    @page{size:A4;margin:11mm}*{box-sizing:border-box}body{margin:0;background:#edf2f6;color:#102d45;font:12px Arial,sans-serif}main{max-width:760px;margin:18px auto;padding:24px;background:#fff}
-    header{background:#102d45;color:#fff;border-radius:9px;padding:16px 20px;margin-bottom:13px;break-inside:avoid}.brand{display:flex;align-items:center;gap:14px;color:#a1dfe7;letter-spacing:.06em;font-size:11px}.brand img{background:#fff;border-radius:5px;padding:5px;width:110px}h1{font-size:25px;margin:11px 0 5px}h2{font-size:16px;margin:14px 0 5px}p{margin:4px 0}.note,small{color:#526b80;font-size:10.5px}
-    .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.cards div{background:#eef5f9;border-radius:7px;padding:9px;break-inside:avoid}.cards b,.cards span,.cards small{display:block;margin-top:4px}.cards b{font-size:19px;color:#0e6272}
-    table{width:100%;border-collapse:collapse;font-size:11px}th,td{text-align:left;padding:6px;overflow-wrap:break-word;border-bottom:1px solid #dbe5ed}th{background:#e2edf4;overflow-wrap:normal}tr,article{break-inside:avoid}thead{display:table-header-group}h2{break-after:avoid}section.trends{break-before:page}svg{width:100%;display:block;max-height:45mm}svg text{font:9px Arial,sans-serif;fill:#526b80}.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px}.legend i{display:inline-block;width:16px;border-top:2px solid;margin-right:4px;vertical-align:middle}
-    .print{position:sticky;top:0;padding:10px;background:#e2edf4;text-align:center}.print button{background:#2269a4;color:#fff;border:0;border-radius:6px;padding:9px 16px;cursor:pointer}
-    @media print{
-      body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-      main{margin:0;padding:4mm 5mm;max-width:none}
-      table{table-layout:fixed}th,td{padding:5px;vertical-align:top;line-height:1.3}td{overflow-wrap:anywhere}
-      th{font-size:10px;word-break:normal}
-      .print{display:none}
-    }
-  `;
+
   const title = customer ? 'Relatório de relave por ocorrência' : 'Relatório diário de relave';
   const trends = `<section class="trends">${head('Evolução do relave')}
     ${customer ? '<p>'+html(customer.name)+'</p>' : ''}
@@ -176,4 +178,53 @@ export function renderDailyReport(records, date, logo, customer = null) {
   <p class="note">Percentuais calculados como kg de relave sobre kg triados nas comandas conferidas de cada tipo.</p>
   ${trends}`}
   </main></html>`;
+}
+
+function historicalPiece(type){
+ const text=String(type).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+ if(/\blencol\b/.test(text))return 'Lençol';
+ if(/\bprivativos?\b/.test(text))return 'Privativo';
+ if(/\bcobertor\b/.test(text))return 'Cobertor';
+ if(/\bcampo\b/.test(text))return 'Campo cirúrgico';
+ if(/\bcirurgico\b/.test(text))return 'Enxoval cirúrgico';
+ return 'Peça não identificada';
+}
+
+export function renderHistoricalCustomerReport(data,client,date,indicator,logo){
+ const records=data.events.filter(row=>row.client===client&&row.date<=date&&(indicator!=='relave'||/\bRELAVE\b/i.test(row.type)));
+ const triage=(data.triage[client]||[]).filter(row=>row[0]<=date);
+ const time=Date.parse(date+'T00:00:00Z');
+ if(!Number.isFinite(time)||dateKey(time)!==date)throw Error('Selecione uma data válida.');
+ const coverageStart='2026-08-01',coverageEnd='2026-11-11';
+ if(date<coverageStart||date>coverageEnd)throw Error('Escolha um dia coberto pelo histórico importado.');
+ const types=[...new Set(records.map(row=>historicalPiece(row.type)))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+ const year=Number(date.slice(0,4)), month=Number(date.slice(5,7))-1;
+ const startWeek=monday(time),startMonth=Date.UTC(year,month,1),stopMonth=Date.UTC(year,month+1,1),startYear=Date.UTC(year,0,1);
+ const sum=(start,stop,type)=>records.filter(row=>row.date>=dateKey(start)&&row.date<dateKey(stop)&&(!type||historicalPiece(row.type)===type)).reduce((total,row)=>total+Math.round(row.kg*100),0)/100;
+ const base=(start,stop)=>triage.filter(row=>row[0]>=dateKey(start)&&row[0]<dateKey(stop)).reduce((total,row)=>total+row[2],0)/100;
+ const periods=[['Dia',time,time+dayMs],['Semana ISO '+weekLabel(startWeek),startWeek,startWeek+7*dayMs],['Mês',startMonth,stopMonth],['Ano '+year,startYear,Date.UTC(year+1,0,1)]];
+ const byDay=Array.from({length:7},(_,i)=>[startWeek+i*dayMs,startWeek+(i+1)*dayMs,dateKey(startWeek+i*dayMs).slice(8)]);
+ const byWeek=[];
+ for(let start=monday(startMonth);start<stopMonth;start+=7*dayMs)byWeek.push([Math.max(start,startMonth),Math.min(start+7*dayMs,stopMonth),weekLabel(start)]);
+ const byMonth=Array.from({length:12},(_,i)=>[Date.UTC(year,i,1),Date.UTC(year,i+1,1),String(i+1).padStart(2,'0')]);
+ const selected=records.filter(row=>row.date===date);
+ const safeLogo=/^data:image\/(?:webp|png);base64,[A-Za-z0-9+/=]+$/.test(logo||'')?'<img src="'+logo+'" alt="GAO Lavanderia">':'<strong>GAO Lavanderia</strong>';
+ const head=title=>'<header><div class="brand">'+safeLogo+'<span>GESTÃO DA QUALIDADE</span></div><h1>'+title+'</h1><p>'+html(client)+' · Fechamento de '+displayDate(date)+' · '+weekLabel(startWeek)+'</p></header>';
+ const chartFor=(buckets,type)=>chart(buckets.map(([start,stop,label])=>{
+  const covered=dateKey(stop)>coverageStart&&dateKey(start)<=date;
+  return {label,future:false,partial:dateKey(start)<coverageStart||stop>time+dayMs,values:[null,covered&&base(start,stop)>0?100*sum(start,stop,type)/base(start,stop):null]};
+ }),false,true);
+ const totalRows=periods.map(([label,start,stop])=>{const sorted=base(start,stop),weight=sum(start,stop);return [label,kg(weight),kg(sorted),percent(sorted>0?100*weight/sorted:null)];});
+ const detailRows=types.map(type=>[type,...periods.map(([,start,stop])=>kg(sum(start,stop,type)))]);
+ return `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GAO · Ocorrências do cliente · ${date}</title><style>${css}</style>
+ <div class="print"><button id="save-pdf" type="button">Imprimir / salvar PDF</button></div><main>
+ ${head('Relatório diário de ocorrências do cliente')}
+ <p>${indicator==='relave'?'Ocorrências com relave na descrição':'Todas as ocorrências'} · Histórico a partir de 01/08/2026, até o fechamento selecionado.</p>
+ <h2>Resumo do dia, da semana, do mês e do ano</h2>${table(['Período','Ocorrências','Peso triado','Percentual'],totalRows)}
+ <h2>Tipos de peça retornada</h2>${table(['Tipo de peça','Dia','Semana','Mês','Ano'],detailRows)}
+ <h2>Ocorrências do dia</h2>${table(['Comanda','Tipo de peça','Descrição','Peso'],selected.map(row=>[row.order,historicalPiece(row.type),row.type,kg(row.kg)]))}
+ <section class="trends">${head('Evolução por tipo de peça retornada')}
+ <p class="note">Percentual sobre os kg triados do cliente no período. Linha tracejada indica tendência quando há dois ou mais períodos completos com base de triagem. * Período parcial.</p>
+ ${types.map(type=>`<section><h2>${html(type)}</h2><article><h3>Dias da semana</h3>${chartFor(byDay,type)}</article><article><h3>Semanas do mês</h3>${chartFor(byWeek,type)}</article><article><h3>Meses do ano</h3>${chartFor(byMonth,type)}</article></section>`).join('')||'<p class="note">Sem ocorrências para traçar a evolução.</p>'}
+ </section></main></html>`;
 }
