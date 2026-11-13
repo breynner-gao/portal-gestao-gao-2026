@@ -10,7 +10,7 @@ const FETCH_KEYS=[...KEYS,LEGACY_RELAVE];
 const rawSet=Storage.prototype.setItem, rawGet=Storage.prototype.getItem;
 let hydrating=true, queue=Promise.resolve(), bootPromise;
 const norm=s=>String(s||'').trim().toUpperCase();
-function token(){for(const k of Object.keys(localStorage)){if(k.startsWith('sb-')&&k.endsWith('-auth-token'))try{const x=JSON.parse(rawGet.call(localStorage,k)||'null');const t=x?.access_token||x?.currentSession?.access_token||x?.session?.access_token;if(t)return t}catch{}}return''}
+function token(){const active=window.GAO_AUTH_SESSION?.access_token;if(active)return active;for(const k of Object.keys(localStorage)){if(k.startsWith('sb-')&&k.endsWith('-auth-token'))try{const x=JSON.parse(rawGet.call(localStorage,k)||'null');const t=x?.access_token||x?.currentSession?.access_token||x?.session?.access_token;if(t)return t}catch{}}return''}
 function headers(extra={}){return {apikey:API,Authorization:`Bearer ${token()||API}`,'Content-Type':'application/json',...extra}}
 function parse(v){try{return typeof v==='string'?JSON.parse(v):v}catch{return null}}
 function uniq(arr,key){const m=new Map();for(const x of arr||[]){if(!x)continue;const k=key(x);if(!m.has(k))m.set(k,x);else m.set(k,{...m.get(k),...x})}return [...m.values()]}
@@ -46,13 +46,15 @@ function backup(k,v,tag){if(!v)return;try{rawSet.call(localStorage,`gao.backup.$
 function enqueue(k,v){queue=queue.catch(()=>{}).then(()=>upsert(k,v));return queue}
 Storage.prototype.setItem=function(k,v){rawSet.call(this,k,v);if(this===localStorage&&KEYS.includes(k)&&!hydrating){backup(k,v,'latest');enqueue(k,v).catch(e=>{console.error('[GAO V106 sync]',e);window.GAO_CHEM_DB_SYNC_ERROR=String(e?.message||e);window.dispatchEvent(new Event('gao-chem-db-sync-error'))})}};
 async function boot(){try{
+ const session=await window.GAO_AUTH_READY;
+ if(!session?.access_token)throw Error('Sessão indisponível.');
  const remote=await getRemote(),map=new Map(remote.map(x=>[x.state_key,x.payload]));
  for(const k of KEYS){
   const localText=rawGet.call(localStorage,k),L=parse(localText)||{},R=map.get(k)||{};backup(k,localText,'pre-hydration');
   let merged;
   if(k===RELAVE){const oldLocal=parse(rawGet.call(localStorage,LEGACY_RELAVE))||{},oldRemote=map.get(LEGACY_RELAVE)||{};merged=mergeRelave(R,L,oldRemote,oldLocal)}
   else merged=merge(k,R,L);
-  const txt=JSON.stringify(merged);rawSet.call(localStorage,k,txt);backup(k,txt,'merged');await upsert(k,txt);
+  const txt=JSON.stringify(merged);rawSet.call(localStorage,k,txt);backup(k,txt,'merged');
  }
  window.GAO_CHEM_DB_READY=true;window.GAO_CHEM_DB_SYNC_ERROR='';window.dispatchEvent(new Event('gao-chem-db-ready'));
  if(location.pathname.startsWith('/quimicos/'))setTimeout(()=>window.dispatchEvent(new PopStateEvent('popstate')),80);
@@ -89,6 +91,7 @@ window.GAO_RELAVE_ARCHIVE_EXCLUDE=async(command,date)=>{
  if(!(await saved.json()).length)throw Error('O histórico foi atualizado. Tente excluir novamente.');
 };
 window.GAO_CHEM_DB_READY=false;window.GAO_CHEM_DB_SYNC_ERROR='';
-window.GAO_CHEM_DB_SYNC=async()=>{await bootPromise;if(!window.GAO_CHEM_DB_READY)throw Error(window.GAO_CHEM_DB_SYNC_ERROR||'Banco indisponível');for(const key of [RELAVE,WASTE]){const value=rawGet.call(localStorage,key);if(value)await enqueue(key,value)}};
+window.GAO_CHEM_DB_LOAD=()=>bootPromise;
+window.GAO_CHEM_DB_SYNC=async(key)=>{await bootPromise;if(!window.GAO_CHEM_DB_READY)throw Error(window.GAO_CHEM_DB_SYNC_ERROR||'Banco indisponível');for(const stateKey of (key ? [key] : [RELAVE,WASTE])){if(!KEYS.includes(stateKey))throw Error('Estado inválido.');const value=rawGet.call(localStorage,stateKey);if(value)await enqueue(stateKey,value)}};
 bootPromise=boot();
 })();
