@@ -206,7 +206,7 @@ export function renderHistoricalCustomerReport(data,client,date,indicator,logo){
  const byDay=Array.from({length:7},(_,i)=>[startWeek+i*dayMs,startWeek+(i+1)*dayMs,dateKey(startWeek+i*dayMs).slice(8)]);
  const byWeek=[];
  for(let start=monday(startMonth);start<stopMonth;start+=7*dayMs)byWeek.push([Math.max(start,startMonth),Math.min(start+7*dayMs,stopMonth),weekLabel(start)]);
- const byMonth=Array.from({length:12},(_,i)=>[Date.UTC(year,i,1),Date.UTC(year,i+1,1),String(i+1).padStart(2,'0')]);
+ const byMonth=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'].map((label,i)=>[Date.UTC(year,i,1),Date.UTC(year,i+1,1),label]);
  const selected=records.filter(row=>row.date===date);
  const safeLogo=/^data:image\/(?:webp|png);base64,[A-Za-z0-9+/=]+$/.test(logo||'')?'<img src="'+logo+'" alt="GAO Lavanderia">':'<strong>GAO Lavanderia</strong>';
  const head=title=>'<header><div class="brand">'+safeLogo+'<span>GESTÃO DA QUALIDADE</span></div><h1>'+title+'</h1><p>'+html(client)+' · Fechamento de '+displayDate(date)+' · '+weekLabel(startWeek)+'</p></header>';
