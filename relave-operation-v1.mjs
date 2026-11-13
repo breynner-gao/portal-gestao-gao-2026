@@ -134,8 +134,15 @@ const weighing=new Map(entries.filter(r=>r.weighing).map(r=>[r,r.weighing]));
 function weightDelta(r,received){return Math.round(received*100)-Math.round(sumItems(r.items)*100)}
 function weightStatus(r,check){return !check?'Aguardando pesagem':!weightDelta(r,check.received)?'Conferida':check.resolved?'Tratada':'Em tratativa'}
 const signedKg=cents=>(cents>0?'+':'')+kg(cents/100);
-function renderWeighing(rows){
- const checks=rows.filter(r=>r.canWeigh&&r.command&&sumItems(r.items)>0).map(r=>({r,check:weighing.get(r),status:weightStatus(r,weighing.get(r))}));
+function weighingChecks(rows){
+ return rows.filter(r=>r.canWeigh&&r.command&&sumItems(r.items)>0).map(r=>({r,check:weighing.get(r),status:weightStatus(r,weighing.get(r))}));
+}
+function pendingCommands(rows,checks){
+ const pending=new Map(rows.filter(r=>r.items===null).map(r=>[r,'Relave a conferir']));
+ for(const {r,status} of checks)if(status==='Aguardando pesagem'||status==='Em tratativa')pending.set(r,status);
+ return pending;
+}
+function renderWeighing(checks){
  $('weighSummary').innerHTML=['Aguardando pesagem','Em tratativa','Tratada'].map(status=>'<button class="card" data-weight-filter="'+status+'"><span>'+status+'</span><strong>'+checks.filter(x=>x.status===status).length+'</strong></button>').join('');
  $('weighSummary').querySelectorAll('button').forEach(b=>b.onclick=()=>{$('weighFilter').value=b.dataset.weightFilter;render()});
  const filter=$('weighFilter').value;
@@ -173,15 +180,16 @@ $('weighForm').onsubmit=async e=>{
 };
 function render(){
  const rows=filtered(), internal=rows.filter(r=>kindOf(r)==='internal'), customer=rows.filter(r=>kindOf(r)==='customer'), t=totals(internal);
+ const checks=weighingChecks(internal), pending=pendingCommands(rows,checks);
  const historical=customerHistory?historicalTotals(customerHistory,inPeriod):null;
  const useHistory=historical?.rate!=null||historical?.waste>0;
  const ct=useHistory?historical:totals(customer);
  const customerNote=ct.rate!==null?kg(ct.waste)+' de relave / '+kg(ct.sorted)+' triados · '+(useHistory?'Histórico importado':'Lançamentos do portal'):useHistory?'Histórico sem peso triado no recorte':customerHistoryError?'Histórico indisponível · clique para tentar novamente':customerHistory?'Sem peso triado no recorte':'Carregando histórico…';
  $('scope').textContent=[month&&monthLabel(month),week&&weekLabel(week),day&&dayLabel(day)].filter(Boolean).join(' › ');
  $('back').hidden=!month;
- const kpis=[['Relave interno GAO',t.rate===null?'—':pct(t.rate),t.rate===null?'Sem base':t.rate<=2.5?'Dentro da meta':'Acima da meta',t.rate===null?'':t.rate<=2.5?'good':'bad'],['Peso de relave',kg(t.waste),'Inclui privativos',''],['Peso triado conferido',kg(t.sorted),'Uma vez por comanda',''],['Diferença para a meta',t.rate===null?'—':(t.rate>=2.5?'+':'')+num.format(t.rate-2.5)+' p.p.','Meta de 2,50%',''],['Comandas pendentes',rows.filter(r=>r.items===null).length,'Triagem registrada, relave a conferir',''],[kinds.customer,ct.rate===null?'—':pct(ct.rate),customerNote,'']];
+ const kpis=[['Relave interno GAO',t.rate===null?'—':pct(t.rate),t.rate===null?'Sem base':t.rate<=2.5?'Dentro da meta':'Acima da meta',t.rate===null?'':t.rate<=2.5?'good':'bad'],['Peso de relave',kg(t.waste),'Inclui privativos',''],['Peso triado conferido',kg(t.sorted),'Uma vez por comanda',''],['Diferença para a meta',t.rate===null?'—':(t.rate>=2.5?'+':'')+num.format(t.rate-2.5)+' p.p.','Meta de 2,50%',''],['Comandas pendentes',pending.size,'Relave a conferir, pesagem ou tratativa',''],[kinds.customer,ct.rate===null?'—':pct(ct.rate),customerNote,'']];
  $('cards').innerHTML=kpis.map(([label,value,note,cls])=>'<button class="card" data-command-list><span>'+label+'</span><strong class="'+cls+'">'+value+'</strong><small>'+note+'</small></button>').join('');
- view.querySelectorAll('[data-command-list]').forEach((b,i)=>b.onclick=()=>{if(i===5){if(!customerHistory||useHistory||!customer.length)openCustomerHistory(true).finally(()=>{if(host.isConnected)render()});else showList(customer,kinds.customer);return}if(i===4){showList(rows.filter(r=>r.items===null),'Comandas pendentes');return}$('commands').scrollIntoView({behavior:'smooth'})});
+ view.querySelectorAll('[data-command-list]').forEach((b,i)=>b.onclick=()=>{if(i===5){if(!customerHistory||useHistory||!customer.length)openCustomerHistory(true).finally(()=>{if(host.isConnected)render()});else showList(customer,kinds.customer);return}if(i===4){showList([...pending.keys()],'Comandas pendentes',pending);return}$('commands').scrollIntoView({behavior:'smooth'})});
  const base=day?entries.filter(r=>r.date.startsWith(month)&&weekOf(r.date)===week):rows;
  const key=r=>!month?r.date.slice(0,7):!week?weekOf(r.date):r.date;
  const label=!month?monthLabel:!week?weekLabel:dayLabel;
@@ -192,7 +200,7 @@ function render(){
  $('hint').textContent=!month?'Clique no mês para abrir as semanas ISO.':!week?'Clique na semana para abrir os dias.':'Clique no dia para conferir as comandas.';
  rankings('reasons',internal.flatMap(r=>r.items||[]),'reason');rankings('types',internal.flatMap(r=>r.items||[]),'type');
  renderCommandRows();
- renderWeighing(internal);
+ renderWeighing(checks);
  draw();
 }
 let commandLimit=150;
@@ -242,7 +250,7 @@ function draw(){
  groups.forEach((g,i)=>{if(g.rate===null){connected=false;return}const x=l+(i+.5)*dx,yy=y(g.rate,pMax);if(connected)c.lineTo(x,yy);else c.moveTo(x,yy);connected=true});c.stroke();
  groups.forEach((g,i)=>{if(g.rate===null)return;c.fillStyle='#52dab4';c.beginPath();c.arc(l+(i+.5)*dx,y(g.rate,pMax),4,0,Math.PI*2);c.fill()});
 }
-function showList(rows,title){$('detailTitle').textContent=title;$('detailBody').replaceChildren(...rows.map(r=>{const b=document.createElement('button');b.textContent=(r.command||'Sem comanda')+' · '+dayLabel(r.date)+' · '+r.client;b.onclick=()=>openEntry(r);return b}));if(!rows.length)$('detailBody').textContent='Nenhuma comanda neste recorte.';if(!$('detail').open)$('detail').showModal()}
+function showList(rows,title,statuses){$('detailTitle').textContent=title;$('detailBody').replaceChildren(...rows.map(r=>{const b=document.createElement('button');b.textContent=(r.command||'Sem comanda')+' · '+dayLabel(r.date)+' · '+r.client;const status=statuses?.get(r);if(status)b.textContent+=' · '+status;b.onclick=()=>{if(status&&status!=='Relave a conferir'){$('detail').close();openWeighing(r)}else openEntry(r)};return b}));if(!rows.length)$('detailBody').textContent='Nenhuma comanda neste recorte.';if(!$('detail').open)$('detail').showModal()}
 function openEntry(r){
  const t=totals([r]);$('detailTitle').textContent='Comanda '+(r.command||'Sem comanda');
  $('detailBody').innerHTML='<p class="muted">'+kinds[kindOf(r)]+'</p><p>'+esc(r.client||'—')+' · '+dayLabel(r.date)+' · '+kg(r.sorted)+' triados</p><p class="muted">'+(t.rate===null?'Triagem registrada. Falta confirmar se houve relave e registrar o peso, se houver.':kg(t.waste)+' de relave · '+pct(t.rate))+'</p>'+(r.items?.length?'<div class="table"><table><thead><tr><th>Enxoval</th><th>Motivo</th><th>Relave</th></tr></thead><tbody>'+r.items.map(i=>'<tr><td>'+esc(i.type)+'</td><td>'+esc(i.reason)+'</td><td>'+kg(i.weight)+'</td></tr>').join('')+'</tbody></table></div>':'');
