@@ -20,13 +20,56 @@ const fields={
 function grams(d){return d.method==='Peça plana retangular aberta'&&[d.length,d.width,d.weight].every(v=>Number(v)>0)?Number(d.weight)*10000/(Number(d.length)*Number(d.width)):null}
 const number=n=>Number(n).toLocaleString('pt-BR');
 const dateNow=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Sao_Paulo'}).format(new Date());
-async function pages(api,table,sort){
+async function pages(api,table,sort,filter=''){
  const rows=[];
  for(let offset=0;;offset+=500){
-  const batch=await api(table,'select=*&order='+sort+'&limit=500&offset='+offset);
+  const batch=await api(table,'select=*&order='+sort+'&limit=500&offset='+offset+filter);
   rows.push(...batch);
   if(batch.length<500)return rows;
  }
+}
+function productionCards(rows){
+ const people=new Map();
+ for(const row of rows){
+  const key=row.operator_id||row.responsible;
+  if(!people.has(key))people.set(key,{name:row.responsible,activities:new Map()});
+  const stats=people.get(key).activities;
+  const activity=stats.get(row.label)||{quantity:0,count:0};
+  if(row.quantity!=null){activity.quantity+=Number(row.quantity);activity.count++;}
+  stats.set(row.label,activity);
+ }
+ return '<div class="sew-production">'+[...people.values()].sort((a,b)=>a.name.localeCompare(b.name,'pt-BR')).map(person=>
+  '<article><h3>'+escape(person.name)+'</h3><ul>'+[...person.activities].map(([label,value])=>
+   '<li><span>'+escape(label)+'</span><strong>'+(value.count?number(value.quantity):'—')+'</strong></li>').join('')+'</ul></article>').join('')+'</div>';
+}
+function openProductionTV(root,loadToday){
+ const dialog=document.createElement('dialog');
+ dialog.className='sew-tv';
+ dialog.innerHTML='<header><div><h2>Produção da Costura</h2><p data-tv-status role="status">Carregando produção…</p></div><div><button type="button" data-tv-full>Tela cheia</button> <button type="button" data-tv-close>Fechar</button></div></header><div data-tv-cards></div><p>Quantidades lançadas por atividade.</p>';
+ root.append(dialog);
+ const status=dialog.querySelector('[data-tv-status]');
+ const cards=dialog.querySelector('[data-tv-cards]');
+ async function refresh(){
+  if(!dialog.open||!dialog.isConnected){clearInterval(timer);return;}
+  const date=dateNow();
+  try{
+   const rows=await loadToday(date);
+   if(!dialog.open||!dialog.isConnected)return;
+   cards.innerHTML=rows.length?productionCards(rows):'<p>Nenhum lançamento no dia.</p>';
+   status.textContent=date.split('-').reverse().join('/')+' · Atualizado às '+new Date().toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo'});
+  }catch{status.textContent='Atualização indisponível. Nova tentativa em até 60 segundos.';}
+ }
+ dialog.querySelector('[data-tv-close]').onclick=()=>dialog.close();
+ const full=dialog.querySelector('[data-tv-full]');
+ full.hidden=!dialog.requestFullscreen;
+ full.onclick=async()=>{
+  try{if(document.fullscreenElement===dialog)await document.exitFullscreen();else await dialog.requestFullscreen();}
+  catch{status.textContent='Tela cheia indisponível neste navegador.';}
+ };
+ const timer=setInterval(refresh,60000);
+ dialog.addEventListener('close',()=>{clearInterval(timer);dialog.remove();},{once:true});
+ dialog.showModal();
+ void refresh();
 }
 function renderPanel(root,rows,manage){
  root.innerHTML='<h2>'+(manage?'Painel da Costura':'Meus lançamentos')+'</h2><form class="sew-grid">'+input('from','De','date')+input('to','Até','date')+select('person','Profissional',[...new Set(rows.map(r=>r.responsible))].sort(),false)+select('activity','Atividade',Object.values(activities),false)+select('piece','Tipo de peça',[...new Set(rows.map(r=>r.piece_type).filter(Boolean))].sort(),false)+input('customer','Cliente')+input('lot','Lote')+select('period','Agrupar por',['Dia','Mês'],false)+'</form><div data-results></div>';
@@ -42,7 +85,7 @@ function renderPanel(root,rows,manage){
    group[3]++;if(r.quantity!=null)group[4]+=r.quantity;else group[5]++;
    groups.set(key,group);
   }
-  result.innerHTML='<p>'+number(filtered.length)+' lançamentos no recorte. Quantidades são comparáveis dentro da mesma atividade. Uma peça pode passar por vários serviços.</p>'+table(['Período','Profissional','Atividade','Lançamentos','Quantidade informada','Sem quantidade em peças'],[...groups.values()].map(g=>[...g.slice(0,4),number(g[4]),g[5]]))+'<h3>Lançamentos</h3><p>O histórico da planilha conserva as quantidades e descrições originais. O tipo de peça aparece quando foi informado.</p><div data-records></div>';
+  result.innerHTML=(manage&&filtered.length?productionCards(filtered):'')+'<p>'+number(filtered.length)+' lançamentos no recorte. Quantidades são comparáveis dentro da mesma atividade. Uma peça pode passar por vários serviços.</p>'+table(['Período','Profissional','Atividade','Lançamentos','Quantidade informada','Sem quantidade em peças'],[...groups.values()].map(g=>[...g.slice(0,4),number(g[4]),g[5]]))+'<h3>Lançamentos</h3><p>O histórico da planilha conserva as quantidades e descrições originais. O tipo de peça aparece quando foi informado.</p><div data-records></div>';
   const records=result.querySelector('[data-records]');
   for(const r of filtered){
    const details=document.createElement('details'), title=document.createElement('summary');
@@ -57,7 +100,7 @@ function renderPanel(root,rows,manage){
  form.addEventListener('input',update);update();
 }
 export async function mountSewing(host,api){
- host.innerHTML='<style>.sew-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:12px;margin:12px 0}.sew-grid label{display:grid;gap:5px;align-content:start}.sew-grid input,.sew-grid select{min-width:0;width:100%;padding:8px}.sew-table{overflow:auto}.sew-table table{width:100%;border-collapse:collapse}.sew-table th,.sew-table td{text-align:left;padding:8px;border-bottom:1px solid #b8c8d7}#q142 .sew details{padding:8px 0;border-bottom:1px solid #b8c8d7}#q142 .sew output{display:block;padding:8px}</style><div class="q142-card sew"><a href="/#qualidade">← Qualidade</a><h1>Costura</h1><p role="status">Verificando acesso…</p></div>';
+ host.innerHTML='<style>.sew-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:12px;margin:12px 0}.sew-grid label{display:grid;gap:5px;align-content:start}.sew-grid input,.sew-grid select{min-width:0;width:100%;padding:8px}.sew-table{overflow:auto}.sew-table table{width:100%;border-collapse:collapse}.sew-table th,.sew-table td{text-align:left;padding:8px;border-bottom:1px solid #b8c8d7}#q142 .sew details{padding:8px 0;border-bottom:1px solid #b8c8d7}#q142 .sew output{display:block;padding:8px}.sew-production{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:12px;margin:12px 0}.sew-production article{background:#192632;border:1px solid #40566e;border-radius:12px;padding:14px;color:#eef4ff}.sew-production h3{margin:0 0 10px;color:#eef4ff}.sew-production ul{list-style:none;margin:0;padding:0}.sew-production li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid #304054}.sew-production strong{color:#8ed5fa}.sew-tv{width:min(96vw,1500px);max-width:none;max-height:96vh;padding:24px;border:1px solid #40566e;border-radius:14px;background:#111820;color:#eef4ff;font-size:clamp(16px,1.6vw,28px);overflow:auto}.sew-tv:fullscreen{width:100%;height:100%;max-height:none}.sew-tv::backdrop{background:#000b}.sew-tv header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;background:transparent;border:0}.sew-tv h2{color:#eef4ff;margin:0}.sew-tv button{background:#192632;color:#eef4ff}</style><div class="q142-card sew"><a href="/#qualidade">← Qualidade</a><h1>Costura</h1><p role="status">Verificando acesso…</p></div>';
  const root=host.querySelector('.sew'), message=root.querySelector('[role=status]');
  try{
   await window.GAO_AUTH_READY;
@@ -68,16 +111,21 @@ export async function mountSewing(host,api){
   const operators=await api('rpc/quality_sewing_operators');
   const names=new Map(operators.map(r=>[r.id,r.label]));
   const identity=names.get(user.id)||user.email||user.id;
-  root.insertAdjacentHTML('beforeend','<div class="q142-tabs">'+(access.write?'<button type="button" data-entry>Lançar serviço</button>':'')+'<button type="button" data-panel>'+(access.manage?'Painel da Costura':'Meus lançamentos')+'</button></div><section data-content></section>');
+  root.insertAdjacentHTML('beforeend','<div class="q142-tabs">'+(access.write?'<button type="button" data-entry>Lançar serviço</button>':'')+'<button type="button" data-panel>'+(access.manage?'Painel da Costura':'Meus lançamentos')+'</button>'+(access.manage?'<button type="button" data-tv>Modo TV</button>':'')+'</div><section data-content></section>');
   const content=root.querySelector('[data-content]');
   message.textContent='';
+  const labelCurrent=r=>({...r,responsible:names.get(r.operator_id)||(r.operator_id===user.id?identity:r.operator_id),label:activities[r.activity]||r.activity});
+  root.querySelector('[data-tv]')?.addEventListener('click',()=>openProductionTV(root,async date=>{
+   const rows=await pages(api,'quality_sewing_entries','service_date.desc,id.asc','&service_date=eq.'+encodeURIComponent(date));
+   return rows.map(labelCurrent);
+  }));
   let screen=0;
   const panel=async()=>{
    const version=++screen;content.textContent='Carregando lançamentos…';
    try{
     const [current,history]=await Promise.all([pages(api,'quality_sewing_entries','service_date.desc,id.asc'),access.manage?pages(api,'quality_sewing_history','service_date.desc,source_row.asc'):[]]);
     if(version!==screen)return;
-    renderPanel(content,[...current.map(r=>({...r,responsible:names.get(r.operator_id)||(r.operator_id===user.id?identity:r.operator_id),label:activities[r.activity]})),...history.map(r=>({...r,label:activities[historicalLabels[r.activity]]||r.activity}))].sort((a,b)=>b.service_date.localeCompare(a.service_date)),access.manage);
+    renderPanel(content,[...current.map(labelCurrent),...history.map(r=>({...r,label:activities[historicalLabels[r.activity]]||r.activity}))].sort((a,b)=>b.service_date.localeCompare(a.service_date)),access.manage);
    }catch{if(version===screen)content.textContent='Não foi possível carregar os lançamentos. Clique no painel para tentar novamente.';}
   };
   const entry=()=>{
