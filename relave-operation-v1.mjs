@@ -5,12 +5,56 @@ const layout="<style>\n*{box-sizing:border-box}:host{display:block;width:100%;mi
 export function mountRelave(host,{records,archiveError,excludeRecord,saveRecord,saveWeighing,openHistory,loadClients}){
 const view=host.attachShadow({mode:'open'});
 view.innerHTML=layout;
+view.querySelector('.controls').insertAdjacentHTML('beforeend','<button type="button" id="open-customer-history">Histórico por cliente</button>');
+const historyDialog=document.createElement('dialog');
+historyDialog.id='customer-history';
+historyDialog.innerHTML='<div class="top"><h2>Histórico de ocorrências por cliente</h2><button type="button" id="close-customer-history">Fechar</button></div><div id="customer-history-body"></div>';
+view.append(historyDialog);
 
 const $=id=>view.getElementById(id);
 const num=new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const kg=n=>num.format(n)+' kg';
 const pct=n=>num.format(n)+'%';
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function openCustomerHistory(){
+ const dialog=$('customer-history'), body=$('customer-history-body');
+ dialog.showModal();
+ body.textContent='Carregando histórico…';
+ try{
+  const session=window.GAO_AUTH_SESSION||await window.GAO_AUTH_READY;
+  if(!session?.access_token)throw Error('Entre no portal para consultar o histórico.');
+  const response=await fetch('https://fquzuxdqvhecijjuxbmg.supabase.co/rest/v1/chemical_portal_state?select=payload&state_key=eq.gao.chemicals.relave.customer-history.202608-20261111',{
+   headers:{apikey:'sb_publishable_icrk6TaZexgiSIq63zX_ng_40JGaYlJ',Authorization:'Bearer '+session.access_token}
+  });
+  if(!response.ok)throw Error('Não foi possível consultar o histórico.');
+  const data=(await response.json())[0]?.payload;
+  if(!data)throw Error('Histórico indisponível para esta conta.');
+  const {events,triage}=data;
+  body.innerHTML='<p>01/08/2026 a 11/11/2026</p><div class="controls"><label>Mês<select id="ch-month"><option value="">Todo o período</option><option value="2026-08">Agosto</option><option value="2026-09">Setembro</option><option value="2026-10">Outubro</option><option value="2026-11">Novembro até dia 11</option></select></label><label>Cliente<select id="ch-client"><option value="">Todos do histórico</option></select></label><label>Indicador<select id="ch-type"><option value="all">Todas as ocorrências</option><option value="relave">Relave na descrição</option></select></label></div><p class="muted">Percentual = kg de ocorrências ÷ kg triados do mesmo cliente e período. A base inclui comandas sem ocorrência.</p><p id="ch-total" role="status"></p><div id="ch-rows"></div>';
+  const clients=Object.keys(triage).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  for(const client of clients)$('ch-client').add(new Option(client,client));
+  const table=(headers,rows)=>'<div class="table"><table><thead><tr>'+headers.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr></thead><tbody>'+rows.map(row=>'<tr>'+row.map(x=>'<td>'+esc(x)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>';
+  const ratio=(a,b)=>b>0?pct(100*a/b):'Sem base de triagem';
+  const date=d=>d.split('-').reverse().join('/');
+  function drawHistory(){
+   const month=$('ch-month').value, client=$('ch-client').value, relave=$('ch-type').value==='relave';
+   let numerator=0,denominator=0;
+   $('ch-rows').innerHTML=clients.filter(name=>!client||client===name).map(name=>{
+    const orders=triage[name].filter(row=>row[0].startsWith(month));
+    const occurrences=events.filter(row=>row.client===name&&row.date.startsWith(month)&&(!relave||/\bRELAVE\b/i.test(row.type)));
+    const sorted=orders.reduce((sum,row)=>sum+row[2],0);
+    const weight=occurrences.reduce((sum,row)=>sum+Math.round(row.kg*100),0);
+    numerator+=weight;denominator+=sorted;
+    return '<details class="card"><summary>'+esc(name)+' · '+ratio(weight,sorted)+' · '+kg(weight/100)+' / '+kg(sorted/100)+'</summary><details><summary>Ocorrências ('+occurrences.length+')</summary>'+table(['Data','Comanda','Tipo','Peso'],occurrences.map(row=>[date(row.date),row.order,row.type,kg(row.kg)]))+'</details><details><summary>Comandas triadas ('+orders.length+')</summary>'+table(['Data','Comanda','Peso triado'],orders.map(row=>[date(row[0]),row[1],kg(row[2]/100)]))+'</details></details>';
+   }).join('');
+   $('ch-total').textContent=ratio(numerator,denominator)+' · '+kg(numerator/100)+' em ocorrências / '+kg(denominator/100)+' triados';
+  }
+  for(const id of ['ch-month','ch-client','ch-type'])$(id).onchange=drawHistory;
+  drawHistory();
+ }catch(error){body.textContent=error.message;}
+}
+$('open-customer-history').onclick=openCustomerHistory;
+$('close-customer-history').onclick=()=>$('customer-history').close();
 const dayLabel=d=>d.slice(8,10)+'/'+d.slice(5,7);
 const dateOf=d=>new Date(d+'T12:00:00Z');
 function weekOf(d){const dt=dateOf(d);dt.setUTCDate(dt.getUTCDate()+4-(dt.getUTCDay()||7));const y=dt.getUTCFullYear();const week=Math.ceil(((dt-Date.UTC(y,0,1))/86400000+1)/7);return y+'-S'+String(week).padStart(2,'0')}
