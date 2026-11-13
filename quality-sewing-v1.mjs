@@ -71,13 +71,47 @@ function openProductionTV(root,loadToday){
  dialog.showModal();
  void refresh();
 }
+function sewingWeek(date){
+ const monday=new Date(date+'T00:00:00Z');
+ monday.setUTCDate(monday.getUTCDate()-((monday.getUTCDay()+6)%7));
+ const thursday=new Date(monday);
+ thursday.setUTCDate(thursday.getUTCDate()+3);
+ const year=thursday.getUTCFullYear();
+ const week=Math.ceil(((thursday-Date.UTC(year,0,1))/86400000+1)/7);
+ return {key:monday.toISOString().slice(0,10),label:'S'+String(week).padStart(2,'0')+' · '+year};
+}
+const sewingMonth=date=>new Intl.DateTimeFormat('pt-BR',{month:'short',year:'numeric',timeZone:'UTC'}).format(new Date(date+'-01T00:00:00Z'));
+const sewingDay=date=>date.split('-').reverse().join('/');
+function sewingBuckets(rows,month,week){
+ const groups=new Map();
+ for(const row of rows){
+  const date=row.service_date, iso=sewingWeek(date);
+  const [key,label]=!month?[date.slice(0,7),sewingMonth(date.slice(0,7))]:!week?[iso.key,iso.label]:[date,sewingDay(date)];
+  const group=groups.get(key)||{key,label,total:0,measured:false};
+  if(row.quantity!=null){group.total+=Number(row.quantity);group.measured=true;}
+  groups.set(key,group);
+ }
+ return [...groups.values()].sort((a,b)=>a.key.localeCompare(b.key));
+}
+function sewingChart(groups,month,week,day){
+ const max=Math.max(1,...groups.map(g=>g.total));
+ const trail=['Meses',month&&sewingMonth(month),week&&groups.length&&sewingWeek(groups[0].key).label,day&&sewingDay(day)].filter(Boolean);
+ return '<section class="sew-chart"><h3>Evolução da produção</h3><p>'+escape(trail.join(' › '))+'</p>'
+  +(month?'<button type="button" data-sew-back>← '+(day?'Dias':week?'Semanas':'Meses')+'</button>':'')
+  +'<p>'+(day?'Lançamentos do dia abaixo.':!month?'Selecione um mês para ver as semanas ISO.':!week?'Selecione uma semana para ver os dias do mês.':'Selecione um dia para ver os lançamentos.')+'</p>'
+  +'<small>Quantidade informada por atividade. Uma peça pode aparecer em mais de uma atividade.</small>'
+  +(groups.length?'<div class="sew-chart-bars">'+groups.map(g=>'<button type="button" data-sew-bucket="'+g.key+'" aria-pressed="'+(day===g.key)+'"><span>'+escape(g.label)+'</span><span class="sew-bar-track"><span style="width:'+(100*g.total/max)+'%"></span></span><strong>'+(g.measured?number(g.total):'—')+'</strong></button>').join('')+'</div>':'<p>Nenhum lançamento no recorte.</p>')+'</section>';
+}
 function renderPanel(root,rows,manage){
  root.innerHTML='<h2>'+(manage?'Painel da Costura':'Meus lançamentos')+'</h2><form class="sew-grid">'+input('from','De','date')+input('to','Até','date')+select('person','Profissional',[...new Set(rows.map(r=>r.responsible))].sort(),false)+select('activity','Atividade',Object.values(activities),false)+select('piece','Tipo de peça',[...new Set(rows.map(r=>r.piece_type).filter(Boolean))].sort(),false)+input('customer','Cliente')+input('lot','Lote')+select('period','Agrupar por',['Dia','Mês'],false)+'</form><div data-results></div>';
  const form=root.querySelector('form'), result=root.querySelector('[data-results]');
+ let month='',week='',day='';
  const table=(heads,body)=>'<div class="sew-table"><table><thead><tr>'+heads.map(x=>'<th>'+x+'</th>').join('')+'</tr></thead><tbody>'+body.map(row=>'<tr>'+row.map(x=>'<td>'+escape(x)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>';
  function update(){
   const f=Object.fromEntries(new FormData(form));
-  const filtered=rows.filter(r=>(!f.from||r.service_date>=f.from)&&(!f.to||r.service_date<=f.to)&&(!f.person||r.responsible===f.person)&&(!f.activity||r.label===f.activity)&&(!f.piece||r.piece_type===f.piece)&&(!f.customer||r.customer?.toLowerCase().includes(f.customer.toLowerCase()))&&(!f.lot||r.lot?.toLowerCase().includes(f.lot.toLowerCase())));
+  const matching=rows.filter(r=>(!f.from||r.service_date>=f.from)&&(!f.to||r.service_date<=f.to)&&(!f.person||r.responsible===f.person)&&(!f.activity||r.label===f.activity)&&(!f.piece||r.piece_type===f.piece)&&(!f.customer||r.customer?.toLowerCase().includes(f.customer.toLowerCase()))&&(!f.lot||r.lot?.toLowerCase().includes(f.lot.toLowerCase())));
+  const chartRows=matching.filter(r=>(!month||r.service_date.startsWith(month))&&(!week||sewingWeek(r.service_date).key===week));
+  const filtered=day?chartRows.filter(r=>r.service_date===day):chartRows;
   const groups=new Map();
   for(const r of filtered){
    const parts=[f.period==='Dia'?r.service_date:r.service_date.slice(0,7),r.responsible,r.label];
@@ -85,7 +119,9 @@ function renderPanel(root,rows,manage){
    group[3]++;if(r.quantity!=null)group[4]+=r.quantity;else group[5]++;
    groups.set(key,group);
   }
-  result.innerHTML=(manage&&filtered.length?productionCards(filtered):'')+'<p>'+number(filtered.length)+' lançamentos no recorte. Quantidades são comparáveis dentro da mesma atividade. Uma peça pode passar por vários serviços.</p>'+table(['Período','Profissional','Atividade','Lançamentos','Quantidade informada','Sem quantidade em peças'],[...groups.values()].map(g=>[...g.slice(0,4),number(g[4]),g[5]]))+'<h3>Lançamentos</h3><p>O histórico da planilha conserva as quantidades e descrições originais. O tipo de peça aparece quando foi informado.</p><div data-records></div>';
+  result.innerHTML=(manage?sewingChart(sewingBuckets(chartRows,month,week),month,week,day):'')+(manage&&filtered.length?productionCards(filtered):'')+'<p>'+number(filtered.length)+' lançamentos no recorte. Quantidades são comparáveis dentro da mesma atividade. Uma peça pode passar por vários serviços.</p>'+table(['Período','Profissional','Atividade','Lançamentos','Quantidade informada','Sem quantidade em peças'],[...groups.values()].map(g=>[...g.slice(0,4),number(g[4]),g[5]]))+'<h3 data-records-title tabindex="-1">Lançamentos</h3><p>O histórico da planilha conserva as quantidades e descrições originais. O tipo de peça aparece quando foi informado.</p><div data-records></div>';
+  result.querySelector('[data-sew-back]')?.addEventListener('click',()=>{if(day)day='';else if(week)week='';else month='';update();result.querySelector('[data-sew-back], [data-sew-bucket]')?.focus();});
+  result.querySelectorAll('[data-sew-bucket]').forEach(button=>button.addEventListener('click',()=>{const key=button.dataset.sewBucket;if(!month)month=key;else if(!week)week=key;else day=key;update();if(day){const title=result.querySelector('[data-records-title]');title?.focus();title?.scrollIntoView({block:'start'});}else result.querySelector('[data-sew-bucket], [data-sew-back]')?.focus();}));
   const records=result.querySelector('[data-records]');
   for(const r of filtered){
    const details=document.createElement('details'), title=document.createElement('summary');
@@ -97,10 +133,10 @@ function renderPanel(root,rows,manage){
    details.append(title,metadata,body);records.append(details);
   }
  }
- form.addEventListener('input',update);update();
+ form.addEventListener('input',()=>{month='';week='';day='';update();});update();
 }
 export async function mountSewing(host,api){
- host.innerHTML='<style>.sew-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:12px;margin:12px 0}.sew-grid label{display:grid;gap:5px;align-content:start}.sew-grid input,.sew-grid select{min-width:0;width:100%;padding:8px}.sew-table{overflow:auto}.sew-table table{width:100%;border-collapse:collapse}.sew-table th,.sew-table td{text-align:left;padding:8px;border-bottom:1px solid #b8c8d7}#q142 .sew details{padding:8px 0;border-bottom:1px solid #b8c8d7}#q142 .sew output{display:block;padding:8px}.sew-production{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:12px;margin:12px 0}.sew-production article{background:#192632;border:1px solid #40566e;border-radius:12px;padding:14px;color:#eef4ff}.sew-production h3{margin:0 0 10px;color:#eef4ff}.sew-production ul{list-style:none;margin:0;padding:0}.sew-production li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid #304054}.sew-production strong{color:#8ed5fa}.sew-tv{width:min(96vw,1500px);max-width:none;max-height:96vh;padding:24px;border:1px solid #40566e;border-radius:14px;background:#111820;color:#eef4ff;font-size:clamp(16px,1.6vw,28px);overflow:auto}.sew-tv:fullscreen{width:100%;height:100%;max-height:none}.sew-tv::backdrop{background:#000b}.sew-tv header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;background:transparent;border:0}.sew-tv h2{color:#eef4ff;margin:0}.sew-tv button{background:#192632;color:#eef4ff}</style><div class="q142-card sew"><a href="/#qualidade">← Qualidade</a><h1>Costura</h1><p role="status">Verificando acesso…</p></div>';
+ host.innerHTML='<style>.sew-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:12px;margin:12px 0}.sew-grid label{display:grid;gap:5px;align-content:start}.sew-grid input,.sew-grid select{min-width:0;width:100%;padding:8px}.sew-table{overflow:auto}.sew-table table{width:100%;border-collapse:collapse}.sew-table th,.sew-table td{text-align:left;padding:8px;border-bottom:1px solid #b8c8d7}#q142 .sew details{padding:8px 0;border-bottom:1px solid #b8c8d7}#q142 .sew output{display:block;padding:8px}.sew-production{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:12px;margin:12px 0}.sew-production article{background:#192632;border:1px solid #40566e;border-radius:12px;padding:14px;color:#eef4ff}.sew-production h3{margin:0 0 10px;color:#eef4ff}.sew-production ul{list-style:none;margin:0;padding:0}.sew-production li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid #304054}.sew-production strong{color:#8ed5fa}.sew-tv{width:min(96vw,1500px);max-width:none;max-height:96vh;padding:24px;border:1px solid #40566e;border-radius:14px;background:#111820;color:#eef4ff;font-size:clamp(16px,1.6vw,28px);overflow:auto}.sew-tv:fullscreen{width:100%;height:100%;max-height:none}.sew-tv::backdrop{background:#000b}.sew-tv header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;background:transparent;border:0}.sew-tv h2{color:#eef4ff;margin:0}.sew-tv button{background:#192632;color:#eef4ff}.sew-chart{border:1px solid #40566e;border-radius:12px;padding:14px;margin:12px 0}.sew-chart h3{color:#eef4ff;margin-top:0}.sew-chart-bars{display:grid;gap:6px;margin-top:12px}.sew-chart-bars button{display:grid;grid-template-columns:minmax(75px,auto) 1fr minmax(3ch,auto);align-items:center;gap:10px;text-align:left;width:100%;background:#131c27;color:#eef4ff;border:1px solid #40566e;min-height:44px}.sew-chart-bars button:hover,.sew-chart-bars button[aria-pressed=true]{border-color:#8ed5fa}.sew-chart-bars strong{text-align:right}.sew-bar-track{height:12px;border-radius:4px;background:#253746}.sew-bar-track span{display:block;height:100%;background:#5bacec;border-radius:4px}</style><div class="q142-card sew"><a href="/#qualidade">← Qualidade</a><h1>Costura</h1><p role="status">Verificando acesso…</p></div>';
  const root=host.querySelector('.sew'), message=root.querySelector('[role=status]');
  try{
   await window.GAO_AUTH_READY;
