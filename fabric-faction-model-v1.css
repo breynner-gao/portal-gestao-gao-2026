@@ -1,0 +1,63 @@
+.fw-faction-page {
+  --faction-bg: light-dark(#f4f6f8,#141a21);
+  --faction-panel: light-dark(#fff,#1d2630);
+  --faction-text: light-dark(#192938,#edf2f7);
+  --faction-muted: light-dark(#586979,#aebcc9);
+  --faction-line: light-dark(#dde4ea,#364451);
+  --faction-accent: light-dark(#17634f,#91d7bf);
+  --faction-on: light-dark(#fff,#12382c);
+  --faction-soft: light-dark(#e7f2ed,#233f36);
+  color-scheme: light dark;
+  display: grid;
+  grid-template-columns: 176px minmax(0,1fr);
+  border: 1px solid var(--faction-line);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--faction-bg);
+  color: var(--faction-text);
+  font: 14px/1.5 'Segoe UI', Arial, sans-serif;
+}
+.fw-faction-page .faction-stage-nav {padding: 22px 12px; background: var(--faction-panel); border-right: 1px solid var(--faction-line)}
+.fw-faction-page .faction-stage-nav .fw-tabs {display:grid; gap: 5px; margin:0}
+.fw-faction-page .faction-stage-nav strong {padding: 0 12px 9px; letter-spacing: 1.5px; font-size: 11px; color:var(--faction-muted)}
+.fw-faction-page .faction-stage-nav button {background:transparent; color:var(--faction-muted); border-color:transparent; text-align:left}
+.fw-faction-page .faction-stage-nav button[aria-pressed=true] {background:var(--faction-soft); color:var(--faction-accent)}
+.fw-faction-page .faction-access {margin:32px 8px 0; padding-top:16px; border-top:1px solid var(--faction-line); color:var(--faction-muted)}
+.fw-faction-page .faction-access summary {cursor:pointer}
+.fw-faction-page .faction-stage-content {min-width:0; padding:26px 24px}
+.fw-faction-page .fw-faction-heading {padding:0; margin:0 0 16px; border:0; background:none}
+.fw-faction-page .fw-faction-heading small {color:var(--faction-muted); letter-spacing:1.1px; font-size:11px}
+.fw-faction-page .fw-faction-heading h3 {font-size:25px; font-weight:600; margin:5px 0 0}
+.fw-faction-page .fw-faction-heading p {margin:4px 0 0; color:var(--faction-muted)}
+.fw-faction-page .faction-flow {display:flex; flex-wrap:wrap; gap:10px; color:var(--faction-muted); margin:0 0 22px; font-size:12px}
+.fw-faction-page .faction-flow [aria-current=step] {font-weight:600; color:var(--faction-accent)}
+.fw-faction-page .fw-overview-grid {grid-template-columns:repeat(3,minmax(0,1fr)); margin:0 0 22px}
+.fw-faction-page .fw-overview-metric {background:var(--faction-panel); border-color:var(--faction-line); color:var(--faction-text); padding:16px}
+.fw-faction-page .fw-overview-metric :is(span,small) {color:var(--faction-muted); font-size:12px}
+.fw-faction-page .fw-overview-metric strong {font-size:23px; font-weight:600; margin:4px 0}
+.fw-faction-page .fw-panel {background:var(--faction-panel); border-color:var(--faction-line); color:var(--faction-text); margin:0 0 22px}
+.fw-faction-page section.fw-panel {padding:0; overflow:hidden}
+.fw-faction-page .fw-faction-toolbar {padding:16px; color:var(--faction-muted)}
+.fw-faction-page .fw-faction-toolbar h3 {font-size:16px; font-weight:600; color:var(--faction-text)}
+.fw-faction-page .fw-faction-toolbar .fw-tabs {margin:0}
+.fw-faction-page .fw-table-scroll {padding:0; margin:0; overflow-x:auto}
+.fw-faction-page table {font-size:12px; border-collapse:collapse; font-variant-numeric:tabular-nums}
+.fw-faction-page .fw-panel th {background:var(--faction-bg); color:var(--faction-muted); font-weight:500; padding:12px 10px; white-space:nowrap}
+.fw-faction-page .fw-panel td {background:var(--faction-panel); color:var(--faction-text); padding:15px 10px; border-top:1px solid var(--faction-line); vertical-align:middle}
+.fw-faction-page .fw-panel td small {color:var(--faction-muted)}
+.fw-faction-page :is(button,input,select) {font:inherit}
+.fw-faction-page :is(button,input:not([type=checkbox]),select) {border:1px solid var(--faction-line); border-radius:7px; padding:8px; background:var(--faction-panel); color:var(--faction-text)}
+.fw-faction-page input[type=checkbox] {accent-color:var(--faction-accent)}
+.fw-faction-page .fw-panel button[data-faction-action]:is([data-faction-action=reserve],[data-faction-action=group-plan],[data-faction-action=group-delivery],[data-faction-action=group-finish]) {background:var(--faction-accent); border-color:var(--faction-accent); color:var(--faction-on)}
+.fw-faction-page .fw-status {display:inline-block; margin-top:5px; padding:4px 9px; border-radius:6px; color:var(--faction-accent); background:var(--faction-soft)}
+.fw-faction-page .faction-notice {margin:-6px 0 22px; border-left:3px solid var(--faction-accent); padding:10px 14px; background:var(--faction-soft)}
+@media (max-width:1000px) {
+  .fw-faction-page {grid-template-columns:1fr}
+  .fw-faction-page .faction-stage-nav {padding:10px; border-right:0; border-bottom:1px solid var(--faction-line)}
+  .fw-faction-page .faction-stage-nav .fw-tabs {display:flex; flex-wrap:wrap}
+  .fw-faction-page .faction-stage-nav strong {display:none}
+  .fw-faction-page .faction-access {margin:6px 0 0; padding:4px 8px}
+  .fw-faction-page .faction-stage-content {padding:20px 14px}
+  .fw-faction-page .faction-stage-nav button {flex:0 1 auto; min-height:44px}
+}
+@media (max-width:440px) {.fw-faction-page .fw-overview-grid {grid-template-columns:1fr}}
