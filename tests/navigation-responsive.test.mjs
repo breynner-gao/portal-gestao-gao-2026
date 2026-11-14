@@ -6,6 +6,7 @@ const ui = await readFile(new URL('../src/gao-ui-fix-v1.js', import.meta.url), '
 const core = await readFile(new URL('../portal-sgq-core.js', import.meta.url), 'utf8');
 const index = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const linen = await readFile(new URL('../linen-risk-panel-v150.js', import.meta.url), 'utf8');
+const faction = await readFile(new URL('../fabric-faction-workflow-v1.mjs', import.meta.url), 'utf8');
 const fabric = await readFile(new URL('../fabric-workflow-ui-v1.js', import.meta.url), 'utf8');
 
 test('tablet usa gaveta lateral vertical e botão móvel próprio', () => {
@@ -86,5 +87,33 @@ test('Portal da Facção tem entrada no menu principal e carrega no mesmo painel
   assert.match(core, /r==='enxoval'\|\|r==='faccao'/);
   assert.match(linen, /path === '\/enxoval-tecidos\/faccao'/);
   assert.match(fabric, /tab:directFactionRoute\?'faction-desk':'overview'/);
-  assert.match(fabric, /\['provision','Provisão Facção'\][\s\S]*?\['cut','Corte'\][\s\S]*?\['sewing','Costura'\]/);
+  assert.match(faction, /\['provision', 'Provisão Facção',[\s\S]*?\['cut', 'Corte',[\s\S]*?\['sewing', 'Costura',/);
+});
+
+test('as três etapas da Facção exibem as ordens e lotes do portal em tabelas', async () => {
+  const {createFactionWorkflow} = await import('../fabric-faction-workflow-v1.mjs');
+  const state = {
+    orders:[{id:'1',status:'ABERTA',order_number:'2'}],
+    items:[{id:'item',order_id:'1',product_name:'Camisa P53',product_reference:'53',ordered_pieces:200,consumption_m_per_piece:1.2,fabric_id:'p53'}],
+    fabric:[{id:'p53',name:'Azul P53'}], suppliers:[],
+    moves:[{order_item_id:'item',lot_id:'roll',reserved_delta_m:144}],
+    cuts:[{id:'corte-01',order_item_id:'item',produced_pieces:80,consumed_m:94}],
+    purchaseItems:[],purchaseOrders:[],returns:[]
+  };
+  let onClick;
+  const page={querySelector:()=>null,querySelectorAll:()=>[],addEventListener:(type,handler)=>{onClick=handler;}};
+  const host={querySelector:q=>q==='.fw-faction-page'?page:null};
+  const wf=createFactionWorkflow({
+    state,esc:String,n:value=>Number(value)||0,br:String,physicalFactionMeters:()=>0,
+    fabricMatches:(a,b)=>a===b,internalName:row=>row.name,demandView:()=>'',render(){},
+    liveBalances:()=>[{id:'roll',fabric_id:'p53',lot_code:'R1',quality_status:'APROVADO',onhand:200,reserved:144}],
+    orderStats:()=>({accepted:0,rejected:0})
+  });
+  wf.bind(host);
+  assert.match(wf.view(), /Ordens de produção[\s\S]*?Camisa P53[\s\S]*?144 m/);
+  const open = stage=>onClick({target:{closest:q=>q==='[data-fw-faction-stage]'?{dataset:{fwFactionStage:stage}}:null}});
+  open('cut');
+  assert.match(wf.view(),/Quantidade a cortar neste lote[\s\S]*?Máx. com reserva: 120/);
+  open('sewing');
+  assert.match(wf.view(),/Lotes recebidos do corte[\s\S]*?corte-01[\s\S]*?80/);
 });

@@ -1,3 +1,6 @@
+import { createFactionWorkflow } from '../fabric-faction-workflow-v1.mjs';
+import { createFactionDesk } from '../fabric-faction-portal-v1.mjs';
+import { createFabricWorkbookImport } from '../fabric-workbook-import-v1.mjs';
 import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readFile } from "node:fs/promises";
@@ -176,6 +179,9 @@ const vmContext = {
   ...standards,
   ...linen,
   ...buying,
+  createFactionWorkflow,
+  createFactionDesk,
+  createFabricWorkbookImport,
   document,
   window,
   Event: window.Event,
