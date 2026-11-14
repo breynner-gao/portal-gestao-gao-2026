@@ -1,4 +1,4 @@
-import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=2';
+import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=3';
 import {createFactionDesk} from '/fabric-faction-portal-v1.mjs?v=2';
 import {createFabricWorkbookImport} from '/fabric-workbook-import-v1.mjs?v=1';
 import {buildPendingProductionCoverage,applyPendingProductionCoverage,compactDimensionKey} from '/linen-risk-rules-v150.mjs?v=226';
@@ -41,6 +41,7 @@ async function reload(){
  Object.assign(state,{fabric,suppliers,recipes,consumptionReferences,costReferences,lots,orders,items,moves,returns,purchaseOrders,purchaseItems,purchaseReceipts,aliases,inspections,tracking,cuts,materialLinks,standards,reconciliations,pieceOrders,pieceReceipts,enfestos});
  try{state.cutPlans=await loadTable('fabric_faction_cut_plans','created_at');state.cutPlansError=false;}
  catch{state.cutPlans=[];state.cutPlansError=true;}
+ try{state.deliveryDocuments=await loadTable('fabric_faction_delivery_documents','created_at');state.deliveryDocumentsError=false;}catch{state.deliveryDocuments=[];state.deliveryDocumentsError=true;}
  state.snapshot=window.GAO_LINEN_NEED_SNAPSHOT||state.snapshot||[];
  try{
   state.factionCounts=await api('/rest/v1/fabric_faction_stock_counts?select=source_key,line_no,reported_on,counted_on,material,supplier_or_brand,width_m,reported_m,physical_m&organization_id=eq.'+state.org+'&order=reported_on.desc,source_key.desc,line_no.asc');

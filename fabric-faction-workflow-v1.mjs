@@ -27,11 +27,24 @@ export function createFactionWorkflow({
 
   const plans = () => state.cutPlans || [];
   const openPlans = () => plans().filter(plan=>['PLANEJADO','INICIADO'].includes(plan.status));
-  const cutPlanRpc = (action,data) => rpc('fabric_faction_cut_plan',{p_org:state.org,p_action:action,p_data:data});
   const isManaged = cut => plans().some(plan=>plan.cut_id===cut.id);
   const legacyPending = (row, records) => Math.max(0,
     sum(row.cuts.filter(cut=>cut.sent_date&&!isManaged(cut)),cut=>cut.produced_pieces)-
     sum(records.filter(record=>record.order_item_id===row.item.id&&!record.cut_batch_id),record=>n(record.accepted_pieces)+n(record.rejected_pieces)));
+  const groupId = plan => plan.group_id||plan.id;
+  const groupRows = id => plans().filter(plan=>groupId(plan)===id);
+  const groups = () => [...new Set(plans().map(groupId))].map(groupRows);
+  const groupRpc = (action,id,lines=[],options={}) => rpc('fabric_faction_group',{
+    p_org:state.org,p_group:id,p_action:action,p_lines:lines,p_options:options
+  });
+  const today = () => new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  const groupCuts = id => groupRows(id).flatMap(plan=>state.cuts.filter(cut=>cut.id===plan.cut_id));
+  const toBase64 = file => new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(String(reader.result).split(',')[1]);
+    reader.onerror=()=>reject(Error('Não foi possível ler o PDF.'));
+    reader.readAsDataURL(file);
+  });
   const deliveries = cut => state.returns.filter(record=>record.cut_batch_id===cut.id);
   const accounted = cut => sum(deliveries(cut),record=>n(record.accepted_pieces)+n(record.rejected_pieces));
 
@@ -113,23 +126,23 @@ export function createFactionWorkflow({
         </select></td>
         <td><input type="number" data-faction-cut-quantity min="1" max="${maximum}" step="1" inputmode="numeric" aria-label="Quantidade a cortar de ${esc(row.item.product_name)}" value="${quantity||''}" ${maximum?'':'disabled'}><small>Máx. com reserva: ${pieces(maximum)}</small></td>
         <td data-faction-estimate>${meters(quantity*row.unit)}</td><td>${meters(round(sum(row.lots,l=>l.mine-l.committed)))}</td>
-        <td>${button('Gerar mapa e lote de corte','cut',row.item.id,!maximum||state.cutPlansError)}</td></tr>`;
+        <td>${button('Usar esta linha','cut',row.item.id,!maximum||state.cutPlansError)}</td></tr>`;
     }).join('');
     const lots = orders.flatMap(row=>row.cuts.map(cut=>`<tr><td>${button(esc(cut.id.slice(0,8)),'map',cut.id)}<small>${dateLabel(cut.created_at)}</small></td>
       <td>${product(row)}</td><td>${pieces(cut.produced_pieces)}</td><td>${meters(cut.consumed_m)}</td><td>${cut.sent_date?'Enviado à facção':'Corte concluído'}</td></tr>`)).join('');
-    const pending = plans().filter(plan=>plan.status!=='CONCLUIDO').flatMap(plan=>{
-      const row=orders.find(row=>row.item.id===plan.order_item_id);
-      if(!row)return [];
+    const pending = groups().filter(group=>group[0].status!=='CONCLUIDO').map(group=>{
+      const plan=group[0], id=groupId(plan);
       const editable=plan.status==='PLANEJADO';
-      const actions = button('Mapa','plan-map',plan.id) +
-        (editable?button('Fracionar lote','split',plan.id)+button('Iniciar corte','start',plan.id)+button('Cancelar lote','cancel',plan.id):'') +
-        (plan.status==='INICIADO'?button('Finalizar corte','finish',plan.id):'');
-      return `<tr><td>${esc(plan.id.slice(0,8))}<small>${plan.parent_id?'Origem '+esc(plan.parent_id.slice(0,8)):''}</small></td>
-        <td>${product(row)}</td><td>${pieces(plan.pieces)}</td><td>${meters(plan.reserved_m)}</td><td>${esc(plan.status)}</td><td><div class="fw-tabs">${actions}</div></td></tr>`;
+      const actions=button('Mapa','group-map',id)+(editable?button('Fracionar lote','group-split',id)+button('Iniciar corte','group-start',id)+button('Cancelar lote','group-cancel',id):'')+
+        (plan.status==='INICIADO'?button('Finalizar corte','group-finish',id):'');
+      const names=group.map(line=>esc(orders.find(row=>row.item.id===line.order_item_id)?.item.product_name||'—')).join(' · ');
+      const parent=plans().find(row=>row.id===plan.parent_id);
+      return `<tr><td>${esc(id.slice(0,8))}<small>${parent?'Origem '+esc(groupId(parent).slice(0,8)):''}</small></td><td>${names}</td>
+        <td>${pieces(sum(group,line=>line.pieces))}</td><td>${meters(sum(group,line=>line.reserved_m))}</td><td>${esc(plan.status)}</td><td><div class="fw-tabs">${actions}</div></td></tr>`;
     }).join('');
     return (state.cutPlansError?'<p role="alert">Não foi possível carregar o planejamento de corte. Atualize os dados.</p>':'')+
       metrics([['Em lotes abertos',pieces(sum(orders,r=>r.cutting)),'Peças planejadas ou com corte iniciado'],['Cortadas',pieces(sum(orders,r=>r.cut)),'Peças em lotes concluídos'],['Saldo para novos lotes',pieces(sum(orders,r=>r.remaining)),'Peças ainda disponíveis para corte']]) +
-      panel('Quantidade que cabe neste corte',table(['Produto / tecido','Ordem','Distribuídas','Corte aberto','Cortadas','Saldo','Rolo reservado','Quantidade a cortar neste lote','Consumo previsto','Reserva livre','Ação'],rows,'Reserve tecido em Provisão Facção para começar.')) +
+      panel('Quantidade que cabe neste corte',table(['Produto / tecido','Ordem','Distribuídas','Corte aberto','Cortadas','Saldo','Rolo reservado','Quantidade a cortar neste lote','Consumo previsto','Reserva livre','Ação'],rows,'Reserve tecido em Provisão Facção para começar.'),button('Gerar mapa e lote de corte','group-plan','',state.cutPlansError)) +
       panel('Lotes de corte',table(['Lote / origem','Produto','Peças','Reserva','Situação','Ação'],pending,'Nenhum lote planejado.')) +
       section('Cortes concluídos',table(['Lote / data','Produto','Peças cortadas','Consumo real','Situação'],lots,'Nenhum lote concluído.'));
 
@@ -137,11 +150,17 @@ export function createFactionWorkflow({
 
   function sewing(orders) {
     const managed = new Set(plans().filter(plan=>plan.cut_id).map(plan=>plan.cut_id));
-    const lots = orders.flatMap(row=>row.cuts.map(cut=>`<tr><td>${button(esc(cut.id.slice(0,8)),'map',cut.id)}</td><td>${product(row)}</td><td>${pieces(cut.produced_pieces)}</td>
-      <td>${managed.has(cut.id)?pieces(sum(deliveries(cut),r=>r.accepted_pieces)):'—'}</td>
-      <td>${managed.has(cut.id)?pieces(cut.produced_pieces-accounted(cut)):'Ver retorno por OS'}</td>
-      <td>${dateLabel(cut.sent_date)}</td><td>${dateLabel(cut.expected_date)}</td><td><div class="fw-tabs">${button(cut.sent_date?'Editar previsão':'Enviar à facção','dispatch',cut.id)}
-      ${managed.has(cut.id)?button('Registrar entrega','deliver-lot',cut.id,!cut.sent_date||accounted(cut)>=cut.produced_pieces):''}</div></td></tr>`)).join('');
+    const lots = groups().filter(group=>group.some(plan=>plan.cut_id)).map(group=>{
+      const id=groupId(group[0]), cuts=groupCuts(id), sent=cuts.every(cut=>cut.sent_date);
+      const left=sum(cuts,cut=>n(cut.produced_pieces)-accounted(cut));
+      const names=group.map(line=>esc(orders.find(row=>row.item.id===line.order_item_id)?.item.product_name||'—')).join(' · ');
+      return `<tr><td>${button(esc(id.slice(0,8)),'group-map',id)}</td><td>${names}</td><td>${pieces(sum(cuts,c=>c.produced_pieces))}</td>
+        <td>${pieces(sum(cuts,c=>sum(deliveries(c),r=>r.accepted_pieces)))}</td><td>${pieces(left)}</td>
+        <td>${sent?dateLabel(cuts[0].sent_date):'Aguardando envio'}</td><td>${dateLabel(cuts[0]?.expected_date)}</td>
+        <td><div class="fw-tabs">${button(sent?'Editar previsão':'Enviar à facção','group-dispatch',id)}
+        ${button('Registrar entrega','group-delivery',id,!sent||!left||state.deliveryDocumentsError)}</div></td></tr>`;
+    }).join('') + orders.flatMap(row=>row.cuts.filter(cut=>!managed.has(cut.id)).map(cut=>`<tr><td>${button(esc(cut.id.slice(0,8)),'map',cut.id)}</td><td>${product(row)}</td><td>${pieces(cut.produced_pieces)}</td>
+      <td>—</td><td>Ver retorno por OS</td><td>${dateLabel(cut.sent_date)}</td><td>${dateLabel(cut.expected_date)}</td><td>${button(cut.sent_date?'Editar previsão':'Enviar à facção','dispatch',cut.id)}</td></tr>`)).join('');
     const receiving = orders.filter(row=>row.cuts.some(cut=>cut.sent_date&&!managed.has(cut.id))).map(row=>{
       const legacyReturns=state.returns.filter(record=>record.order_item_id===row.item.id&&!record.cut_batch_id);
       const sent=sum(row.cuts.filter(cut=>cut.sent_date&&!managed.has(cut.id)),cut=>cut.produced_pieces);
@@ -154,10 +173,13 @@ export function createFactionWorkflow({
       const row=orders.find(o=>o.item.id===record.order_item_id);
       return row?[`<tr><td>${dateLabel(record.returned_at)}</td><td>${product(row)}<small>${record.cut_batch_id?'Lote '+esc(record.cut_batch_id.slice(0,8)):'Retorno por OS'}</small></td><td>${pieces(record.accepted_pieces)}</td><td>${pieces(record.rejected_pieces)}</td><td>${esc(record.notes||'—')}</td></tr>`]:[];
     }).join('');
+    const docs=table(['Entrega / lote','Nota fiscal','Ação'],(state.deliveryDocuments||[]).map(doc=>
+      `<tr><td>${dateLabel(doc.delivered_on)} · ${esc(doc.cut_group_id.slice(0,8))}</td><td>${esc(doc.filename)}</td>
+      <td>${button('Ver documentos','documents',doc.id)}</td></tr>`).join(''),'Nenhuma entrega com nota fiscal registrada.');
     return metrics([['Em costura',pieces(sum(orders,row=>Math.max(0,sum(row.cuts.filter(c=>c.sent_date),c=>c.produced_pieces)-row.receivedByOrder))),'Peças enviadas aguardando retorno'],['Entregues',pieces(sum(orders,row=>row.returns.accepted)),'Peças aceitas no retorno']]) +
       panel('Lotes recebidos do corte',table(['Lote','OS / produto','Cortadas','Entregues','Pendentes','Envio à facção','Previsão','Ação'],lots,'Finalize um corte para liberar as peças à costura.')) +
       panel('Entregas de cortes anteriores por ordem',table(['OS / produto','Enviadas','Aceitas','Rejeitadas','Pendentes','Ação'],receiving,'Envie um lote à facção para registrar o retorno.')) +
-      panel('Histórico de entregas',table(['Data','OS / produto','Aceitas','Rejeitadas','Observação'],returns,'Nenhuma entrega registrada.'));
+      panel('Entregas e documentos',docs)+panel('Histórico de entregas',table(['Data','OS / produto','Aceitas','Rejeitadas','Observação'],returns,'Nenhuma entrega registrada.'));
   }
 
   function consolidated(orders) {
@@ -232,24 +254,43 @@ export function createFactionWorkflow({
               if(lots.size>1)throw Error('Para devolução de tecido de vários rolos, use o lançamento de retorno em Produção e facção. Registre aqui as peças sem a sobra, se o retorno de tecido for separado.');
             }
             await returnForm(values.id,values);
-          } else if(kind==='plan') {
-            await cutPlanRpc('plan',{id:values.requestId,order_item_id:values.order_item_id,lot_id:values.lot_id,pieces:Number(values.pieces)});
-          } else if(kind==='split') {
-            const ids=JSON.parse(values.part_ids);
-            const parts=new FormData(form).getAll('part').flatMap((qty,index)=>Number(qty)>0?[{id:ids[index],pieces:Number(qty)}]:[]);
-            await cutPlanRpc('split',{id:values.id,parts});
-          } else if(kind==='finish'||kind==='cancel') {
-            await cutPlanRpc(kind,{id:values.id,pieces:Number(values.pieces),consumed_m:Number(values.consumed_m),notes:values.notes});
-          } else if(kind==='deliver-lot') {
-            await rpc('fabric_faction_deliver_cut',{p_org:state.org,p_cut:values.id,p_key:values.requestId,
-              p_accepted:Number(values.accepted),p_rejected:Number(values.rejected),p_notes:values.notes});
+          } else if(kind==='group-plan') {
+            const lines=[...form.querySelectorAll('[data-plan-entry]')].flatMap(entry=>{
+              const quantity=Number(entry.querySelector('input').value);
+              const [order_item_id,lot_id]=entry.querySelector('select').value.split(':');
+              return quantity?[{id:entry.dataset.planEntry,order_item_id,lot_id,pieces:quantity}]:[];
+            });
+            if(!lines.length)throw Error('Informe as peças a cortar.');
+            await groupRpc('plan',values.id,lines);
+            lines.forEach(line=>draft.delete(line.order_item_id));
+          } else if(kind==='group-split') {
+            const lines=[...form.querySelectorAll('[data-split-source]')].flatMap(input=>Number(input.value)>0?[{
+              id:input.dataset.line,source:input.dataset.splitSource,group_id:input.dataset.destination,pieces:Number(input.value)
+            }]:[]);
+            await groupRpc('split',values.id,lines);
+          } else if(kind==='group-finish') {
+            const lines=[...form.querySelectorAll('[data-finish-id]')].map(input=>({
+              id:input.dataset.finishId,pieces:Number(input.value),consumed_m:Number(values['meters-'+input.dataset.finishId]),notes:values.notes
+            }));
+            await groupRpc('finish',values.id,lines);
+          } else if(kind==='group-cancel'||kind==='group-dispatch') {
+            await groupRpc(kind.slice(6),values.id,[],values);
+          } else if(kind==='group-delivery') {
+            const lines=[...form.querySelectorAll('[data-delivery-id]')].flatMap(input=>{
+              const accepted=Number(input.value),rejected=Number(values['rejected-'+input.dataset.deliveryId]);
+              return accepted||rejected?[{id:input.dataset.deliveryId,accepted,rejected}]:[];
+            });
+            if(!lines.length)throw Error('Informe as quantidades entregues.');
+            const file=values.invoice;
+            if(!file||file.size>5242880||!file.name.toLowerCase().endsWith('.pdf'))throw Error('Selecione a nota fiscal em PDF de até 5 MB.');
+            await rpc('fabric_faction_delivery',{p_org:state.org,p_group:values.id,p_id:values.requestId,p_on:values.delivered_on,
+              p_name:file.name,p_pdf:await toBase64(file),p_lines:lines,p_notes:values.notes});
           } else {
             form.dataset.fwForm=kind;
             try {await submit(form);}
             finally {delete form.dataset.fwForm;}
           }
           recorded=true;
-          if(kind==='plan')draft.delete(values.order_item_id);
           await reload();
           await syncOrderStatuses();
           await reload();
@@ -271,20 +312,33 @@ export function createFactionWorkflow({
     return dialog;
   }
 
-  function cutForm(row, trigger) {
-    const line=trigger.closest('[data-faction-line]');
-    const input=line.querySelector('[data-faction-cut-quantity]');
-    const lot=row.lots.find(l=>l.id===line.querySelector('[data-faction-roll]').value);
-    const quantity=Number(input.value);
-    if(!lot||!quantity||!input.reportValidity()) {input.focus();return;}
-    openDialog('Gerar mapa e lote de corte',`<p>${product(row)} · rolo ${esc(lot.lot_code)}</p>
-      <p>${pieces(quantity)} peças · ${meters(quantity*row.unit)} da reserva da ordem serão vinculados a este lote.</p>
-      <form data-faction-form="plan">
-        <input type="hidden" name="requestId" value="${uid()}"><input type="hidden" name="order_item_id" value="${esc(row.item.id)}">
-        <input type="hidden" name="lot_id" value="${esc(lot.id)}"><input type="hidden" name="pieces" value="${quantity}">
-        <button>Gerar lote</button>
-      </form>`);
-
+  function groupPlan(orders,preferred) {
+    const selectedOrders=activeOrders(orders);
+    const choices=selectedOrders.flatMap(row=>row.lots.filter(lot=>maxInLot(row,lot)>0).map(lot=>({
+      value:row.item.id+':'+lot.id, label:row.item.product_name+' · '+lot.lot_code, maximum:maxInLot(row,lot), unit:row.unit
+    })));
+    if(!choices.length)return openDialog('Gerar mapa e lote de corte','<p>Reserve tecido para pelo menos uma ordem na Provisão.</p>');
+    const dialog=openDialog('Gerar mapa e lote de corte',`<form data-faction-form="group-plan"><input type="hidden" name="id" value="${uid()}">
+      <div data-plan-list></div><button type="button" data-plan-add>+ Produto ou rolo</button><button>Gerar mapa e lote</button></form>`);
+    const list=dialog.querySelector('[data-plan-list]');
+    const add=(value='',qty='')=>{
+      list.insertAdjacentHTML('beforeend',`<fieldset data-plan-entry="${uid()}"><label class="fw-field">Produto e rolo
+        <select required>${choices.map(choice=>`<option value="${esc(choice.value)}" ${choice.value===value?'selected':''}>${esc(choice.label)}</option>`).join('')}</select></label>
+        <label class="fw-field">Quantidade<input type="number" min="1" step="1" value="${qty||''}" required></label>
+        <output></output> <button type="button" data-plan-remove>Remover</button></fieldset>`);
+      const entry=list.lastElementChild, select=entry.querySelector('select'), quantity=entry.querySelector('input');
+      const update=()=>{
+        const choice=choices.find(choice=>choice.value===select.value);
+        quantity.max=choice.maximum;
+        entry.querySelector('output').textContent=meters(Number(quantity.value||0)*choice.unit)+' · máximo '+pieces(choice.maximum);
+      };
+      select.onchange=update;quantity.oninput=update;update();
+      entry.querySelector('[data-plan-remove]').onclick=()=>{if(list.children.length>1)entry.remove();};
+    };
+    const seeds=[...draft].filter(([id,saved])=>saved.quantity>0&&(!preferred||id===preferred)&&choices.some(c=>c.value===id+':'+saved.lot));
+    if(seeds.length)for(const [id,saved] of seeds)add(id+':'+saved.lot,saved.quantity);
+    else add(choices.find(c=>c.value.startsWith(preferred+':'))?.value||'');
+    dialog.querySelector('[data-plan-add]').onclick=()=>add();
   }
 
   async function reserve() {
@@ -319,42 +373,97 @@ export function createFactionWorkflow({
     });
   }
 
-  function planAction(action,plan,row) {
-    const hidden=`<input type="hidden" name="id" value="${esc(plan.id)}">`;
-    const roll=row.lots.find(lot=>lot.id===plan.lot_id);
-    const summary=`<p>${product(row)} · rolo ${esc(roll?.lot_code||'—')} · ${pieces(plan.pieces)} peças · ${meters(plan.reserved_m)} reservados</p>`;
-    if(action==='plan-map')return openDialog('Mapa de corte · '+esc(plan.id.slice(0,8)),summary+
-      `<p>${esc(plan.status)}${plan.parent_id?' · Origem '+esc(plan.parent_id.slice(0,8)):''}</p><p>${esc(plan.notes||'')}</p>`);
-    if(action==='start')return run(()=>cutPlanRpc('start',{id:plan.id}));
-    if(action==='cancel')return openDialog('Cancelar lote',summary+
-      `<form data-faction-form="cancel">${hidden}<label class="fw-field">Motivo<input name="notes" required maxlength="500"></label><button>Cancelar lote</button></form>`);
-    if(action==='finish')return openDialog('Finalizar corte',summary+
-      `<form data-faction-form="finish">${hidden}
-      <label class="fw-field">Peças cortadas<input type="number" name="pieces" min="1" max="${plan.pieces}" step="1" value="${plan.pieces}" required></label>
-      <label class="fw-field">Consumo real (m)<input type="number" name="consumed_m" min=".001" step=".001" value="${plan.reserved_m}" required></label>
+  function download(content,name,type) {
+    const blob=new Blob([content],{type}), url=URL.createObjectURL(blob);
+    const link=document.createElement('a');link.href=url;link.download=name;link.click();
+    setTimeout(()=>URL.revokeObjectURL(url),30000);
+  }
+
+  function showDocuments(doc) {
+    const dialog=openDialog('Documentos da entrega',`<p>${dateLabel(doc.delivered_on)} · ${esc(doc.filename)}</p>
+      <div class="fw-tabs"><button type="button" data-document-pdf>Baixar nota fiscal</button><button type="button" data-document-cut>Baixar relatório de corte</button>
+      <button type="button" data-document-stock>Baixar relatório de recebimento</button></div>`);
+    dialog.querySelector('[data-document-pdf]').onclick=async()=>{
+      const error=dialog.querySelector('[data-faction-error]');
+      try {
+        const data=await rpc('fabric_faction_pdf',{p_org:state.org,p_id:doc.id});
+        if(!data)throw Error('Nota fiscal indisponível.');
+        download(Uint8Array.from(atob(data),char=>char.charCodeAt(0)),doc.filename,'application/pdf');
+      } catch(failure){error.textContent=failure.message;error.hidden=false;}
+    };
+    const csv=(fields,name)=>{
+      const cell=value=>'"'+String(typeof value==='string'&&/^\s*[=+@-]/.test(value)?"'"+value:value??'').replaceAll('"','""')+'"';
+      const rows=(doc.report||[]).map(row=>fields.map(field=>cell(row[field])).join(';'));
+      download('\uFEFF'+[fields.join(';'),...rows].join('\r\n'),name,'text/csv;charset=utf-8');
+    };
+    dialog.querySelector('[data-document-cut]').onclick=()=>csv(['ordem','produto','referencia','lote','origem','rolo','tecido','previstas','cortadas','previsto_m','real_m','liberado_m','adicional_m'],'relatorio-corte.csv');
+    dialog.querySelector('[data-document-stock]').onclick=()=>csv(['ordem','produto','referencia','lote','aceitas','rejeitadas','saldo_lote','aceitas_os'],'relatorio-recebimento.csv');
+  }
+
+  function groupAction(action,id,orders) {
+    const group=groupRows(id), cuts=groupCuts(id);
+    if(!group.length)return;
+    const hidden=`<input type="hidden" name="id" value="${esc(id)}">`;
+    const label=plan=>{
+      const row=orders.find(row=>row.item.id===plan.order_item_id);
+      const lot=state.lots.find(lot=>lot.id===plan.lot_id);
+      return (row?product(row):'Produto')+' · rolo '+esc(lot?.lot_code||'—');
+    };
+    if(action==='group-map')return openDialog('Mapa de corte · '+esc(id.slice(0,8)),
+      table(['Produto / rolo','Peças previstas','Reserva','Cortadas','Consumo real'],group.map(plan=>{
+        const cut=cuts.find(cut=>cut.id===plan.cut_id);
+        return `<tr><td>${label(plan)}</td><td>${pieces(plan.pieces)}</td><td>${meters(plan.reserved_m)}</td><td>${cut?pieces(cut.produced_pieces):'—'}</td><td>${cut?meters(cut.consumed_m):'—'}</td></tr>`;
+      }).join(''),'Nenhuma linha.'));
+    if(action==='group-start')return run(()=>groupRpc('start',id));
+    if(action==='group-cancel')return openDialog('Cancelar lote',
+      `<form data-faction-form="group-cancel">${hidden}<label class="fw-field">Motivo<input name="notes" required maxlength="500"></label><button>Cancelar lote</button></form>`);
+    if(action==='group-finish')return openDialog('Finalizar corte',`<form data-faction-form="group-finish">${hidden}
+      ${group.map(plan=>`<fieldset><legend>${label(plan)}</legend>
+        <label class="fw-field">Peças cortadas<input type="number" data-finish-id="${esc(plan.id)}" name="pieces-${esc(plan.id)}" min="0" max="${plan.pieces}" step="1" value="${plan.pieces}" required></label>
+        <label class="fw-field">Consumo real (m)<input type="number" name="meters-${esc(plan.id)}" min="0" step=".001" value="${plan.reserved_m}" required></label></fieldset>`).join('')}
       <label class="fw-field">Justificativa se houver diferença<input name="notes" maxlength="500"></label><button>Finalizar corte</button></form>`);
-    if(action==='split') {
-      const dialog=openDialog('Fracionar lote',summary+
-        `<form data-faction-form="split">${hidden}<input type="hidden" name="part_ids"><div data-part-list></div>
+    if(action==='group-dispatch'&&cuts.length) {
+      const cut=cuts[0];
+      return openDialog('Envio e previsão da facção',`<form data-faction-form="group-dispatch">${hidden}
+        <label class="fw-field">Facção<select name="supplier_id" required>${supplierOptionList(cut.supplier_id)}</select></label>
+        <label class="fw-field">Envio<input name="sent_date" type="date" value="${esc(cut.sent_date||today())}" required></label>
+        <label class="fw-field">Previsão<input name="expected_date" type="date" value="${esc(cut.expected_date||'')}"></label>
+        <label class="fw-field">Justificativa ao alterar o prazo padrão<input name="notes" value="${esc(cut.notes||'')}"></label><button>Salvar envio e previsão</button></form>`);
+    }
+    if(action==='group-delivery')return openDialog('Registrar entrega · '+esc(id.slice(0,8)),`<form data-faction-form="group-delivery">${hidden}
+      <input name="requestId" type="hidden" value="${uid()}">
+      ${cuts.filter(cut=>cut.produced_pieces>accounted(cut)).map(cut=>{
+        const remaining=cut.produced_pieces-accounted(cut);
+        const plan=group.find(plan=>plan.cut_id===cut.id);
+        return `<fieldset><legend>${label(plan)} · ${pieces(remaining)} pendentes</legend>
+          <label class="fw-field">Aceitas<input type="number" name="accepted-${esc(cut.id)}" data-delivery-id="${esc(cut.id)}" min="0" max="${remaining}" step="1" value="0" required></label>
+          <label class="fw-field">Rejeitadas<input type="number" name="rejected-${esc(cut.id)}" min="0" max="${remaining}" step="1" value="0" required></label></fieldset>`;
+      }).join('')}
+      <label class="fw-field">Data da entrega<input type="date" name="delivered_on" value="${today()}" max="${today()}" required></label>
+      <label class="fw-field">Nota fiscal em PDF<input type="file" name="invoice" accept=".pdf,application/pdf" required></label>
+      <label class="fw-field">Observação<input name="notes" maxlength="1000"></label><button>Registrar entrega</button></form>`);
+    if(action==='group-split') {
+      const dialog=openDialog('Fracionar lote',`<form data-faction-form="group-split">${hidden}<div data-split-list></div>
         <p data-part-saldo role="status"></p><button type="button" data-add-part>+ Novo lote</button><button>Confirmar fracionamento</button></form>`);
-      const form=dialog.querySelector('form'), ids=[];
-      const list=form.querySelector('[data-part-list]'), status=form.querySelector('[data-part-saldo]');
+      const list=dialog.querySelector('[data-split-list]'), status=dialog.querySelector('[data-part-saldo]');
       const update=()=>{
         const fields=[...list.querySelectorAll('input')];
-        const total=fields.reduce((count,input)=>count+Number(input.value),0);
-        status.textContent=`${pieces(plan.pieces-total)} peças por distribuir`;
-        fields.at(-1).setCustomValidity(total===plan.pieces&&fields.filter(input=>Number(input.value)>0).length>1?'':'Distribua todas as peças em pelo menos dois lotes.');
+        const remaining=group.map(plan=>plan.pieces-fields.filter(input=>input.dataset.splitSource===plan.id).reduce((total,input)=>total+Number(input.value),0));
+        status.textContent=remaining.map((left,index)=>'Linha '+(index+1)+': '+pieces(left)+' por distribuir').join(' · ');
+        const populated=new Set(fields.filter(input=>Number(input.value)>0).map(input=>input.dataset.destination));
+        fields.at(-1).setCustomValidity(remaining.every(left=>left===0)&&populated.size>=2?'':'Distribua todas as peças em pelo menos dois lotes.');
+        for(const fieldset of list.children)fieldset.querySelector('output').textContent=meters([...fieldset.querySelectorAll('input')].reduce((total,input,index)=>total+Number(input.value)*Number(group[index].unit_m),0))+' previstos';
       };
       const add=()=>{
-        for(const input of list.querySelectorAll('input'))input.setCustomValidity('');
-        ids.push(uid());
-        form.elements.part_ids.value=JSON.stringify(ids);
-        list.insertAdjacentHTML('beforeend',`<label class="fw-field">Lote ${ids.length}<input name="part" type="number" min="0" max="${plan.pieces}" step="1" value="0"></label>`);
-        form.querySelector('[data-add-part]').disabled=ids.length>=30;
+        for(const field of list.querySelectorAll('input'))field.setCustomValidity('');
+        const destination=uid();
+        list.insertAdjacentHTML('beforeend',`<fieldset><legend>Lote ${list.children.length+1}</legend>${group.map((plan,index)=>`<label class="fw-field">Linha ${index+1} · ${label(plan)}
+          <input name="part" data-split-source="${esc(plan.id)}" data-line="${uid()}" data-destination="${destination}" type="number" min="0" max="${plan.pieces}" step="1" value="0"></label>`).join('')}<output></output></fieldset>`);
+        dialog.querySelector('[data-add-part]').disabled=list.children.length>=30;
         update();
       };
       list.oninput=update;
-      form.querySelector('[data-add-part]').onclick=add;
+      dialog.querySelector('[data-add-part]').onclick=add;
       add();add();
     }
   }
@@ -363,16 +472,16 @@ export function createFactionWorkflow({
     const {factionAction:action,factionId:id}=trigger.dataset;
     if(action==='reserve')return reserve();
     const orders=getOrders();
-    const plan=plans().find(plan=>plan.id===id);
-    if(plan&&['plan-map','start','split','cancel','finish'].includes(action)) {
-      const row=orders.find(row=>row.item.id===plan.order_item_id);
-      if(row)return planAction(action,plan,row);
+    if(action==='group-plan'||action==='cut')return groupPlan(orders,id);
+    if(action.startsWith('group-'))return groupAction(action,id,orders);
+    if(action==='documents') {
+      const doc=(state.deliveryDocuments||[]).find(row=>row.id===id);
+      if(doc)return showDocuments(doc);
       return;
     }
     const row=orders.find(o=>o.item.id===id||o.cuts.some(cut=>cut.id===id));
     if(!row)return;
     const cut=row.cuts.find(cut=>cut.id===id);
-    if(action==='cut')return cutForm(row,trigger);
     if(action==='recipe') {
       const recipe=state.recipes.find(recipe=>recipe.id===row.item.recipe_id);
       const supplier=state.suppliers.find(supplier=>supplier.id===row.fabric?.supplier_id);
@@ -404,14 +513,6 @@ export function createFactionWorkflow({
        <label class="fw-field">Envio<input name="sent_date" type="date" value="${esc(cut.sent_date||day)}" required></label>
        <label class="fw-field">Previsão de entrega<input name="expected_date" type="date" value="${esc(cut.expected_date||'')}"></label>
        <label class="fw-field">Justificativa ao alterar o prazo padrão<input name="notes" value="${esc(cut.notes||'')}"></label><button>Salvar envio e previsão</button></form>`);
-    }
-    if(action==='deliver-lot') {
-      const pending=Math.max(0,cut.produced_pieces-accounted(cut));
-      return openDialog('Registrar entrega do lote '+esc(id.slice(0,8)),`<p>${product(row)} · ${pieces(pending)} peças pendentes</p>
-        <form data-faction-form="deliver-lot"><input type="hidden" name="id" value="${esc(id)}"><input type="hidden" name="requestId" value="${uid()}">
-        <label class="fw-field">Peças aceitas<input type="number" name="accepted" min="0" max="${pending}" step="1" value="0" required></label>
-        <label class="fw-field">Peças rejeitadas<input type="number" name="rejected" min="0" max="${pending}" step="1" value="0" required></label>
-        <label class="fw-field">Observação<input name="notes" maxlength="1000"></label><button>Registrar entrega</button></form>`);
     }
     if(action==='deliver') {
       const remaining=legacyPending(row,state.returns);
