@@ -10,7 +10,7 @@ const LINEN_SNAPSHOT_TABLE = 'linen_rfid_snapshots';
 const CURRENT_KEY = 'gao-linen-current-v1';
 const route = () => {
   const path = location.pathname.replace(/\/+$/, '');
-  return path === '/enxoval-tecidos' || location.hash === '#enxoval' || location.hash === '#enxoval-tecidos';
+  return path === '/enxoval-tecidos' || location.hash === '#enxoval' || location.hash === '#enxoval-tecidos' || path === '/enxoval-tecidos/faccao';
 };
 const br = (v, d = 0) => Number(v || 0).toLocaleString('pt-BR', { maximumFractionDigits: d, minimumFractionDigits: d });
 const dateBr = value => {
@@ -551,7 +551,6 @@ function textileMenu(){return `    <nav class="lr150-dimension-nav" aria-label="
 <button type="button" data-fw-tab="cost">Custos</button>
 <button type="button" data-fw-buy-tool="catalog">Cadastros</button>
 <button type="button" data-fw-tab="workbook">Importação da planilha</button>
-<button type="button" data-fw-tab="faction-desk">Portal da facção</button>
 <button type="button" data-dimension-view="map">Mapa de peças, trocas e necessidade</button>
 <button type="button" data-dimension-view="movements">Movimentações</button>
 <button type="button" data-dimension-view="imports">Importação RFID</button>

@@ -76,3 +76,15 @@ test('gaveta tem controle acessível e persiste preferência de abertura', () =>
   assert.match(ui, /gao-mobile-menu-backdrop/);
   assert.match(ui, /if\(toggle\.textContent!==label\)toggle\.textContent=label/);
 });
+
+test('Portal da Facção tem entrada no menu principal e carrega no mesmo painel do Enxoval', () => {
+  const href = new Function('return '+core.match(/const H=([^;]+);/)[1])();
+  const route = new Function('location','return ('+core.match(/const R=(.*?)\};const H=/)[1]+'})()');
+  assert.match(core, /\['faccao','Portal da Facção'\]/);
+  assert.equal(href('faccao'), '/enxoval-tecidos/faccao');
+  assert.equal(route({pathname:href('faccao'),hash:''}), 'faccao');
+  assert.match(core, /r==='enxoval'\|\|r==='faccao'/);
+  assert.match(linen, /path === '\/enxoval-tecidos\/faccao'/);
+  assert.match(fabric, /tab:directFactionRoute\?'faction-desk':'overview'/);
+  assert.match(fabric, /\['provision','Provisão Facção'\][\s\S]*?\['cut','Corte'\][\s\S]*?\['sewing','Costura'\]/);
+});
