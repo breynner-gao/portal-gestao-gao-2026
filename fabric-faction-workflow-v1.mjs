@@ -151,16 +151,25 @@ export function createFactionWorkflow({
   function sewing(orders) {
     const managed = new Set(plans().filter(plan=>plan.cut_id).map(plan=>plan.cut_id));
     const lots = groups().filter(group=>group.some(plan=>plan.cut_id)).map(group=>{
-      const id=groupId(group[0]), cuts=groupCuts(id), sent=cuts.every(cut=>cut.sent_date);
-      const left=sum(cuts,cut=>n(cut.produced_pieces)-accounted(cut));
-      const names=group.map(line=>esc(orders.find(row=>row.item.id===line.order_item_id)?.item.product_name||'—')).join(' · ');
-      return `<tr><td>${button(esc(id.slice(0,8)),'group-map',id)}</td><td>${names}</td><td>${pieces(sum(cuts,c=>c.produced_pieces))}</td>
-        <td>${pieces(sum(cuts,c=>sum(deliveries(c),r=>r.accepted_pieces)))}</td><td>${pieces(left)}</td>
-        <td>${sent?dateLabel(cuts[0].sent_date):'Aguardando envio'}</td><td>${dateLabel(cuts[0]?.expected_date)}</td>
-        <td><div class="fw-tabs">${button(sent?'Editar previsão':'Enviar à facção','group-dispatch',id)}
-        ${button('Registrar entrega','group-delivery',id,!sent||!left||state.deliveryDocumentsError)}</div></td></tr>`;
-    }).join('') + orders.flatMap(row=>row.cuts.filter(cut=>!managed.has(cut.id)).map(cut=>`<tr><td>${button(esc(cut.id.slice(0,8)),'map',cut.id)}</td><td>${product(row)}</td><td>${pieces(cut.produced_pieces)}</td>
-      <td>—</td><td>Ver retorno por OS</td><td>${dateLabel(cut.sent_date)}</td><td>${dateLabel(cut.expected_date)}</td><td>${button(cut.sent_date?'Editar previsão':'Enviar à facção','dispatch',cut.id)}</td></tr>`)).join('');
+      const id=groupId(group[0]), cuts=groupCuts(id);
+      const received=sum(cuts,c=>c.produced_pieces);
+      const accepted=sum(cuts,c=>sum(deliveries(c),r=>r.accepted_pieces));
+      const processed=sum(cuts,accounted);
+      const rejected=processed-accepted;
+      const left=Math.max(0,received-processed);
+      const names=[...new Set(group.map(line=>orders.find(row=>row.item.id===line.order_item_id)?.item.product_name).filter(Boolean))];
+      const parent=plans().find(plan=>plan.id===group[0].parent_id);
+      const due=group[0].sewing_due_set?group[0].sewing_due_on:cuts[0]?.expected_date;
+      const status=left?(processed?'Entrega parcial':'Em costura'):(rejected?'Concluído com rejeição':'Entregue');
+      return `<tr><td>${button(esc(id.slice(0,8)),'group-map',id)}<small>${esc(names.join(' · '))}</small>
+        ${parent?`<small>Origem: ${esc(groupId(parent).slice(0,8))}</small>`:''}<span class="fw-status">${status}</span></td>
+        <td>${pieces(received)}</td><td>${pieces(accepted)}${rejected?`<small>${pieces(rejected)} rejeitadas</small>`:''}</td><td>${pieces(left)}</td>
+        <td><input type="date" data-sewing-due="${esc(id)}" value="${esc(due||'')}" aria-label="Previsão de entrega do lote ${esc(id.slice(0,8))}" ${left?'':'disabled'}></td>
+        <td>${button('Registrar entrega','group-delivery',id,!left||state.deliveryDocumentsError)}</td></tr>`;
+    }).join('');
+    const legacyCuts=orders.flatMap(row=>row.cuts.filter(cut=>!managed.has(cut.id)).map(cut=>`<tr><td>${button(esc(cut.id.slice(0,8)),'map',cut.id)}</td>
+      <td>${product(row)}</td><td>${pieces(cut.produced_pieces)}</td><td>${dateLabel(cut.sent_date)}</td><td>${dateLabel(cut.expected_date)}</td>
+      <td>${button(cut.sent_date?'Editar previsão':'Enviar à facção','dispatch',cut.id)}</td></tr>`)).join('');
     const receiving = orders.filter(row=>row.cuts.some(cut=>cut.sent_date&&!managed.has(cut.id))).map(row=>{
       const legacyReturns=state.returns.filter(record=>record.order_item_id===row.item.id&&!record.cut_batch_id);
       const sent=sum(row.cuts.filter(cut=>cut.sent_date&&!managed.has(cut.id)),cut=>cut.produced_pieces);
@@ -173,13 +182,24 @@ export function createFactionWorkflow({
       const row=orders.find(o=>o.item.id===record.order_item_id);
       return row?[`<tr><td>${dateLabel(record.returned_at)}</td><td>${product(row)}<small>${record.cut_batch_id?'Lote '+esc(record.cut_batch_id.slice(0,8)):'Retorno por OS'}</small></td><td>${pieces(record.accepted_pieces)}</td><td>${pieces(record.rejected_pieces)}</td><td>${esc(record.notes||'—')}</td></tr>`]:[];
     }).join('');
-    const docs=table(['Entrega / lote','Nota fiscal','Ação'],(state.deliveryDocuments||[]).map(doc=>
-      `<tr><td>${dateLabel(doc.delivered_on)} · ${esc(doc.cut_group_id.slice(0,8))}</td><td>${esc(doc.filename)}</td>
-      <td>${button('Ver documentos','documents',doc.id)}</td></tr>`).join(''),'Nenhuma entrega com nota fiscal registrada.');
-    return metrics([['Em costura',pieces(sum(orders,row=>Math.max(0,sum(row.cuts.filter(c=>c.sent_date),c=>c.produced_pieces)-row.receivedByOrder))),'Peças enviadas aguardando retorno'],['Entregues',pieces(sum(orders,row=>row.returns.accepted)),'Peças aceitas no retorno']]) +
-      panel('Lotes recebidos do corte',table(['Lote','OS / produto','Cortadas','Entregues','Pendentes','Envio à facção','Previsão','Ação'],lots,'Finalize um corte para liberar as peças à costura.')) +
-      panel('Entregas de cortes anteriores por ordem',table(['OS / produto','Enviadas','Aceitas','Rejeitadas','Pendentes','Ação'],receiving,'Envie um lote à facção para registrar o retorno.')) +
-      panel('Entregas e documentos',docs)+panel('Histórico de entregas',table(['Data','OS / produto','Aceitas','Rejeitadas','Observação'],returns,'Nenhuma entrega registrada.'));
+    const documents=state.deliveryDocuments||[];
+    const docs=table(['Entrega / lote','Peças','Nota fiscal','Envio de documentos','Ação'],documents.map(doc=>
+      `<tr><td>${esc(doc.id.slice(0,8))}<small>${esc(doc.cut_group_id.slice(0,8))} · ${dateLabel(doc.delivered_on)}</small></td>
+      <td>${pieces(sum(doc.report||[],line=>line.aceitas))}${sum(doc.report||[],line=>line.rejeitadas)?`<small>${pieces(sum(doc.report,line=>line.rejeitadas))} rejeitadas</small>`:''}</td>
+      <td>${esc(doc.filename)}</td><td>Disponível para baixar</td><td>${button('Ver pacote','documents',doc.id)}</td></tr>`).join(''),
+      'Cada entrega parcial terá seu próprio registro e documentos.');
+    const pending=sum(orders,row=>sum(row.cuts,cut=>n(cut.produced_pieces))-row.receivedByOrder);
+    const legacy=legacyCuts||receiving||returns?section('Histórico operacional',
+      panel('Cortes anteriores',table(['Lote','OS / produto','Cortadas','Envio','Previsão','Ação'],legacyCuts,'Nenhum corte anterior.'))+
+      panel('Entregas de cortes anteriores por ordem',table(['OS / produto','Enviadas','Aceitas','Rejeitadas','Pendentes','Ação'],receiving,'Nenhum retorno por ordem.'))+
+      panel('Histórico de entregas',table(['Data','OS / produto','Aceitas','Rejeitadas','Observação'],returns,'Nenhuma entrega registrada.'))):'';
+    return metrics([['Em costura',pieces(Math.max(0,pending))+' peças','Saldo dos lotes já cortados'],
+      ['Entregues',pieces(sum(orders,row=>row.returns.accepted))+' peças','Peças aceitas no recebimento'],
+      ['Entregas registradas',pieces(documents.length),'Entregas com nota fiscal e relatórios']])+
+      panel('Lotes recebidos do corte',table(['Lote / produtos','Recebidas','Entregues','Pendentes','Previsão de entrega','Ação'],lots,
+        'Finalize um corte para liberar as peças à costura.'),'<span>Entregas independentes por lote</span>')+
+      panel('Entregas e documentos',docs)+legacy;
+
   }
 
   function consolidated(orders) {
@@ -281,6 +301,10 @@ export function createFactionWorkflow({
               return accepted||rejected?[{id:input.dataset.deliveryId,accepted,rejected}]:[];
             });
             if(!lines.length)throw Error('Informe as quantidades entregues.');
+            const cuts=groupCuts(values.id);
+            if(lines.some(line=>{const cut=cuts.find(c=>c.id===line.id);return !cut||line.accepted+line.rejected>cut.produced_pieces-accounted(cut);})) {
+              throw Error('A soma das peças aceitas e rejeitadas deve caber no saldo da linha.');
+            }
             const file=values.invoice;
             if(!file||file.size>5242880||!file.name.toLowerCase().endsWith('.pdf'))throw Error('Selecione a nota fiscal em PDF de até 5 MB.');
             await rpc('fabric_faction_delivery',{p_org:state.org,p_group:values.id,p_id:values.requestId,p_on:values.delivered_on,
@@ -430,18 +454,23 @@ export function createFactionWorkflow({
         <label class="fw-field">Previsão<input name="expected_date" type="date" value="${esc(cut.expected_date||'')}"></label>
         <label class="fw-field">Justificativa ao alterar o prazo padrão<input name="notes" value="${esc(cut.notes||'')}"></label><button>Salvar envio e previsão</button></form>`);
     }
-    if(action==='group-delivery')return openDialog('Registrar entrega · '+esc(id.slice(0,8)),`<form data-faction-form="group-delivery">${hidden}
-      <input name="requestId" type="hidden" value="${uid()}">
-      ${cuts.filter(cut=>cut.produced_pieces>accounted(cut)).map(cut=>{
-        const remaining=cut.produced_pieces-accounted(cut);
+    if(action==='group-delivery') {
+      const rows=cuts.filter(cut=>cut.produced_pieces>accounted(cut)).map(cut=>{
+        const left=cut.produced_pieces-accounted(cut);
         const plan=group.find(plan=>plan.cut_id===cut.id);
-        return `<fieldset><legend>${label(plan)} · ${pieces(remaining)} pendentes</legend>
-          <label class="fw-field">Aceitas<input type="number" name="accepted-${esc(cut.id)}" data-delivery-id="${esc(cut.id)}" min="0" max="${remaining}" step="1" value="0" required></label>
-          <label class="fw-field">Rejeitadas<input type="number" name="rejected-${esc(cut.id)}" min="0" max="${remaining}" step="1" value="0" required></label></fieldset>`;
-      }).join('')}
-      <label class="fw-field">Data da entrega<input type="date" name="delivered_on" value="${today()}" max="${today()}" required></label>
-      <label class="fw-field">Nota fiscal em PDF<input type="file" name="invoice" accept=".pdf,application/pdf" required></label>
-      <label class="fw-field">Observação<input name="notes" maxlength="1000"></label><button>Registrar entrega</button></form>`);
+        const accepted=sum(deliveries(cut),record=>record.accepted_pieces);
+        return `<tr><td>${label(plan)}</td><td>${pieces(cut.produced_pieces)}</td><td>${pieces(accepted)}</td><td>${pieces(left)}</td>
+          <td><input type="number" name="accepted-${esc(cut.id)}" data-delivery-id="${esc(cut.id)}" aria-label="Entregar agora · ${esc(cut.id.slice(0,8))}" min="0" max="${left}" step="1" value="${left}" required></td>
+          <td><input type="number" name="rejected-${esc(cut.id)}" aria-label="Rejeitadas · ${esc(cut.id.slice(0,8))}" min="0" max="${left}" step="1" value="0" required></td></tr>`;
+      }).join('');
+      return openDialog('Entrega parcial ou integral · '+esc(id.slice(0,8)),`<form data-faction-form="group-delivery">${hidden}
+        <input name="requestId" type="hidden" value="${uid()}">
+        ${table(['Produto / rolo','Cortadas','Já entregues','Pendentes','Entregar agora','Rejeitadas'],rows,'O lote está concluído.')}
+        <label class="fw-field">Data efetiva da entrega<input type="date" name="delivered_on" value="${today()}" max="${today()}" required></label>
+        <label class="fw-field">Nota fiscal em PDF<input type="file" name="invoice" accept=".pdf,application/pdf" required></label>
+        <label class="fw-field">Observação<input name="notes" maxlength="1000"></label>
+        <p>O pacote reúne a nota fiscal, o relatório de corte e o relatório de recebimento.</p><button>Confirmar entrega</button></form>`);
+    }
     if(action==='group-split') {
       const dialog=openDialog('Fracionar lote',`<form data-faction-form="group-split">${hidden}<div data-split-list></div>
         <p data-part-saldo role="status"></p><button type="button" data-add-part>+ Novo lote</button><button>Confirmar fracionamento</button></form>`);
@@ -531,6 +560,9 @@ export function createFactionWorkflow({
     if(stage==='assigned'||stage==='review')factionDesk.bind(host);
     const page=host.querySelector('.fw-faction-page');
     if(!page)return;
+    for(const field of page.querySelectorAll('[data-sewing-due]')) {
+      field.onchange=()=>run(()=>rpc('fabric_faction_sewing_due',{p_org:state.org,p_group:field.dataset.sewingDue,p_due:field.value||null}));
+    }
     const master=page.querySelector('[data-faction-select-all]');
     const boxes=[...page.querySelectorAll('[data-faction-select]')];
     if(master) {

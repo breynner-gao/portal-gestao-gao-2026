@@ -1,4 +1,4 @@
-import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=3';
+import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=4';
 import {createFactionDesk} from '/fabric-faction-portal-v1.mjs?v=2';
 import {createFabricWorkbookImport} from '/fabric-workbook-import-v1.mjs?v=1';
 import {buildPendingProductionCoverage,applyPendingProductionCoverage,compactDimensionKey} from '/linen-risk-rules-v150.mjs?v=226';

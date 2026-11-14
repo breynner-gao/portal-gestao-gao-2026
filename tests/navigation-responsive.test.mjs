@@ -117,3 +117,29 @@ test('as três etapas da Facção exibem as ordens e lotes do portal em tabelas'
   open('sewing');
   assert.match(wf.view(),/Lotes recebidos do corte[\s\S]*?corte-01[\s\S]*?80/);
 });
+
+test('Costura libera corte concluído para entregar e mostra previsão na linha', async () => {
+  const {createFactionWorkflow} = await import('../fabric-faction-workflow-v1.mjs');
+  const state = {
+    orders:[{id:'os',status:'ABERTA',order_number:2}],
+    items:[{id:'item',order_id:'os',product_name:'Camisa P53',ordered_pieces:80,consumption_m_per_piece:1}],
+    cuts:[{id:'corte-01',order_item_id:'item',produced_pieces:80}],
+    cutPlans:[{id:'corte-01',cut_id:'corte-01',order_item_id:'item',sewing_due_set:true,sewing_due_on:'2026-11-20'}],
+    returns:[{cut_batch_id:'corte-01',order_item_id:'item',accepted_pieces:20,rejected_pieces:0}],
+    fabric:[],lots:[],moves:[],purchaseItems:[],purchaseOrders:[],deliveryDocuments:[]
+  };
+  let selectStage;
+  const page={querySelector:()=>null,querySelectorAll:()=>[],addEventListener:(_type,handler)=>{selectStage=handler;}};
+  const wf=createFactionWorkflow({
+    state,esc:value=>String(value??''),n:value=>Number(value)||0,br:String,liveBalances:()=>[],
+    orderStats:()=>({accepted:20,rejected:0}),demandView:()=>'',render(){}
+  });
+  wf.bind({querySelector:q=>q==='.fw-faction-page'?page:null});
+  selectStage({target:{closest:()=>({dataset:{fwFactionStage:'sewing'}})}});
+  const html=wf.view();
+  assert.match(html,/Entregas registradas/);
+  assert.match(html,/Entrega parcial<\/span><\/td>\s*<td>80<\/td><td>20<\/td><td>60<\/td>/);
+  assert.match(html,/data-sewing-due="corte-01" value="2026-11-20"/);
+  assert.match(html,/data-faction-action="group-delivery" data-faction-id="corte-01"\s*>Registrar entrega/);
+  assert.doesNotMatch(html,/Aguardando envio/);
+});
