@@ -57,9 +57,14 @@ export function createFactionDesk({rpc,getOrganization,getItems}){
  <form data-faction-assignment><label class="fw-field">Item da OS<select name="item" required><option value="">Selecione</option>
  ${getItems().map(i=>`<option value="${esc(i.id)}">OS ${esc(i.number)} · ${esc(i.product_name)} · ${esc(i.product_reference)}</option>`).join('')}</select></label>
  <label class="fw-field">E-mail da facção<input name="email" type="email" required maxlength="254"></label><button>Vincular conta</button></form>
- <p><a href="/faccao.html" target="_blank" rel="noopener">Abrir portal da facção</a></p><p role="status" data-faction-status></p>
+ <p role="status" data-faction-status></p>
  <h3>Registros para conferência</h3><button type="button" data-faction-refresh>Consultar registros</button><div data-faction-queue></div></section>`;
  function bind(host){
+  const assigned=host.querySelector("[data-faction-assigned]");
+  if(assigned){
+   mountFactionPortal(assigned,rpc).catch(error=>{assigned.textContent=error.message});
+   return;
+  }
   const form=host.querySelector('[data-faction-assignment]'), status=host.querySelector('[data-faction-status]');
   const queue=host.querySelector('[data-faction-queue]'), org=getOrganization();
   form.onsubmit=async e=>{
