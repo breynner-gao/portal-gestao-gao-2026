@@ -389,7 +389,7 @@ function operationRecord(row){
  const legacyWeight=historicalItems.reduce((sum,item)=>sum+item.weight,0);
  const difference=Math.round((row.relaveTotal-legacyWeight)*100)/100;
  if(difference>0)historicalItems.push({type:'Outros',reason:'Saldo do histórico',weight:difference});
- return {key:row.__key,command:String(row.command??''),date:row.date,kind:row.kind||'internal',client:row.client||'',clientId:row.clientId||null,issue:row.issue||'',action:row.action||'',responsible:row.responsible||'',sorted:n(row.totalSorted),items:row.relaveItems||(difference<0?[{type:'Outros',reason:'Total registrado no histórico',weight:row.relaveTotal}]:historicalItems),canWeigh:Array.isArray(row.relaveItems),weighing:row.weighing};
+ return {key:row.__key,command:String(row.command??''),date:row.date,kind:row.kind||'internal',client:row.client||'',clientId:row.clientId||null,issue:row.issue||'',action:row.action||'',responsible:row.responsible||'',sorted:n(row.totalSorted),trashKg:row.trashKg??null,items:row.relaveItems||(difference<0?[{type:'Outros',reason:'Total registrado no histórico',weight:row.relaveTotal}]:historicalItems),canWeigh:Array.isArray(row.relaveItems),weighing:row.weighing};
 }
 async function syncRelaveOperation(){
  try{if(!window.GAO_CHEM_DB_SYNC)throw Error();await window.GAO_CHEM_DB_SYNC(STORE)}
@@ -398,7 +398,7 @@ async function syncRelaveOperation(){
 async function saveOperationRecord(record,key){
  const previous=all().find(row=>row.__key!==key&&(row.kind||'internal')===record.kind&&row.date===record.date&&String(row.command).toLowerCase()===record.command.toLowerCase());
  if(previous){
-  if(JSON.stringify(previous.relaveItems)!==JSON.stringify(record.items)||n(previous.totalSorted)!==record.sorted||previous.client!==record.client||(previous.clientId||null)!==record.clientId||(previous.issue||'')!==record.issue||(previous.action||'')!==record.action||previous.responsible!==record.responsible)throw Error('Já existe um lançamento desse tipo para esta comanda e data.');
+  if(JSON.stringify(previous.relaveItems)!==JSON.stringify(record.items)||n(previous.totalSorted)!==record.sorted||(previous.trashKg??null)!==(record.trashKg??null)||previous.client!==record.client||(previous.clientId||null)!==record.clientId||(previous.issue||'')!==record.issue||(previous.action||'')!==record.action||previous.responsible!==record.responsible)throw Error('Já existe um lançamento desse tipo para esta comanda e data.');
   await syncRelaveOperation();
   return operationRecord(previous);
  }
@@ -453,7 +453,7 @@ async function loadRelaveOperation(root){
  host.textContent='Carregando painel de relave…';
  try{
   const [{mountRelave},{mergeRelaveArchive}]=await Promise.all([
-   import('/relave-operation-v1.mjs?v=17'),import('/relave-archive-v1.mjs?v=2')
+   import('/relave-operation-v1.mjs?v=18'),import('/relave-archive-v1.mjs?v=3')
   ]);
   let archive,archiveError=false;
   try{await window.GAO_CHEM_DB_LOAD?.();archive=await window.GAO_RELAVE_ARCHIVE?.()}
