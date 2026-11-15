@@ -433,16 +433,17 @@ async function excludeOperationRecord(record){
  await syncRelaveOperation();
 }
 async function loadRelaveClients(){
- const session=await window.GAO_AUTH_READY;
- const headers={apikey:'sb_publishable_icrk6TaZexgiSIq63zX_ng_40JGaYlJ',Authorization:'Bearer '+(window.GAO_AUTH_SESSION||session).access_token};
- const clients=[];
- const limit=250;
+ const ready=await window.GAO_AUTH_READY;
+ const token=(window.GAO_AUTH_SESSION||ready)?.access_token;
+ if(!token)throw Error('Entre no portal para consultar os clientes.');
+ const headers={apikey:'sb_publishable_icrk6TaZexgiSIq63zX_ng_40JGaYlJ',Authorization:'Bearer '+token};
+ const clients=[],limit=250;
  for(let offset=0;;offset+=limit){
-  const query=new URLSearchParams({select:'id,name,active',order:'name,id',limit:String(limit),offset:String(offset)});
-  const response=await fetch('https://fquzuxdqvhecijjuxbmg.supabase.co/rest/v1/laundry_clients?'+query,{headers});
+  const query=new URLSearchParams({order:'name,id',limit:String(limit),offset:String(offset)});
+  const response=await fetch('https://fquzuxdqvhecijjuxbmg.supabase.co/rest/v1/rpc/relave_launch_clients?'+query,{headers,cache:'no-store'});
   if(!response.ok)throw Error('Cadastro de clientes indisponível.');
   const rows=await response.json();
-  clients.push(...rows.filter(row=>row.active!==false&&row.name));
+  clients.push(...rows);
   if(rows.length<limit)return clients;
  }
 }
