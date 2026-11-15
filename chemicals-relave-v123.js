@@ -453,7 +453,7 @@ async function loadRelaveOperation(root){
  host.textContent='Carregando painel de relave…';
  try{
   const [{mountRelave},{mergeRelaveArchive}]=await Promise.all([
-   import('/relave-operation-v1.mjs?v=19'),import('/relave-archive-v1.mjs?v=3')
+   import('/relave-operation-v1.mjs?v=20'),import('/relave-archive-v1.mjs?v=3')
   ]);
   let archive,archiveError=false;
   try{await window.GAO_CHEM_DB_LOAD?.();archive=await window.GAO_RELAVE_ARCHIVE?.()}
