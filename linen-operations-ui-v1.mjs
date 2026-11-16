@@ -121,6 +121,7 @@ function mount(host) {
       payload=rows.map(row=>{
         const entry=choices.get(transferKey(row));
         const amount=entry?.decision==='yes'?Number(entry.quantity):0;
+        if(entry?.decision==='yes'&&row.eligible===null)throw Error('Confira o saldo elegível de '+row.product_name+' antes de confirmar.');
         if(!Number.isSafeInteger(amount)||amount<0||(entry?.decision==='yes'&&(amount===0||amount>Math.min(row.remaining,row.eligible??0))))
           throw Error('Confira a quantidade de '+row.product_name+'.');
         const data={requestId:row.id||null,productKey:row.product_key,direction:row.direction,quantity:amount,expectedRemaining:row.remaining};
@@ -143,11 +144,16 @@ function mount(host) {
       rows.map((row,i)=>{
         const edit=canWrite&&row.remaining>0&&((row.id)||row.product_key.startsWith('ID:'));
         const draft=choices.get(transferKey(row));
-        const limit=Math.min(row.remaining,row.eligible??0);
+        const limit=Math.min(row.remaining,row.eligible??row.remaining);
+        const needsStock=row.eligible===null;
         const decision=draft?.decision||'';
         const status=row.remaining?(row.id?'Pendente':'Em aberto'):'Concluído';
         return '<tr><td><strong>'+esc(row.product_name)+'</strong><small>'+esc(row.product_code||'')+'</small></td><td>'+directionLabel(row.direction)+'<small>'+esc(row.id||'Sugestão da posição semanal')+'</small></td><td>'+qty(row.planned)+'</td><td>'+(row.eligible===null?'A conferir':qty(row.eligible))+'</td><td>'+qty(row.done)+'</td><td>'+qty(row.remaining)+'</td><td><small>'+status+'</small>'+
-          (edit?'<div class="leo-confirm"><select data-leo-decision="'+i+'" aria-label="Movimentou '+esc(row.product_name)+'" '+(saving?'disabled':'')+'><option value="">Movimentou?</option><option value="yes" '+(decision==='yes'?'selected ':'')+(!limit?'disabled':'')+'>Sim</option><option value="no" '+(decision==='no'?'selected':'')+'>Não</option></select><input data-leo-quantity="'+i+'" aria-label="Quantidade movimentada de '+esc(row.product_name)+'" type="number" min="1" max="'+limit+'" step="1" value="'+esc(draft?.quantity||'')+'" '+(decision!=='yes'||saving?'disabled':'')+'><button type="button" data-leo-save="'+i+'" '+(!decision||saving?'disabled':'')+'>'+ (page==='pendencias'?'Confirmar quantidade':'Confirmar')+'</button></div>':'')+
+          (edit?'<div class="leo-confirm"><select data-leo-decision="'+i+'" aria-label="Movimentou '+esc(row.product_name)+'" '+(saving?'disabled':'')+'><option value="">Movimentou?</option><option value="yes" '+(decision==='yes'?'selected ':'')+'>Sim</option><option value="no" '+(decision==='no'?'selected':'')+'>Não</option></select><input data-leo-quantity="'+i+'" aria-label="Quantidade movimentada de '+esc(row.product_name)+'" type="number" min="1" max="'+limit+'" step="1" value="'+esc(draft?.quantity||'')+'" '+(decision!=='yes'||saving?'disabled':'')+'><button type="button" data-leo-save="'+i+'" '+(!decision||saving||(decision==='yes'&&(needsStock||!limit))?'disabled':'')+'>'+ (page==='pendencias'?'Confirmar quantidade':'Confirmar')+'</button></div>':'')+
+          (edit&&needsStock?canManage&&snapshot&&row.product_key.startsWith('ID:')?
+            '<details '+(decision==='yes'?'open':'')+'><summary>Conferir saldo deste produto</summary><form data-leo-stock><input type="hidden" name="product" value="'+esc(row.product_key)+'">'+stockFields()+'</form></details>':
+            '<small>A confirmação depende da conferência do estoque.</small>':'')+
+          (edit&&row.eligible===0?'<small>Sem saldo elegível na origem.</small>':'')+
           (row.id?'<button type="button" data-leo-history="'+i+'">Ver histórico</button>':'')+'</td></tr>';
       }).join('')+'</tbody></table></div>';
   }
@@ -175,11 +181,17 @@ function mount(host) {
 
   function historyReplace(url){window.history.replaceState(window.history.state,'',url);}
 
+  function stockFields(){
+    return '<label>Depósito elegível<input name="depot" type="number" min="0" step="1" required></label>'+
+      '<label>Mercado elegível<input name="market" type="number" min="0" step="1" required></label>'+
+      '<button '+(saving?'disabled':'')+'>Salvar conferência</button>';
+  }
+
   function stockSetup(){
     const registered=new Set(balances.filter(row=>Date.parse(row.snapshot_version)===Date.parse(snapshot?.updated_at)).map(row=>row.product_key));
     const items=(snapshot?.rows||[]).filter(row=>idealReferenceKey(row).startsWith('ID:')&&!registered.has(idealReferenceKey(row)));
     return '<section class="leo-card"><h2>Saldo elegível para movimentações</h2><p>Confira as quantidades por local após descontar peças bloqueadas, reservadas, em quarentena, costura ou descarte. A conferência vale para a posição semanal atual. Desconte também as separações em aberto das semanas anteriores.</p>'+
-      (canManage&&items.length?'<form data-leo-stock><label>Produto<select name="product" required><option value="">Selecione</option>'+items.map(row=>'<option value="'+esc(idealReferenceKey(row))+'">'+esc(row.produtoNome)+'</option>').join('')+'</select></label><label>Depósito<input name="depot" type="number" min="0" step="1" required></label><label>Mercado<input name="market" type="number" min="0" step="1" required></label><button>Salvar conferência</button></form>':'')+
+      (canManage&&items.length?'<form data-leo-stock><label>Produto<select name="product" required><option value="">Selecione</option>'+items.map(row=>'<option value="'+esc(idealReferenceKey(row))+'">'+esc(row.produtoNome)+'</option>').join('')+'</select></label>' + stockFields() + '</form>':'')+
       '<p>'+qty(registered.size)+' produto(s) conferido(s) nesta posição.</p></section>';
   }
 
@@ -218,7 +230,7 @@ function mount(host) {
       }else if(!native||['return','supply','pendencias'].includes(page)){
         rows=allRows.filter(row=>!native||page==='pendencias'?row.remaining>0:row.direction===page);
         const chosen=rows.filter(row=>choices.get(transferKey(row))?.decision);
-        content='<section class="leo-card"><p>As quantidades previstas vêm da posição semanal e das trocas ideais. Confirme após a movimentação física nos dois locais. <a href="/producao/gestao-enxoval?tela=configuracoes">Conferir saldo elegível</a>.</p>'+
+        content='<section class="leo-card"><p>As quantidades previstas vêm da posição semanal e das trocas ideais. Confirme após a movimentação física nos dois locais. Para produtos a conferir, registre apenas peças disponíveis, descontando reservas e bloqueios. <a href="/producao/gestao-enxoval?tela=configuracoes">Conferir saldo elegível</a>.</p>'+
           '<button type="button" data-leo-list '+(!chosen.length||saving?'disabled':'')+'>Salvar lista</button>'+table(rows)+'</section>';
         if(!native||page==='pendencias'){report=history();content+=report.html;}
       }else if(page==='configuracoes'){
@@ -233,7 +245,10 @@ function mount(host) {
     host.querySelectorAll('[data-leo-decision]').forEach(select=>select.onchange=()=>{
       const row=rows[Number(select.dataset.leoDecision)];
       const key=transferKey(row);
-      choices.set(key,{quantity:choices.get(key)?.quantity||'',decision:select.value});render();
+      const index=select.dataset.leoDecision;
+      choices.set(key,{quantity:choices.get(key)?.quantity||'',decision:select.value});
+      render();
+      if(select.value==='yes')host.querySelector('[data-leo-quantity="'+index+'"]')?.focus({preventScroll:true});
     });
     host.querySelectorAll('[data-leo-quantity]').forEach(input=>input.oninput=()=>{
       const row=rows[Number(input.dataset.leoQuantity)];
@@ -257,8 +272,9 @@ function mount(host) {
         window.XLSX.writeFile(file,'historico-movimentacoes-enxoval.xlsx');
       }catch(error){message=error.message;render();}
     });
-    host.querySelector('[data-leo-stock]')?.addEventListener('submit',async event=>{
+    host.querySelectorAll('[data-leo-stock]').forEach(form=>form.addEventListener('submit',async event=>{
       event.preventDefault();
+      if(saving||!canManage||!snapshot)return;
       const data=new FormData(event.currentTarget);
       saving=true;message='';render();
       try{
@@ -266,7 +282,7 @@ function mount(host) {
           p_key:data.get('product'),p_depot:Number(data.get('depot')),p_market:Number(data.get('market'))});
         message='Saldo elegível conferido.';await load();
       }catch(error){message=error.message;}finally{saving=false;render();}
-    });
+    }));
     host.querySelector('[data-leo-xml]')?.addEventListener('change',async event=>{
       try{
         const file=event.target.files[0];
