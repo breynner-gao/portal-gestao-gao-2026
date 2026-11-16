@@ -1,0 +1,44 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { runInNewContext } from 'node:vm';
+
+const source = await readFile(new URL('../chemicals-relave-v123.js', import.meta.url), 'utf8');
+const saveSource = source.slice(source.indexOf('async function saveOperationRecord('), source.indexOf('async function excludeOperationRecord('));
+
+function fixture(canEdit, withWeighing = true) {
+  const key = 'l:existing';
+  const weighing = {receivingCommand:'123',received:20,resolved:true};
+  const original = {__key:key,id:'existing',date:'2026-11-15',command:'121',kind:'internal',relaveTotal:21,relaveItems:[],...(withWeighing?{weighing}:{})};
+  let current = original;
+  const api = runInNewContext(saveSource + '({saveOperationRecord,saveOperationWeighing})', {
+    all: () => [current],
+    state: () => ({overrides:{}}),
+    updateEntry: (_, next) => {current={...current,...next};},
+    requireRelaveManager: () => {if(!canEdit)throw Error('Conta de gestor necessária.');},
+    syncRelaveOperation: async()=>{},
+    operationRecord: row=>row,
+    weekNo: ()=>47,
+    n:Number
+  });
+  return {api,key,weighing,original,current:()=>current};
+}
+
+const corrected = {command:'122',date:'2026-11-16',kind:'internal',sorted:150,items:[{type:'Lençol',weight:21}]};
+
+test('gestor pode corrigir comanda e data preservando o vínculo da pesagem', async()=>{
+  const {api,key,weighing}=fixture(true);
+  const updated=await api.saveOperationRecord(corrected,key);
+  assert.equal(updated.command,'122');
+  assert.equal(updated.date,'2026-11-16');
+  assert.equal(updated.weighing,weighing);
+  await assert.rejects(api.saveOperationRecord({...corrected,kind:'customer'},key),/tipo precisa permanecer/);
+});
+
+test('operador registra a primeira pesagem e a revisão requer perfil de gestor', async()=>{
+  const {api,key,weighing,current}=fixture(false,false);
+  await assert.rejects(api.saveOperationRecord(corrected,key),/Conta de gestor/);
+  await api.saveOperationWeighing({key},weighing);
+  assert.equal(current().weighing,weighing);
+  await assert.rejects(api.saveOperationWeighing({key},{...weighing,received:22}),/Conta de gestor/);
+});

@@ -52,7 +52,7 @@ async function boot(){try{
  for(const k of KEYS){
   const localText=rawGet.call(localStorage,k),L=parse(localText)||{},R=map.get(k)||{};backup(k,localText,'pre-hydration');
   let merged;
-  if(k===RELAVE){const oldLocal=parse(rawGet.call(localStorage,LEGACY_RELAVE))||{},oldRemote=map.get(LEGACY_RELAVE)||{};merged=mergeRelave(R,L,oldRemote,oldLocal)}
+  if(k===RELAVE){const oldLocal=parse(rawGet.call(localStorage,LEGACY_RELAVE))||{},oldRemote=map.get(LEGACY_RELAVE)||{};merged=mergeRelave(oldRemote,oldLocal,L,R)}
   else merged=merge(k,R,L);
   const txt=JSON.stringify(merged);rawSet.call(localStorage,k,txt);backup(k,txt,'merged');
  }
