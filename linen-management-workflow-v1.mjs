@@ -5,17 +5,17 @@ const date=value=>value?localTimestamp(value).replace(/^(\d{4})-(\d\d)-(\d\d)/,'
 const status={
   quarantine:'Em quarentena',rejected:'Reprovada em quarentena',approved:'Aguardando RFID',
   released:'RFID registrado',sewing:'Aguardando costura',repairing:'Em reparo',
-  sewing_return:'Aguardando RFID de recuperação',discard_pending:'Aguardando baixa',discarded:'Descartada'
+  sewing_return:'Aguardando RFID de recuperação',inspection_pending:'Em avaliação',archived:'Cadastro cancelado',discard_pending:'Aguardando baixa',discarded:'Descartada'
 };
 const locationName={depot:'Depósito',market:'Mercado'};
 const actions={invoice:'Recepção de NF-e',spec:'Versão de ficha técnica',quality:'Parecer de qualidade',tag:'Cadastro RFID',
-  inspect_used:'Avaliação de peça usada',sewing_receive:'Recebimento na costura',sewing_return:'Retorno da costura',
+  inspect_used:'Avaliação de peça usada',edit_piece:'Correção de cadastro de peça',archive_piece:'Cancelamento de cadastro de peça',sewing_receive:'Recebimento na costura',sewing_return:'Retorno da costura',
   discard:'Baixa para descarte',client_open:'Solicitação de cliente',client_separate:'Separação de peças',
   client_close:'Conclusão da comanda',sewing_sla:'Prazo da costura'};
 const field=(name,label,type='text',attrs='')=>'<label>'+label+'<input name="'+name+'" type="'+type+'" '+attrs+'></label>';
 const select=(name,label,options,selected)=>'<label>'+label+'<select name="'+name+'" required><option value="">Selecione</option>'+
   options.map(([value,title])=>'<option value="'+esc(value)+'" '+(String(value)===String(selected)?'selected':'')+'>'+esc(title)+'</option>').join('')+'</select></label>';
-const note=(name,label,required=true)=>'<label>'+label+'<textarea name="'+name+'" rows="2" maxlength="1500" '+(required?'required':'')+'></textarea></label>';
+const note=(name,label,required=true,value='')=>'<label>'+label+'<textarea name="'+name+'" rows="2" maxlength="1500" '+(required?'required':'')+'>'+esc(value)+'</textarea></label>';
 const form=(action,fields,label,saving,attrs='')=>'<form data-leo-workflow="'+action+'" '+attrs+'>'+fields+'<button '+(saving?'disabled':'')+'>'+label+'</button></form>';
 const hidden=(name,value)=>'<input name="'+name+'" type="hidden" value="'+esc(value)+'">';
 const itemInput=item=>hidden('item',item.id)+hidden('version',item.version);
@@ -30,6 +30,9 @@ const link=(url,title)=>'<a class="leo-link" href="'+url+'">'+title+'</a>';
 const dimensions=[['width','Largura (cm)'],['length','Comprimento (cm)'],['weight','Peso (g)'],['grammage','Gramatura (g/m²)']];
 const decimal='min="0.001" step="any" required';
 const integer='min="1" step="1" required';
+const defects=[['seam','Costura ou acabamento'],['tear','Furo ou rasgo'],['stain','Mancha'],['wear','Desgaste'],
+  ['rfid','Falha de identificação RFID'],['other','Outro defeito'],['none','Sem defeito físico identificado']];
+const defectLabels=new Map(defects);
 const sourceName=item=>item.invoice_id?'Peça nova':'Peça usada/recuperada';
 
 export function workflowView(page,model,{canManage,canSew,saving,draft}){
@@ -39,6 +42,7 @@ export function workflowView(page,model,{canManage,canSew,saving,draft}){
   const itemsIn=(...states)=>items.filter(item=>states.includes(item.status));
   const pieceFacts=item=>'<p>'+esc(sourceName(item))+' · '+esc(status[item.status])+' · '+esc(item.quantity)+' peça(s) · '+esc(date(item.created_at))+'</p>';
   const qualityFacts=item=>item.quality?'<p>Amostra '+esc(item.quality.sample)+' · '+esc(Number(item.quality.grammage).toLocaleString('pt-BR',{maximumFractionDigits:1,minimumFractionDigits:1}))+' g/m² · '+esc(item.quality.reason)+'</p>':'';
+  const assessment=item=>item.condition?'<p>'+esc([defectLabels.get(item.defect),item.condition].filter(Boolean).join(' · '))+'</p>':'';
   const tagForm=item=>form('tag',itemInput(item)+field('chip','Novo RFID','text','maxlength="128" required')+
     (item.invoice_id?'':field('previousChip','RFID anterior, se identificado','text','maxlength="128"'))+
     select('destination','Destino',Object.entries(locationName))+
@@ -80,12 +84,31 @@ export function workflowView(page,model,{canManage,canSew,saving,draft}){
       (!isReturn?card('Histórico de RFID e destino',tagHistory)+card('Integração RFID','<p>A unicidade é verificada nos cadastros deste módulo. A publicação no sistema RFID externo e a disponibilização na posição física dependem da integração com esse cadastro.</p>'):'');
   }
   if(page==='chip'){
-    const entry=canManage?card('Avaliar peça usada',form('inspect_used',product()+field('piece','Identificação permanente da peça','text','required maxlength="150"')+
-      select('chipCondition','Condição do chip',[['missing','Sem chip'],['dead','Chip morto']])+
-      select('destination','Encaminhamento',[['sewing','Costura'],['discard_pending','Avaliar descarte']])+note('reason','Condição observada'),
-      'Registrar encaminhamento',saving)):'';
-    return entry+card('Peças avaliadas',table(['Peça','Produto','Chip','Encaminhamento','Data'],items.filter(i=>i.chip_condition).map(i=>
-      [i.legacy_identifier,productOf(i),i.chip_condition==='dead'?'Chip morto':'Sem chip',status[i.status],date(i.created_at)])));
+    const chipStates=[['working','Funcionando'],['missing','Sem chip'],['dead','Chip morto'],['unchecked','Ainda não testado']];
+    const destinations=[['inspection_pending','Manter em avaliação'],['sewing','Costura'],['discard_pending','Avaliar descarte']];
+    const savedTags=new Set(tags.map(tag=>tag.item_id));
+    const fields=(item={})=>{
+      const linked=savedTags.has(item.id);
+      const productField=linked||item.product_id&&!choices.some(([id])=>id===item.product_id)?
+        '<p>'+esc(productOf(item))+'</p>'+hidden('product',item.product_id):product('product',item.product_id);
+      return productField+field('piece','Identificação permanente da peça','text','required maxlength="150" value="'+esc(item.legacy_identifier||'')+'" '+(linked?'readonly':''))+
+        select('chipCondition','Condição do chip',chipStates,item.chip_condition)+select('defect','Problema encontrado',defects,item.defect)+
+        select('destination','Encaminhamento',destinations,item.status||'inspection_pending')+
+        note('reason','Condição observada',true,item.condition||'');
+    };
+    const used=items.filter(item=>item.legacy_identifier&&!item.invoice_id);
+    const entry=canManage?card('Avaliar peça usada',form('inspect_piece',fields(),'Registrar avaliação',saving)):'';
+    return entry+group('Peças avaliadas',used.filter(item=>item.status!=='archived'),item=>{
+      const editable=canManage&&destinations.some(([state])=>state===item.status)&&item.released===0&&!item.repair;
+      const chip=new Map(chipStates).get(item.chip_condition);
+      const defect=defectLabels.get(item.defect);
+      return details(nameOf(item),pieceFacts(item)+'<p>'+esc([chip,defect,item.condition].filter(Boolean).join(' · '))+'</p>'+
+        (editable?details('Editar cadastro',form('edit_piece',itemInput(item)+fields(item),'Salvar correção',saving)):'')+
+        (editable&&!savedTags.has(item.id)?details('Excluir cadastro',form('archive_piece',
+          itemInput(item)+note('reason','Motivo do cancelamento'),'Cancelar cadastro da peça',saving)+
+          '<p>O cadastro sai da fila de trabalho e continua no histórico de avaliações.</p>'):''));
+    })+group('Cadastros cancelados',used.filter(item=>item.status==='archived'),item=>
+      details(nameOf(item),pieceFacts(item)+'<p>Motivo do cancelamento: '+esc(item.archive_reason)+'</p>'));
   }
   if(page==='costura')return group('Ordens de recuperação',itemsIn('sewing','repairing'),item=>{
     const hours=Math.max(0,Math.floor((Date.now()-Date.parse(item.created_at))/3600000));
@@ -93,9 +116,9 @@ export function workflowView(page,model,{canManage,canSew,saving,draft}){
       (item.due_at&&Date.parse(item.due_at)<Date.now()?' <strong class="leo-alert">Em atraso</strong>':'')+'</p>';
     const editor=!canSew?'':item.status==='sewing'?form('sewing_receive',itemInput(item),'Receber peça',saving):
       form('sewing_return',itemInput(item)+note('repair','Serviço realizado')+select('condition','Condição após o serviço',[['utilizavel','Utilizável'],['sem_condicoes','Sem condição de uso']]),'Registrar devolução',saving);
-    return details(nameOf(item),pieceFacts(item)+timing+editor);
+    return details(nameOf(item),pieceFacts(item)+assessment(item)+timing+editor);
   });
-  if(page==='descarte')return group('Avaliações para descarte',itemsIn('discard_pending','discarded'),item=>details(nameOf(item),pieceFacts(item)+
+  if(page==='descarte')return group('Avaliações para descarte',itemsIn('discard_pending','discarded'),item=>details(nameOf(item),pieceFacts(item)+assessment(item)+
     (item.status==='discard_pending'&&canManage?form('discard',itemInput(item)+note('reason','Justificativa da baixa'),'Confirmar baixa da peça',saving):'')))+
     card('Estoque e descarte','<p>Registre aqui peças retiradas de circulação para avaliação. A baixa encerra o registro individual e desativa o chip vinculado neste módulo. A baixa no RFID externo depende de integração.</p>');
   if(page==='cliente'){

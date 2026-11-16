@@ -1,9 +1,9 @@
 import {applyIdealReferences, idealReferenceKey, listMovementItems} from './linen-risk-rules-v150.mjs?v=227';
 import {directionLabel, filterTransferHistory, localTimestamp, transferWorkbook} from './linen-operations-history-v1.mjs?v=1';
 
-import {views,newFilters,movementRows,invoiceFromXml} from './linen-management-views-v1.mjs?v=2';
+import {views,newFilters,movementRows,invoiceFromXml} from './linen-management-views-v1.mjs?v=3';
 import {productivityView, productivityRecords, shiftDate} from './linen-productivity-v1.mjs?v=1';
-import {workflowView} from './linen-management-workflow-v1.mjs?v=1';
+import {workflowView} from './linen-management-workflow-v1.mjs?v=2';
 
 const HOST='gao-linen-operations';
 const SB='https://fquzuxdqvhecijjuxbmg.supabase.co';
@@ -86,7 +86,7 @@ function mount(host) {
   async function loadWorkflow(org) {
     const sources={
       painel:['items'],recepcao:['products','invoices'],ficha:['products','specs'],
-      quarentena:['items','specs'],rfid:['items','tags'],chip:['items','products'],
+      quarentena:['items','specs'],rfid:['items','tags'],chip:['items','products','tags'],
       costura:['items'],retorno:['items','tags'],descarte:['items'],
       cliente:['products','clients','client_orders'],compras:['purchases','client_orders'],
       configuracoes:['settings','audit'],produtividade:['activityLog','targets']
@@ -208,10 +208,11 @@ function mount(host) {
     saving=true;message='';
     host.querySelectorAll('button').forEach(button=>{if(!button.disabled){button.disabled=true;button.dataset.leoBusy='1';}});
     try{
-      await api('/rest/v1/rpc/linen_management_action',{p_org:organization,p_event:workflowIds.get(key),p_action:action,p_data:data});
+      const rpc=['inspect_piece','edit_piece','archive_piece'].includes(action)?'linen_piece_review':'linen_management_action';
+      await api('/rest/v1/rpc/'+rpc,{p_org:organization,p_event:workflowIds.get(key),p_action:action,p_data:data});
       workflowIds.delete(key);
       if(action==='invoice')draft=undefined;
-      message='Registro salvo no SGQ.';await load();
+      message=action==='archive_piece'?'Cadastro cancelado. O histórico foi preservado.':'Registro salvo no SGQ.';await load();
     }catch(error){
       message=error.message;host.querySelector('[role=status]').textContent=message;
       host.querySelectorAll('[data-leo-busy]').forEach(button=>{button.disabled=false;delete button.dataset.leoBusy;});

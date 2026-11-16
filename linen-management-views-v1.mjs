@@ -7,7 +7,7 @@ export const views=[
   ['ficha','Ficha técnica'],
   ['quarentena','Quarentena e qualidade'],
   ['rfid','Cadastro RFID e destino'],
-  ['chip','Peças sem chip ou com chip morto'],
+  ['chip','Avaliação de peças usadas'],
   ['costura','Costura'],
   ['retorno','Retorno da costura'],
   ['descarte','Descarte'],
