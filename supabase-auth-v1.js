@@ -41,19 +41,26 @@
     if(document.getElementById('gao-supabase-auth-gate'))return;
     const style=document.createElement('style');
     style.id='gao-supabase-auth-style';
-    style.textContent='.gao-auth-gate{position:fixed;inset:0;z-index:100000;display:grid;place-items:center;padding:20px;background:rgba(8,45,82,.42);font-family:Inter,Segoe UI,Arial,sans-serif}.gao-auth-card{width:min(420px,100%);background:#fff;border-radius:16px;padding:28px;box-shadow:0 24px 80px rgba(8,45,82,.3);color:#082d52}.gao-auth-card h2{margin:0 0 8px;font-size:24px}.gao-auth-card p{margin:0 0 20px;color:#58738e;line-height:1.45}.gao-auth-card label{display:block;margin:12px 0 6px;font-weight:700}.gao-auth-card input{width:100%;padding:11px;border:1px solid #b9d1e8;border-radius:8px;font:inherit}.gao-auth-card button{width:100%;margin-top:18px;padding:12px;border:0;border-radius:8px;background:#187fc4;color:#fff;font:inherit;font-weight:800;cursor:pointer}.gao-auth-card button:disabled{opacity:.65;cursor:wait}.gao-auth-error{min-height:20px;margin-top:12px;color:#b42318;font-size:13px}.gao-auth-note{margin-top:14px;font-size:12px;color:#6a8196}';
+    style.textContent='.gao-auth-gate{position:fixed;inset:0;z-index:100000;display:grid;place-items:center;padding:20px;background:rgba(8,45,82,.42);font-family:Inter,Segoe UI,Arial,sans-serif}.gao-auth-card{width:min(420px,100%);background:#fff;border-radius:16px;padding:28px;box-shadow:0 24px 80px rgba(8,45,82,.3);color:#082d52}.gao-auth-card h2{margin:0 0 8px;font-size:24px}.gao-auth-card p{margin:0 0 20px;color:#58738e;line-height:1.45}.gao-auth-card label{display:block;margin:12px 0 6px;font-weight:700}.gao-auth-card input{width:100%;padding:11px;border:1px solid #b9d1e8;border-radius:8px;font:inherit}.gao-auth-card button[type=submit]{width:100%;margin-top:18px;padding:12px;border:0;border-radius:8px;background:#187fc4;color:#fff;font:inherit;font-weight:800;cursor:pointer}.gao-auth-password{display:flex;gap:8px;align-items:stretch}.gao-auth-password input{min-width:0;flex:1}.gao-auth-card .gao-auth-password button{flex:none;border:1px solid #b9d1e8;border-radius:8px;padding:0 10px;min-height:44px;background:#eff6fc;color:#082d52;font:inherit;font-size:13px;font-weight:700;cursor:pointer}.gao-auth-card button:disabled{opacity:.65;cursor:wait}.gao-auth-error{min-height:20px;margin-top:12px;color:#b42318;font-size:13px}.gao-auth-note{margin-top:14px;font-size:12px;color:#6a8196}';
     document.head.appendChild(style);
     const gate=document.createElement('div');
     gate.id='gao-supabase-auth-gate';
     gate.className='gao-auth-gate';
-    gate.innerHTML='<form class="gao-auth-card"><h2>Acesso ao Portal GAO</h2><p>Entre com sua conta do Portal para carregar Rouparia, demandas e demais informações do Supabase.</p><label for="gao-auth-username">Usuário</label><input id="gao-auth-username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Seu nome de usuário" required><label for="gao-auth-password">Senha</label><input id="gao-auth-password" type="password" autocomplete="current-password" required><button type="submit">Entrar</button><div class="gao-auth-error" role="alert"></div><div class="gao-auth-note">A senha é usada somente nesta sessão e não é armazenada pelo Portal.</div></form>';
+    gate.innerHTML='<form class="gao-auth-card"><h2>Acesso ao Portal GAO</h2><p>Entre com sua conta do Portal para carregar Rouparia, demandas e demais informações do Supabase.</p><label for="gao-auth-username">Usuário</label><input id="gao-auth-username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Seu nome de usuário" required><label for="gao-auth-password">Senha</label><div class="gao-auth-password"><input id="gao-auth-password" name="password" type="password" autocomplete="current-password" required><button type="button" id="gao-auth-password-toggle" aria-controls="gao-auth-password">Mostrar senha</button></div><button type="submit">Entrar</button><div class="gao-auth-error" role="alert"></div><div class="gao-auth-note">A senha é usada somente nesta sessão e não é armazenada pelo Portal.</div></form>';
     document.body.appendChild(gate);
-    if(signingOut)gate.querySelector('button').disabled=true;
+    const passwordField=gate.querySelector('#gao-auth-password');
+    const toggle=gate.querySelector('#gao-auth-password-toggle');
+    toggle.addEventListener('click',()=>{
+      const reveal=passwordField.type==='password';
+      passwordField.type=reveal?'text':'password';
+      toggle.textContent=reveal?'Ocultar senha':'Mostrar senha';
+    });
+    if(signingOut)gate.querySelector('button[type=submit]').disabled=true;
     gate.querySelector('form').addEventListener('submit',async event=>{
       event.preventDefault();
       if(signingOut)return;
       const form=event.currentTarget;
-      const button=form.querySelector('button');
+      const button=form.querySelector('button[type=submit]');
       const error=form.querySelector('.gao-auth-error');
       button.disabled=true;button.textContent='Entrando...';error.textContent='';
       try{
