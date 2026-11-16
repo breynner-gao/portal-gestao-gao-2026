@@ -1,7 +1,8 @@
 import {applyIdealReferences, idealReferenceKey, listMovementItems} from './linen-risk-rules-v150.mjs?v=227';
 import {directionLabel, filterTransferHistory, localTimestamp, transferWorkbook} from './linen-operations-history-v1.mjs?v=1';
 
-import {views,newFilters,movementRows,invoiceFromXml} from './linen-management-views-v1.mjs?v=1';
+import {views,newFilters,movementRows,invoiceFromXml} from './linen-management-views-v1.mjs?v=2';
+import {productivityView, productivityRecords, shiftDate} from './linen-productivity-v1.mjs?v=1';
 import {workflowView} from './linen-management-workflow-v1.mjs?v=1';
 
 const HOST='gao-linen-operations';
@@ -20,11 +21,12 @@ function mount(host) {
   const choices=new Map(), outstanding=new Map(), workflowIds=new Map();
   let loading=true, saving=false, message='', failed=false, sewingOnly=false;
   let filters=newFilters();
+  let reportDate=localTimestamp(new Date()).slice(0,10);
 
-  async function api(path, body) {
+  async function api(path, body, prefer) {
     const response=await fetch(SB+path,{
       method:body?'POST':'GET', cache:'no-store',
-      headers:{apikey:API,Authorization:'Bearer '+(window.GAO_AUTH_SESSION||session)?.access_token,'Content-Type':'application/json'},
+      headers:{apikey:API,Authorization:'Bearer '+(window.GAO_AUTH_SESSION||session)?.access_token,'Content-Type':'application/json',...(prefer?{Prefer:prefer}:{})},
       ...(body?{body:JSON.stringify(body)}:{})
     });
     const data=await response.json().catch(()=>null);
@@ -87,7 +89,7 @@ function mount(host) {
       quarentena:['items','specs'],rfid:['items','tags'],chip:['items','products'],
       costura:['items'],retorno:['items','tags'],descarte:['items'],
       cliente:['products','clients','client_orders'],compras:['purchases','client_orders'],
-      configuracoes:['settings','audit']
+      configuracoes:['settings','audit'],produtividade:['activityLog','targets']
     };
     const definitions={
       products:['laundry_products',{select:'id,code,name',active:'eq.true',order:'name,id'}],
@@ -99,7 +101,10 @@ function mount(host) {
       settings:['linen_management_settings',{}],
       client_orders:['linen_management_client_orders',{select:'*,client:laundry_clients(name),product:laundry_products(name,code)',order:'created_at.desc,id'}],
       purchases:['linen_ready_orders',{select:'id,product_name,order_number,ordered_pieces,received_pieces,status',order:'created_at.desc,id'}],
-      audit:['linen_management_audit',{select:'id,action,record_id,created_at,responsible',order:'created_at.desc,id'}]
+      audit:['linen_management_audit',{select:'id,action,record_id,created_at,responsible',order:'created_at.desc,id'}],
+      activityLog:['linen_management_audit',{select:'id,action,created_at,responsible,quantity:details->>quantity,lines:details->lines',
+        and:'(created_at.gte.'+shiftDate(reportDate,-29)+',created_at.lt.'+shiftDate(reportDate,2)+')',order:'created_at.desc,id'}],
+      targets:['linen_productivity_targets',{select:'activity,effective_on,target',order:'activity,effective_on.desc'}]
     };
     const entries=await Promise.all((sources[page]||[]).map(async name=>{
       const [table,params]=definitions[name];
@@ -170,6 +175,7 @@ function mount(host) {
   }
 
   function go(target){
+    if(saving||loading)return;
     page=target; message='';workflow={};
     if(native){
       const url=new URL(location.href);
@@ -226,13 +232,16 @@ function mount(host) {
           ['pendencias','Solicitações pendentes',allRows.filter(x=>x.id&&x.remaining).length],
           ['quarentena','Peças em quarentena',(workflow.items||[]).filter(x=>['quarantine','rejected'].includes(x.status)).reduce((a,b)=>a+b.quantity,0)]];
         content='<div class="leo-kpis">'+groups.map(([key,label,total])=>'<button type="button" data-leo-view="'+key+'"><span>'+label+'</span><strong>'+qty(total)+'</strong></button>').join('')+'</div>'+
-          '<section class="leo-card"><h2>Fluxo da operação</h2><div class="leo-flow">'+views.slice(1,14).map(([key,label])=>'<button type="button" data-leo-view="'+key+'">'+label+'</button>').join('')+'</div></section>';
+          '<section class="leo-card"><h2>Fluxo da operação</h2><div class="leo-flow">'+views.filter(([key])=>!['painel','configuracoes'].includes(key)).map(([key,label])=>'<button type="button" data-leo-view="'+key+'">'+label+'</button>').join('')+'</div></section>';
       }else if(!native||['return','supply','pendencias'].includes(page)){
         rows=allRows.filter(row=>!native||page==='pendencias'?row.remaining>0:row.direction===page);
         const chosen=rows.filter(row=>choices.get(transferKey(row))?.decision);
         content='<section class="leo-card"><p>As quantidades previstas vêm da posição semanal e das trocas ideais. Confirme após a movimentação física nos dois locais. Para produtos a conferir, registre apenas peças disponíveis, descontando reservas e bloqueios. <a href="/producao/gestao-enxoval?tela=configuracoes">Conferir saldo elegível</a>.</p>'+
           '<button type="button" data-leo-list '+(!chosen.length||saving?'disabled':'')+'>Salvar lista</button>'+table(rows)+'</section>';
         if(!native||page==='pendencias'){report=history();content+=report.html;}
+      }else if(page==='produtividade'){
+        content=productivityView({records:productivityRecords(events,workflow.activityLog||[]),targets:workflow.targets||[],
+          date:reportDate,today:localTimestamp(new Date()).slice(0,10),canManage,saving});
       }else if(page==='configuracoes'){
         report=history();content=stockSetup()+workflowView(page,workflow,{canManage,canSew,saving,draft})+report.html;
       }else content=workflowView(page,workflow,{canManage,canSew,saving,draft});
@@ -251,6 +260,31 @@ function mount(host) {
       host.querySelector('[data-leo-view-select]')?.focus({preventScroll:true});
     };
     host.querySelector('[data-leo-refresh]')?.addEventListener('click',()=>{message='';void load();});
+    host.querySelector('[data-leo-report-date]')?.addEventListener('submit',event=>{
+      event.preventDefault();
+      if(saving)return;
+      reportDate=new FormData(event.currentTarget).get('date');
+      message='';void load();
+    });
+    host.querySelector('[data-leo-target]')?.addEventListener('submit',async event=>{
+      event.preventDefault();
+      if(saving||!canManage)return;
+      const form=event.currentTarget;
+      const values=new FormData(form);
+      const controls=[form.querySelector('button'),viewSelect,host.querySelector('[data-leo-refresh]')].filter(Boolean);
+      saving=true;controls.forEach(control=>{control.disabled=true;});
+      try{
+        await api('/rest/v1/linen_productivity_targets?on_conflict=organization_id,activity,effective_on',{
+          organization_id:organization,activity:values.get('activity'),
+          effective_on:values.get('effective'),target:Number(values.get('target'))
+        },'resolution=merge-duplicates,return=minimal');
+        message='Meta diária salva.';
+        saving=false;await load();
+      }catch(error){
+        message=error.message;host.querySelector('[role=status]').textContent=message;
+        controls.forEach(control=>{control.disabled=false;});
+      }finally{saving=false;}
+    });
     host.querySelectorAll('[data-leo-decision]').forEach(select=>select.onchange=()=>{
       const row=rows[Number(select.dataset.leoDecision)];
       const key=transferKey(row);

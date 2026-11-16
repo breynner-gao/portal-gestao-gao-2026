@@ -13,7 +13,8 @@ export const views=[
   ['descarte','Descarte'],
   ['cliente','Cliente novo e comanda'],
   ['compras','Compras e portais'],
-  ['configuracoes','Configurações e histórico']
+  ['configuracoes','Configurações e histórico'],
+  ['produtividade','Produtividade diária']
 ];
 
 export const newFilters=()=>({product:'',direction:'',start:'',end:'',responsible:''});

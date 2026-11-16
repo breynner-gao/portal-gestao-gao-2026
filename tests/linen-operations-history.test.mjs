@@ -40,15 +40,16 @@ test('Excel mantém a seleção em ordem, quantidades numéricas e a aba de filt
   assert.throws(()=>transferWorkbook(xlsx,[],{},{}),/Nenhum registro/);
 });
 
-test('Produção abre o módulo nativo com as 15 telas', async () => {
+test('Produção abre o módulo nativo com a tela de produtividade', async () => {
   const core=await readFile(new URL('../portal-sgq-core.js',import.meta.url),'utf8');
   const submenu=core.slice(core.indexOf('const qualitySubnav='),core.indexOf(';const R='));
   const html=runInNewContext(submenu+';qualitySubnav()', {location:{hash:'',pathname:'/producao/gestao-enxoval'}});
   assert.match(html,/<a href="\/producao\/gestao-enxoval"[^>]*aria-current="page">Gestão de Enxoval<\/a>/);
   assert.match(core,/id="gao-linen-management"/);
   const {views}=await import('../linen-management-views-v1.mjs');
-  assert.equal(views.length,15);
-  assert.equal(new Set(views.map(([key])=>key)).size,15);
+  assert.equal(views.length,16);
+  assert.ok(views.some(([key])=>key==='produtividade'));
+  assert.equal(new Set(views.map(([key])=>key)).size,16);
 });
 
 test('atendimento de posição anterior permanece concluído na semana em que foi finalizado', async () => {
