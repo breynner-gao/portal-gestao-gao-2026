@@ -44,8 +44,15 @@
 .leo-confirm input {width:6rem}
 .leo-scroll {margin-top:.7rem;overflow:auto}
 :is(#gao-linen-management,#gao-linen-operations) table {border-collapse:collapse;min-width:36rem;width:100%;color:#0c3352}
-:is(#gao-linen-management,#gao-linen-operations) :is(th,td) {text-align:left;padding:.55rem;border-bottom:1px solid var(--leo-border);vertical-align:top}
-:is(#gao-linen-management,#gao-linen-operations) th {background:#e9f4fe}
+:is(#gao-linen-management,#gao-linen-operations) :is(th,td) {text-align:left;padding:.65rem .55rem;border-bottom:1px solid var(--leo-border);vertical-align:top}
+/* Pair the header colors so rules from the portal theme cannot leave white text on pale blue. */
+:is(#gao-linen-management,#gao-linen-operations) .leo-scroll thead th {
+  background:#e3effa;
+  color:#123650;
+  font-weight:700;
+  line-height:1.35;
+  white-space:normal;
+}
 :is(#gao-linen-management,#gao-linen-operations) td small {display:block;margin:.3rem 0;overflow-wrap:anywhere}
 .leo-record {padding:.65rem 0;border-top:1px solid var(--leo-border)}
 .leo-record summary {cursor:pointer;font-weight:700}
