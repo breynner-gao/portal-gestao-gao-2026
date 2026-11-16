@@ -40,9 +40,12 @@ test('Excel mantém a seleção em ordem, quantidades numéricas e a aba de filt
   assert.throws(()=>transferWorkbook(xlsx,[],{},{}),/Nenhum registro/);
 });
 
-test('rota Gestão de Enxoval aparece no submenu Produção', async () => {
+test('endereço antigo encaminha à única aba Movimentações do Enxoval', async () => {
   const core=await readFile(new URL('../portal-sgq-core.js',import.meta.url),'utf8');
-  const route=new Function('location','return ('+core.match(/const R=(.*?)\};const H=/)[1]+'})()');
-  assert.equal(route({pathname:'/producao/gestao-enxoval',hash:''}),'producao');
-  assert.match(core,/qualitySubnav=\(\)=>[^;]*\/producao\/gestao-enxoval[^;]*Gestão de Enxoval/);
+  const redirect=core.slice(core.indexOf('if(location.pathname'),core.indexOf('const I='));
+  const visits=[];
+  runInNewContext('(()=>{'+redirect+'})()',{
+    location:{pathname:'/producao/gestao-enxoval',replace:path=>visits.push(path)}
+  });
+  assert.deepEqual(visits,['/enxoval-tecidos#movimentacoes-enxoval']);
 });

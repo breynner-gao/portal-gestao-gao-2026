@@ -1,3 +1,4 @@
+import { prepareWeeklyStock } from './linen-weekly-stock-v1.mjs?v=1';
 import { applyFactionToRows, buildFactionMap, buildPendingProductionCoverage, applyPendingProductionCoverage, factionQuantityFor, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, applyIdealReferences, idealReferenceKey } from './linen-risk-rules-v150.mjs?v=227';
 
 const DATA = '/assets/linen-rfid-report-2026-10-13.json';
@@ -42,7 +43,7 @@ let state = {
   factionFilter: '',
   realOrderFilter: '',
   itemSort: 'pedido',
-  dimensionView: 'map',
+  dimensionView: location.hash === '#movimentacoes-enxoval' ? 'movements' : 'map',
   orderListOpen: true,
   movementListOpen: true,
   movementDirection: 'supply',
@@ -174,7 +175,12 @@ async function cloudContext() {
   if (!response.ok) throw Error(memberships.message || 'Não foi possível validar seu acesso à GAO.');
   const member = (Array.isArray(memberships) ? memberships : []).find(item => item.organizations?.kind === 'gao' && item.organizations?.active);
   if (!member) throw Error('Seu usuário não tem vínculo ativo com a organização GAO.');
-  const canWrite = ['Administrador Geral', 'Operacional'].includes(member.role_name);
+  const grants = await fetch(SUPABASE_URL + '/rest/v1/member_permissions?' + new URLSearchParams({
+    select:'permission_code', membership_id:'eq.'+member.id, allowed:'eq.true'
+  }), {headers, cache:'no-store'});
+  if (!grants.ok) throw Error('Não foi possível consultar suas permissões de estoque.');
+  const permissions = new Set((await grants.json()).map(row=>row.permission_code));
+  const canWrite = permissions.has('textiles.inventory.manage') || permissions.has('textiles.production.manage');
   return { token, userId, organizationId: member.organization_id, canWrite };
 }
 
@@ -263,7 +269,7 @@ async function load(force = false) {
     } else if (references.status === 'rejected') idealMessage = references.reason.message;
     if (snapshot.status === 'rejected') throw snapshot.reason;
     shared = snapshot.value;
-    if (shared?.rows?.length && !current?.needsCloudSync) {
+    if (shared?.rows?.length && (!current?.needsCloudSync || Date.parse(shared.updated_at) > (Date.parse(current.cloudUpdatedAt) || 0))) {
       state = {
         ...state,
         loaded: true,
@@ -703,6 +709,7 @@ function panel() {
     </div>
     ` : ''}
     ${state.dimensionView === 'movements' ? `<div class="lr150-category-report lr150-movement-report">
+      <p class="lr150-movement-rule">Posição: ${esc(informedAt || 'data não informada')}</p>
       <nav class="lr150-movement-nav" aria-label="Operação de movimentação">
         <button type="button" data-movement-direction="supply" class="${supplying ? 'active' : ''}" aria-pressed="${supplying}"><b>Abastecer mercado</b><span>Estoque GAO → Mercado</span><small>${br(supplyItems.length)} itens • ${br(supplyItems.reduce((sum, row) => sum + row.quantidade, 0))} pç</small></button>
         <button type="button" data-movement-direction="return" class="${!supplying ? 'active' : ''}" aria-pressed="${!supplying}"><b>Retirar excedente</b><span>Mercado → Estoque GAO</span><small>${br(returnItems.length)} itens • ${br(returnItems.reduce((sum, row) => sum + row.quantidade, 0))} pç</small></button>
@@ -722,6 +729,7 @@ function panel() {
         <tbody>${selectedMovements.length ? selectedMovements.map(row => `<tr data-movement-row="${row.direcao}"><td><strong>${esc(row.produtoNome)}</strong><small>${esc(row.categoria)} • ${esc(row.subcategoria)}</small></td><td><span class="lr150-movement-status ${supplying ? 'supply' : 'return'}"><i></i>${supplying ? 'Mercado crítico' : 'Retirada indicada'}</span><small>${supplying ? (row.saldoPendente > 0 ? 'Atendimento parcial — ainda falta estoque GAO' : 'Necessidade atendida') : 'Excedente acima da reserva'}</small></td><td>${br(row.mercadoAtual)} pç</td><td><strong>${br(row.trocasCirculacao, 1)} / ${br(row.trocasIdeal, 1)}</strong><small>${br(row.estoqueCirculacao)} / ${br(row.metaCirculacao)} pç</small></td><td>${br(row.deposito)} pç</td>${supplying ? `<td>${br(row.necessidadeMovimento)} pç</td><td class="lr150-transfer-qty"><strong>${br(row.quantidade)} pç</strong></td><td class="lr150-pending-qty"><strong>${br(row.saldoPendente)} pç</strong><small>${row.saldoPendente > 0 ? 'Aguardando produção/entrada' : 'Sem saldo pendente'}</small></td>` : `<td class="lr150-transfer-qty"><strong>${br(row.quantidade)} pç</strong></td><td>${br(row.excedenteCirculacao)} pç<small>Descontar 30 pç</small></td>`}</tr>`).join('') : `<tr><td colspan="${supplying ? 8 : 7}">${supplying ? 'Nenhum item com falta em circulação e saldo no estoque GAO para envio.' : 'Nenhum item com excedente em circulação acima de 30 peças e saldo no mercado para retirada.'}</td></tr>`}</tbody>
       </table>
       ` : '<div class="lr150-collapsed-note">Lista recolhida. Clique em “Expandir lista” para abrir novamente.</div>'}
+      <details id="lr150-movement-records"><summary>Pendências e histórico</summary><div id="gao-linen-operations"></div></details>
     </div>
     ` : state.dimensionView === 'map' ? `<div class="lr150-category-report lr150-order-report">
       <div class="lr150-order-head">
@@ -939,7 +947,9 @@ function render() {
   const activeStart = document.activeElement?.selectionStart;
   window.GAO_LINEN_SOURCE_UPDATED_AT = state.cloudUpdatedAt || null;
   window.GAO_LINEN_NEED_SNAPSHOT = state.rows.map(row => ({ produtoId: row.produtoId, produtoNome: row.produtoNome, pedidoReal: row.pedidoReal, estoqueUtil:row.estoqueUtil, estoqueGao:row.estoqueGao, trocaReferencia:row.trocaReferencia, metaTrocas:row.mediaDiaria>0&&row.trocaReferencia>0?Math.ceil(row.mediaDiaria*row.trocaReferencia):null, coverageReady:state.coverageReady, necessidade:row.compraSugerida, pendingTracking:factionQuantityFor(row,state.trackingMap), pendingServiceOrders:factionQuantityFor(row,state.serviceOrderMap), needWithoutTracking:Math.max(0,Number(row.compraSugerida||0)-factionQuantityFor(row,state.trackingMap)), asOf: state.asOf }));
+  const recordsOpen = shell.querySelector('#lr150-movement-records')?.open;
   shell.innerHTML = panel();
+  if (recordsOpen && shell.querySelector('#lr150-movement-records')) shell.querySelector('#lr150-movement-records').open = true;
   mountTextileSubmenu(shell);
   bind();
   if (activeId.startsWith('lr150-')) {
@@ -984,3 +994,101 @@ setInterval(() => {
 }, 700);
 
 window.GAO_REFRESH_LINEN_SNAPSHOT = async () => { if (route()) { await load(true); render(); } };
+
+let weeklyBusy = false;
+let weeklyNotice = '';
+const todayLocal = () => new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Sao_Paulo'}).format(new Date());
+let weeklyDate = todayLocal();
+
+async function weeklyFile(file) {
+  if (!/\.xlsx?$/i.test(file.name)) return {rows:prepareWeeklyStock(parseDelimitedRows(await file.text())), sheet:'CSV RFID'};
+  if (!window.XLSX) throw Error('Leitor de Excel indisponível.');
+  const workbook = window.XLSX.read(await file.arrayBuffer(),{type:'array'});
+  let validationError;
+  for (const sheet of workbook.SheetNames) {
+    try {
+      return {rows:prepareWeeklyStock(window.XLSX.utils.sheet_to_json(workbook.Sheets[sheet],{defval:'',raw:true})),sheet};
+    } catch (error) {
+      validationError ??= error;
+    }
+  }
+  throw validationError || Error('O arquivo não possui uma aba de estoque RFID.');
+}
+
+async function publishWeeklyStock(file, asOf) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf) || asOf>todayLocal()) throw Error('Informe a data da posição de estoque.');
+  const {rows,sheet}=await weeklyFile(file);
+  const context=await cloudContext();
+  if (!context.canWrite) throw Error('Seu perfil não pode atualizar a posição de estoque.');
+  const current=await loadSharedSnapshot(context);
+  if (current?.as_of && asOf<current.as_of) throw Error('A data informada é anterior à posição publicada no portal.');
+  const query=new URLSearchParams();
+  if (current) {
+    query.set('organization_id','eq.'+context.organizationId);
+    query.set('updated_at','eq.'+current.updated_at);
+  }
+  const response=await fetch(SUPABASE_URL+'/rest/v1/'+LINEN_SNAPSHOT_TABLE+(current?'?'+query:''),{
+    method:current?'PATCH':'POST',
+    headers:{apikey:SUPABASE_KEY,Authorization:'Bearer '+context.token,'Content-Type':'application/json',Prefer:'return=representation'},
+    body:JSON.stringify({organization_id:context.organizationId,rows,file_name:file.name,source_sheet:sheet,
+      source_rule:'Posição semanal enviada por Necessidades',as_of:asOf,informed_at:asOf,updated_at:new Date().toISOString(),updated_by:context.userId})
+  });
+  const saved=await response.json().catch(()=>null);
+  if (!response.ok) throw Error(saved?.message||'Não foi possível publicar a posição semanal.');
+  if (!saved?.[0]) throw Error('Outra posição foi publicada enquanto você enviava o arquivo. Atualize e tente novamente.');
+  state={...state,loaded:true,error:'',baseRows:saved[0].rows,asOf,informedAt:asOf,fileName:file.name,sourceSheet:sheet,
+    sourceRule:'Posição semanal enviada por Necessidades',cloudUpdatedAt:saved[0].updated_at,needsCloudSync:false};
+  recalculateIdealDecisions();
+  saveCurrent();
+  saveHistory();
+  weeklyNotice=`Posição de ${dateBr(asOf)} publicada: ${br(rows.length)} peças cadastradas. Necessidades e Movimentações atualizadas.`;
+  render();
+  void fetchOnlineFaction();
+}
+
+function mountWeeklyUpload() {
+  const toolbar=document.querySelector('.fw-buy-toolbar');
+  if (!toolbar || !route() || toolbar.parentElement.querySelector('[data-lr-weekly]')) return;
+  const form=document.createElement('form');
+  form.className='fw-panel lr150-weekly-upload';
+  form.dataset.lrWeekly='';
+  form.innerHTML=`<strong>Posição semanal de estoque</strong><label>Data da posição <input name="asOf" type="date" required max="${todayLocal()}" value="${esc(weeklyDate)}"></label><label>Planilha RFID <input name="file" type="file" accept=".xlsx,.xls,.csv" required></label><button type="submit" ${weeklyBusy?'disabled':''}>${weeklyBusy?'Publicando…':'Publicar estoque semanal'}</button><span role="status">${esc(weeklyNotice)}</span>`;
+  toolbar.before(form);
+  form.elements.asOf.onchange=()=>{weeklyDate=form.elements.asOf.value;};
+  form.onsubmit=async event=>{
+    event.preventDefault();
+    if (weeklyBusy || !form.elements.file.files[0]) return;
+    weeklyBusy=true;
+    const button=form.querySelector('button');
+    const status=form.querySelector('[role=status]');
+    button.disabled=true;button.textContent='Publicando…';status.textContent='';
+    try {
+      await publishWeeklyStock(form.elements.file.files[0],form.elements.asOf.value);
+      form.reset();
+    } catch (error) { weeklyNotice=error.message; }
+    finally {
+      weeklyBusy=false;
+      const active=document.querySelector('[data-lr-weekly]');
+      if (active) {
+        active.querySelector('button').disabled=false;
+        active.querySelector('button').textContent='Publicar estoque semanal';
+        active.querySelector('[role=status]').textContent=weeklyNotice;
+      }
+    }
+  };
+}
+new MutationObserver(mountWeeklyUpload).observe(document.getElementById('root'),{childList:true,subtree:true});
+mountWeeklyUpload();
+
+window.addEventListener('focus', async () => {
+  if (!route() || !state.loaded || weeklyBusy) return;
+  try {
+    const latest=await loadSharedSnapshot(await cloudContext());
+    if (!weeklyBusy && latest?.updated_at && Date.parse(latest.updated_at)>(Date.parse(state.cloudUpdatedAt)||0)) {
+      await load(true);
+      render();
+    }
+  } catch {
+    // Keep displaying the current position when the portal is offline.
+  }
+});
