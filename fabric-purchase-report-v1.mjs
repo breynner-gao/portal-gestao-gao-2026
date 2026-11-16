@@ -54,17 +54,24 @@ export function renderPurchaseReport(data,{supplierId,orderId,statusFilter='',lo
  .map(orders=>{
   const products=new Map();
   for(const {o,lines} of orders){
-   for(const {i,f,standard} of lines){
+   for(const {i,f,standard,ordered,price,planned} of lines){
     const key=i.fabric_id??i.id;
-    if(!products.has(key))products.set(key,{f,standard,orderNumbers:new Set()});
-    products.get(key).orderNumbers.add(o.order_number);
+    if(!products.has(key))products.set(key,{f,standard,orderNumbers:new Set(),prices:new Set(),ordered:0,planned:0});
+    const product=products.get(key);
+    product.orderNumbers.add(o.order_number);
+    product.prices.add(price);
+    product.ordered+=ordered;
+    product.planned+=planned;
    }
   }
-  const productRows=[...products.values()].map(({f,standard,orderNumbers})=>[
-   productName(f,standard),supplierReference(f),specifications(f,standard),[...orderNumbers].join(', ')
+  const productRows=[...products.values()].map(({f,standard,orderNumbers,prices,ordered,planned})=>[
+   productName(f,standard),supplierReference(f),specifications(f,standard),[...orderNumbers].join(', '),
+   qty(ordered),[...prices].sort((a,b)=>a-b).map(price=>money(price,4)).join(' / '),money(planned/100)
   ]).sort((a,b)=>a[0].localeCompare(b[0],'pt-BR'));
-  return `<h3>${e(name(orders[0].supplier))}</h3>${table(['Produto GAO','Referência do fornecedor','Especificações técnicas','Ordens de compra'],productRows)}`;
- }).join('')}</section>`:'';
+  return `<h3>${e(name(orders[0].supplier))}</h3>${table(['Produto GAO','Referência do fornecedor','Especificações técnicas','Ordens de compra','Quantidade','Preço/m','Subtotal'],productRows)}
+  <p class="order-total"><b>Total previsto do fornecedor</b> · ${money(totals(orders).planned/100)}</p>`;
+ }).join('')}<p class="order-total"><b>Total geral previsto das ordens exibidas</b> · ${money(totals(rows).planned/100)}</p>
+ ${rows.some(row=>!row.confirmed)?'<p class="note">Este total soma os valores previstos de todas as ordens exibidas, incluindo cotações e cancelamentos quando presentes.</p>':''}</section>`:'';
  const details=rows.map(({o,supplier,status,lines,planned,pending,balance})=>`<section class="order"><h2>OC ${e(o.order_number)} · ${e(name(supplier))}</h2>
  <p><b>Situação</b> ${e(status)} · <b>Pedido</b> ${date(o.ordered_date)} · <b>Previsão</b> ${date(o.expected_date)}</p>
  <p><b>Logística</b> ${e({COTACAO:'Cotação',CONFIRMADO:'Confirmado',EM_TRANSPORTE:'Em transporte'}[o.logistics_stage])} · <b>Transportadora</b> ${e(o.carrier||null)} · <b>Rastreio</b> ${e(o.tracking_code||null)}</p>
@@ -80,7 +87,7 @@ export function renderPurchaseReport(data,{supplierId,orderId,statusFilter='',lo
  ]))}`).join('')||'<p>Nenhum item registrado.</p>'}
  <p class="order-total"><b>Total previsto da ordem</b> ${money(planned/100)} · <b>Saldo a receber</b> ${qty(pending)} (${money(balance/100)})</p></section>`).join('');
  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GAO · ${title}</title><style>${reportCss}
- h3,h4{break-after:avoid;margin:10px 0 4px}h3{font-size:13px}h4{font-size:11px}.order{border-top:2px solid #dbe5ed;margin-top:14px}.order-total{background:#eef5f9;padding:8px}.order p{overflow-wrap:anywhere}.cards{margin-bottom:10px}.technical{margin-top:18px;padding-top:4px;border-top:2px solid #dbe5ed}
+ h3,h4{break-after:avoid;margin:10px 0 4px}h3{font-size:13px}h4{font-size:11px}.order{border-top:2px solid #dbe5ed;margin-top:14px}.order-total{background:#eef5f9;padding:8px}.order p{overflow-wrap:anywhere}.cards{margin-bottom:10px}.technical{margin-top:18px;padding-top:4px;border-top:2px solid #dbe5ed}.technical th:nth-child(-n+3){width:17%}.technical th:nth-child(4){width:10%}.technical th:nth-child(n+5){width:13%}.technical .order-total{break-inside:avoid}
  </style></head><body><div class="print"></div><main><header><div class="brand">${safeLogo}<span>GESTÃO DE COMPRAS</span></div><h1>${title}</h1><p>Emissão ${e(stamp)}${general?'':' · '+e(name(selected))}</p>${!orderId?`<p>Status do pedido · ${e(purchaseReportStatuses[statusFilter]||statusFilter)}</p>`:''}</header>
  ${selected&&!general?`<h2>Fornecedor</h2>${table(['Razão social','CNPJ','Contato','Condições de pagamento','Prazo (dias)'],[[selected.legal_name,selected.cnpj,selected.contact,selected.payment_terms,selected.lead_days]])}`:''}
  ${!orderId?`<div class="cards">${card('Ordens registradas',rows.length,confirmed.length+' confirmadas')}${card('Volume confirmado',qty(sum.ordered),qty(sum.received)+' recebidos · '+qty(sum.pending)+' a receber')}${card('Valor previsto confirmado',money(sum.planned/100),money(sum.balance/100)+' referente ao saldo a receber')}</div><p class="note">Os totais confirmados excluem cotações e cancelamentos.</p>`:''}
