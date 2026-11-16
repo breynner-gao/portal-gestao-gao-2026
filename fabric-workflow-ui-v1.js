@@ -1,3 +1,5 @@
+import { renderPurchaseReport } from '/fabric-purchase-report-v1.mjs?v=1';
+import { openReport as openPurchaseReportWindow } from '/relave-report-export-v1.mjs?v=1';
 import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=5';
 import {createFactionDesk} from '/fabric-faction-portal-v1.mjs?v=2';
 import {createFabricWorkbookImport} from '/fabric-workbook-import-v1.mjs?v=1';
@@ -316,6 +318,25 @@ async function excludePurchase(button){
   if(message){message.textContent=error.message||String(error);message.hidden=false;}
  }finally{state.busy=false;button.disabled=false;}
 }
+function openPurchaseReport(button){
+ const panel=button.closest('.fw-purchase-orders');
+ const error=panel.querySelector('[data-fw-purchase-report-error]');
+ error.hidden=true;
+ const orderId=button.dataset.fwPurchaseReportOrder;
+ const bySupplier=button.dataset.fwPurchaseReport==='supplier';
+ const supplierId=bySupplier?panel.querySelector('[data-fw-report-supplier]').value:undefined;
+ try{
+  if(!state.loaded)throw Error('Aguarde o carregamento dos pedidos.');
+  if(bySupplier&&!supplierId)throw Error('Selecione um fornecedor.');
+  const logo=getComputedStyle(document.documentElement).getPropertyValue('--liquid-logo').match(/data:image\/(?:png|webp);base64,[A-Za-z0-9+/=]+/)?.[0];
+  const order=state.purchaseOrders.find(item=>item.id===orderId);
+  const supplier=state.suppliers.find(item=>item.id===supplierId);
+  const name=order?'oc-'+order.order_number:supplier?'fornecedor-'+(supplier.trade_name||supplier.legal_name):'resumo-geral';
+  const filename='gao-compras-'+name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9-]+/g,'-');
+  openPurchaseReportWindow(renderPurchaseReport(state,{supplierId,orderId,logo}),filename);
+ }catch(err){error.textContent=err.message;error.hidden=false;}
+}
+
 function purchaseOrderView(readyOrders=''){
  const plan=materialPurchasePlan();
  const partial=plan.unlinked.length>0;
@@ -352,9 +373,11 @@ function purchaseOrderView(readyOrders=''){
    return '<details class="fw-catalog-edit" data-fw-detail-key="product-'+esc(item.id)+'" data-fw-purchase-product data-pending="'+(canReceive&&isConfirmedPurchase(order))+'"><summary><b>'+esc(fabric?internalName(fabric):'Tecido')+'</b> • '+br(item.ordered_m,3)+' m • <span class="fw-status">'+esc(line?.label||'Pendente')+'</span></summary><p>Referência do fornecedor: '+esc(fabric?.code||'—')+' • '+esc(fabric?.name||'')+' • '+esc(fabric?.color_reference||'')+' / Q'+esc(fabric?.quality_code||'—')+'</p><p>Recebido: '+br(item.received_m,3)+' m • Falta receber: '+br(Math.max(0,n(item.ordered_m)-n(item.received_m)),3)+' m • Preço previsto: R$ '+br(item.purchase_price_per_m,4)+'/m</p>'+(canReceive?'<button type="button" data-fw-receive-po-item="'+item.id+'">Receber este produto</button>':'')+'<details class="fw-catalog-edit" data-fw-detail-key="receipts-'+esc(item.id)+'"><summary>Notas e lotes recebidos ('+lots.length+')</summary>'+lots.map(l=>'<details class="fw-catalog-edit"><summary>NF '+esc(l.invoice_number||'não informada')+' • '+esc(l.lot_code)+'</summary><p>'+br(l.quantity_received_m,3)+' m • Custo efetivo R$ '+br(l.effective_price_per_m,4)+'/m • Qualidade: '+esc(l.quality_status)+'</p></details>').join('')+(lots.length?'':'<p>Nenhum recebimento vinculado.</p>')+'</details></details>';
 
   }).join('');
-  return '<details class="fw-po-order" data-fw-detail-key="oc-'+esc(order.id)+'" data-fw-purchase-row data-pending="'+pendingOrders.has(order.id)+'" data-search="'+esc([order.order_number,supplier?.trade_name,supplier?.legal_name,...lines.map(i=>{const f=state.fabric.find(f=>f.id===i.fabric_id);return [f?.code,f?.name,f?.color,f?.color_reference].join(' ')})].join(' ').toLocaleLowerCase('pt-BR'))+'"><summary><b>'+(/^(DANFE|NF)\b/i.test(order.order_number)?'Compra importada • ':'OC ')+esc(order.order_number)+' • '+esc(supplier?.trade_name||supplier?.legal_name||'Fornecedor')+' <span class="fw-status">'+esc(summary.label)+'</span></b><span class="fw-order-meter">'+br(summary.receivedMeters,3)+' / '+br(summary.orderedMeters,3)+' m recebidos</span>'+(canExcludePurchase(order,lines)?'<button type="button" class="fw-exclude-po" data-fw-exclude-po="'+esc(order.id)+'">Excluir pedido</button>':'')+'</summary><p>Pedido em '+esc(order.ordered_date||'—')+' • Previsão '+esc(order.expected_date||'não informada')+' • Total recebido '+br(summary.receivedMeters,3)+' / '+br(summary.orderedMeters,3)+' m</p><div data-fw-purchase-products>'+lineRows+'</div>'+incomingView(order.id)+'</details>';
+  return '<details class="fw-po-order" data-fw-detail-key="oc-'+esc(order.id)+'" data-fw-purchase-row data-pending="'+pendingOrders.has(order.id)+'" data-search="'+esc([order.order_number,supplier?.trade_name,supplier?.legal_name,...lines.map(i=>{const f=state.fabric.find(f=>f.id===i.fabric_id);return [f?.code,f?.name,f?.color,f?.color_reference].join(' ')})].join(' ').toLocaleLowerCase('pt-BR'))+'"><summary><b>'+(/^(DANFE|NF)\b/i.test(order.order_number)?'Compra importada • ':'OC ')+esc(order.order_number)+' • '+esc(supplier?.trade_name||supplier?.legal_name||'Fornecedor')+' <span class="fw-status">'+esc(summary.label)+'</span></b><span class="fw-order-meter">'+br(summary.receivedMeters,3)+' / '+br(summary.orderedMeters,3)+' m recebidos</span>'+(canExcludePurchase(order,lines)?'<button type="button" class="fw-exclude-po" data-fw-exclude-po="'+esc(order.id)+'">Excluir pedido</button>':'')+'</summary><p>Pedido em '+esc(order.ordered_date||'—')+' • Previsão '+esc(order.expected_date||'não informada')+' • Total recebido '+br(summary.receivedMeters,3)+' / '+br(summary.orderedMeters,3)+' m</p><p><button type="button" data-fw-purchase-report-order="'+esc(order.id)+'">Relatório desta OC</button></p><div data-fw-purchase-products>'+lineRows+'</div>'+incomingView(order.id)+'</details>';
  }).join('');
- return '<div class="fw-panel fw-purchase-orders"><h3>Ordens de compra de tecido</h3><p class="fw-error" data-fw-exclude-error role="alert" hidden></p>'+stages+(readyOrders?'<div data-fw-ready-orders hidden>'+readyOrders+'</div>':'')+'<div data-fw-shortages hidden>'+materialCoverageView(true,plan)+'</div><div data-fw-ordered hidden><details class="fw-catalog-edit" data-fw-order-summary><summary>Resumo dos pedidos</summary>'+cards+'</details><details class="fw-new-order"><summary>+ Novo pedido de compra</summary><form data-fw-form="purchaseOrder"><input name="order_number" placeholder="Número do pedido / OC" required><select name="supplier_id" required><option value="">Fornecedor</option>'+state.suppliers.map(x=>'<option value="'+x.id+'">'+esc(x.trade_name||x.legal_name)+'</option>').join('')+'</select><input name="ordered_date" type="date" value="'+new Date().toISOString().slice(0,10)+'" required><input name="expected_date" type="date" aria-label="Previsão de entrega"><input name="notes" placeholder="Observação (opcional)"><div data-fw-po-lines>'+poLineHtml()+'</div><button type="button" data-fw-add-po-line>Adicionar tecido/cor</button><button type="submit">Registrar pedido de tecido</button></form></details><label>Buscar pedido<input type="search" data-fw-purchase-search placeholder="Pedido, fornecedor, tecido ou cor"></label><p>Abra a OC, depois o produto. As notas, lotes e recebimentos ficam dentro dele.</p>'+rows+'<p data-fw-purchase-empty hidden>Nenhum pedido para esta seleção.</p></div></div>';
+ const suppliersWithOrders=new Set(state.purchaseOrders.map(order=>order.supplier_id));
+ const reportControls='<div class="fw-tabs" aria-label="Relatórios de compra"><button type="button" data-fw-purchase-report="general">Resumo geral</button><label class="fw-field">Fornecedor do relatório<select data-fw-report-supplier><option value="">Selecione um fornecedor</option>'+state.suppliers.filter(supplier=>suppliersWithOrders.has(supplier.id)).map(supplier=>'<option value="'+esc(supplier.id)+'">'+esc(supplier.trade_name||supplier.legal_name)+'</option>').join('')+'</select></label><button type="button" data-fw-purchase-report="supplier">Relatório por fornecedor</button></div><p class="fw-error" data-fw-purchase-report-error role="alert" hidden></p>';
+ return '<div class="fw-panel fw-purchase-orders"><h3>Ordens de compra de tecido</h3><p class="fw-error" data-fw-exclude-error role="alert" hidden></p>'+reportControls+stages+(readyOrders?'<div data-fw-ready-orders hidden>'+readyOrders+'</div>':'')+'<div data-fw-shortages hidden>'+materialCoverageView(true,plan)+'</div><div data-fw-ordered hidden><details class="fw-catalog-edit" data-fw-order-summary><summary>Resumo dos pedidos</summary>'+cards+'</details><details class="fw-new-order"><summary>+ Novo pedido de compra</summary><form data-fw-form="purchaseOrder"><input name="order_number" placeholder="Número do pedido / OC" required><select name="supplier_id" required><option value="">Fornecedor</option>'+state.suppliers.map(x=>'<option value="'+x.id+'">'+esc(x.trade_name||x.legal_name)+'</option>').join('')+'</select><input name="ordered_date" type="date" value="'+new Date().toISOString().slice(0,10)+'" required><input name="expected_date" type="date" aria-label="Previsão de entrega"><input name="notes" placeholder="Observação (opcional)"><div data-fw-po-lines>'+poLineHtml()+'</div><button type="button" data-fw-add-po-line>Adicionar tecido/cor</button><button type="submit">Registrar pedido de tecido</button></form></details><label>Buscar pedido<input type="search" data-fw-purchase-search placeholder="Pedido, fornecedor, tecido ou cor"></label><p>Abra a OC, depois o produto. As notas, lotes e recebimentos ficam dentro dele.</p>'+rows+'<p data-fw-purchase-empty hidden>Nenhum pedido para esta seleção.</p></div></div>';
 }
 function receivePurchaseItem(id){
  const item=state.purchaseItems.find(x=>x.id===id);if(!item)return;
@@ -1009,6 +1032,7 @@ document.addEventListener('click',async e=>{
   return;
  }
  const exclude=e.target.closest('[data-fw-exclude-po]');if(exclude){e.preventDefault();await excludePurchase(exclude);return;}
+ const purchaseReport=e.target.closest('[data-fw-purchase-report],[data-fw-purchase-report-order]');if(purchaseReport){openPurchaseReport(purchaseReport);return;}
  const stage=e.target.closest('[data-fw-purchase-stage]');
  if(stage){purchaseStage(stage.closest('.fw-purchase-orders'),stage.dataset.fwPurchaseStage);return;}
  const planPurchase=e.target.closest('[data-fw-plan-purchase]');if(planPurchase){const plan=materialPurchasePlan().fabrics.find(r=>r.fabric.id===planPurchase.dataset.fwPlanPurchase);if(plan?.buy>0)openFabricPurchaseDraft({fabric:plan.fabric,missing:plan.buy},{source_item:'Planejamento geral',product_name:plan.fabric.name});return;}

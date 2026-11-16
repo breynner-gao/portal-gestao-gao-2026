@@ -102,7 +102,7 @@ function table(headings, rows, widths) {
     ${rows.map(row=>`<tr>${row.map(cell=>`<td>${html(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
 }
 
-const css = `
+export const reportCss = `
     @page{size:A4;margin:11mm}*{box-sizing:border-box}body{margin:0;background:#edf2f6;color:#102d45;font:12px Arial,sans-serif}main{max-width:760px;margin:18px auto;padding:24px;background:#fff}
     header{background:#102d45;color:#fff;border-radius:9px;padding:16px 20px;margin-bottom:13px;break-inside:avoid}.brand{display:flex;align-items:center;gap:14px;color:#a1dfe7;letter-spacing:.06em;font-size:11px}.brand img{background:#fff;border-radius:5px;padding:5px;width:110px}h1{font-size:25px;margin:11px 0 5px}h2{font-size:16px;margin:14px 0 5px}p{margin:4px 0}.note,small{color:#526b80;font-size:10.5px}
     .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.cards div{background:#eef5f9;border-radius:7px;padding:9px;break-inside:avoid}.cards b,.cards span,.cards small{display:block;margin-top:4px}.cards b{font-size:19px;color:#0e6272}
@@ -171,7 +171,7 @@ export function renderDailyReport(records, date, logo, customer = null) {
     ${table(['Comanda','Descrição','Ação'],clients.map(row=>[row.command,row.issue||'—',row.action||'—']),[17,41,42])}
     ${trends}`;
   return `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>GAO • ${title} • ${date}</title><style>${css}</style>
+  <title>GAO • ${title} • ${date}</title><style>${reportCss}</style>
   <div class="print"></div><main>
   ${head(title)}
   ${customer ? customerBody() : `${closingCards(g,{checks,divergences},c,customerNote)}
@@ -230,7 +230,7 @@ export function renderHistoricalCustomerReport(data,client,date,indicator,logo,o
  }),false,true);
  const totalRows=periods.map(([label,start,stop])=>{const sorted=base(start,stop),weight=sum(start,stop);return [label,kg(weight),kg(sorted),percent(sorted>0?100*weight/sorted:null)];});
  const detailRows=types.map(type=>[type,...periods.map(([,start,stop])=>kg(sum(start,stop,type)))]);
- return `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GAO · Ocorrências do cliente · ${date}</title><style>${css}</style>
+ return `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GAO · Ocorrências do cliente · ${date}</title><style>${reportCss}</style>
  <div class="print"></div><main>
  ${head('Relatório diário de ocorrências do cliente')}
  ${closingCards(summary(gao),weightChecks(gao),customerSummary,sortedCommands+' comanda(s) triada(s)',true)}
