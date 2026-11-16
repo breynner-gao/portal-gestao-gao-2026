@@ -26,3 +26,9 @@ test('mantém cancelados no histórico e não oferece cancelamento para peça co
   assert.doesNotMatch(render({...piece,status:'repairing'}),/data-leo-workflow="edit_piece"/);
   assert.doesNotMatch(render(piece,false),/data-leo-workflow=/);
 });
+
+test('erro de cadastro é uma opção própria e aparece na peça avaliada',()=>{
+  const html=render({...piece,defect:'registration'});
+  assert.match(html,/<option value="registration" selected>Erro de cadastro<\/option>/);
+  assert.match(html,/<p>Funcionando · Erro de cadastro · /);
+});

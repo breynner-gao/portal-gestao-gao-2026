@@ -3,7 +3,7 @@ import {directionLabel, filterTransferHistory, localTimestamp, transferWorkbook}
 
 import {views,newFilters,movementRows,invoiceFromXml} from './linen-management-views-v1.mjs?v=3';
 import {productivityView, productivityRecords, shiftDate} from './linen-productivity-v1.mjs?v=1';
-import {workflowView} from './linen-management-workflow-v1.mjs?v=2';
+import {workflowView} from './linen-management-workflow-v1.mjs?v=3';
 
 const HOST='gao-linen-operations';
 const SB='https://fquzuxdqvhecijjuxbmg.supabase.co';

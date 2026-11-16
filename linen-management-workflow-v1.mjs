@@ -31,7 +31,7 @@ const dimensions=[['width','Largura (cm)'],['length','Comprimento (cm)'],['weigh
 const decimal='min="0.001" step="any" required';
 const integer='min="1" step="1" required';
 const defects=[['seam','Costura ou acabamento'],['tear','Furo ou rasgo'],['stain','Mancha'],['wear','Desgaste'],
-  ['rfid','Falha de identificação RFID'],['other','Outro defeito'],['none','Sem defeito físico identificado']];
+  ['rfid','Falha de identificação RFID'],['registration','Erro de cadastro'],['other','Outro defeito'],['none','Sem defeito físico identificado']];
 const defectLabels=new Map(defects);
 const sourceName=item=>item.invoice_id?'Peça nova':'Peça usada/recuperada';
 
