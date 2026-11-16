@@ -1,0 +1,60 @@
+:is(#gao-linen-management,#gao-linen-operations) {
+  --leo-border:#b9d2e6;
+  --leo-bg:#f8fbfe;
+  --leo-blue:#0e679d;
+  color:#0c3352;
+}
+#gao-linen-management .leo-head {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:1rem;
+  padding:1.25rem;
+  margin-bottom:1rem;
+  border-radius:14px;
+  background:#e9f4fe;
+  color:#0c3352;
+}
+#gao-linen-management .leo-head h1 {color:inherit;margin:0}
+#gao-linen-management .leo-head p {margin-bottom:0}
+.leo-layout {display:grid;grid-template-columns:minmax(12rem,15rem) minmax(0,1fr);gap:1rem;align-items:start}
+.leo-main {padding:1rem;background:var(--leo-bg);border:1px solid var(--leo-border);border-radius:12px;min-width:0}
+#gao-linen-management h2,#gao-linen-management h3 {color:inherit}
+.leo-nav {display:grid;gap:.35rem;padding:.65rem;background:#e9f4fe;border-radius:12px}
+.leo-flow,.leo-kpis {display:grid;gap:.7rem;grid-template-columns:repeat(auto-fit,minmax(10rem,1fr))}
+.leo-kpis strong {display:block;font-size:1.7rem;margin-top:.4rem}
+.leo-card {margin:.8rem 0;padding:1rem;background:white;border:1px solid var(--leo-border);border-radius:12px}
+.leo-card h3 {margin-top:0}
+:is(#gao-linen-management,#gao-linen-operations) :is(button,.leo-link,input,select,textarea) {font:inherit;color:#0c3352}
+:is(#gao-linen-management,#gao-linen-operations) :is(button,.leo-link) {
+  background:#edf6fe;border:1px solid var(--leo-border);border-radius:8px;
+  min-height:40px;padding:.4rem .65rem;cursor:pointer;text-decoration:none;display:inline-block
+}
+:is(#gao-linen-management,#gao-linen-operations) button:disabled {opacity:.55;cursor:default}
+:is(#gao-linen-management,#gao-linen-operations) :is(button:hover:not(:disabled),button[aria-current=page],button[data-leo-save]:not(:disabled)) {
+  background:var(--leo-blue);color:white
+}
+:is(#gao-linen-management,#gao-linen-operations) :is(input,select,textarea) {
+  box-sizing:border-box;padding:.45rem;border:1px solid var(--leo-border);border-radius:6px;min-width:0;background:white
+}
+:is(#gao-linen-management,#gao-linen-operations) form {display:flex;gap:.6rem;flex-wrap:wrap;align-items:end}
+:is(#gao-linen-management,#gao-linen-operations) label {display:grid;gap:.3rem}
+:is(#gao-linen-management,#gao-linen-operations) fieldset {border:1px solid var(--leo-border);border-radius:6px;min-width:0}
+.leo-confirm {display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}
+.leo-confirm input {width:6rem}
+.leo-scroll {margin-top:.7rem;overflow:auto}
+:is(#gao-linen-management,#gao-linen-operations) table {border-collapse:collapse;min-width:36rem;width:100%;color:#0c3352}
+:is(#gao-linen-management,#gao-linen-operations) :is(th,td) {text-align:left;padding:.55rem;border-bottom:1px solid var(--leo-border);vertical-align:top}
+:is(#gao-linen-management,#gao-linen-operations) th {background:#e9f4fe}
+:is(#gao-linen-management,#gao-linen-operations) td small {display:block;margin:.3rem 0;overflow-wrap:anywhere}
+.leo-record {padding:.65rem 0;border-top:1px solid var(--leo-border)}
+.leo-record summary {cursor:pointer;font-weight:700}
+.leo-alert {color:#a42425}
+#gao-linen-operations .gao-card {color:#0c3352}
+:is(#gao-linen-management,#gao-linen-operations) [role=status]:empty {display:none}
+@media(max-width:850px) {
+  .leo-layout {display:block}
+  .leo-nav {display:flex;overflow-x:auto;margin-bottom:.8rem}
+  .leo-nav button {white-space:nowrap}
+  .leo-main {padding:.65rem}
+}

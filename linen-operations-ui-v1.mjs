@@ -1,17 +1,25 @@
 import {applyIdealReferences, idealReferenceKey, listMovementItems} from './linen-risk-rules-v150.mjs?v=227';
 import {directionLabel, filterTransferHistory, localTimestamp, transferWorkbook} from './linen-operations-history-v1.mjs?v=1';
 
+import {views,newFilters,movementRows,invoiceFromXml} from './linen-management-views-v1.mjs?v=1';
+import {workflowView} from './linen-management-workflow-v1.mjs?v=1';
+
 const HOST='gao-linen-operations';
 const SB='https://fquzuxdqvhecijjuxbmg.supabase.co';
 const API='sb_publishable_icrk6TaZexgiSIq63zX_ng_40JGaYlJ';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const qty=value=>Number(value).toLocaleString('pt-BR');
-const blocked='Saldo elegível indisponível. A posição RFID informa o saldo bruto, sem detalhar reservas e bloqueios por peça. As transferências físicas ainda dependem dessa integração.';
+const nativeHost='gao-linen-management';
+const tabFromUrl=()=>new URL(location.href).searchParams.get('tela');
 
 function mount(host) {
-  let session, organization, canWrite=false, snapshot, proposals=[], requests=[], events=[];
-  let loading=true, saving=false, message='', failed=false;
-  let filters={product:'',direction:'',start:'',end:'',responsible:''};
+  const native=host.id===nativeHost;
+  let page=views.some(([key])=>key===tabFromUrl())?tabFromUrl():'painel';
+  let session, organization, canWrite=false, canManage=false, canSew=false;
+  let snapshot, proposals=[], requests=[], events=[], balances=[], workflow={}, draft;
+  const choices=new Map(), outstanding=new Map(), workflowIds=new Map();
+  let loading=true, saving=false, message='', failed=false, sewingOnly=false;
+  let filters=newFilters();
 
   async function api(path, body) {
     const response=await fetch(SB+path,{
@@ -44,59 +52,104 @@ function mount(host) {
       if(!member)throw Error('Seu usuário não tem vínculo ativo com a GAO.');
       organization=member.organization_id;
       const permissions=new Set((await api('/rest/v1/member_permissions?select=permission_code&allowed=eq.true&membership_id=eq.'+member.id)).map(row=>row.permission_code));
-      if(!permissions.has('textiles.inventory.view')&&member.role_name!=='Administrador Geral')throw Error('Seu perfil não tem acesso ao estoque de enxoval.');
-      canWrite=member.role_name==='Administrador Geral'||permissions.has('textiles.inventory.manage')||permissions.has('textiles.production.manage');
+      const canView=permissions.has('textiles.inventory.view')||member.role_name==='Administrador Geral';
+      sewingOnly=!canView&&native&&page==='costura'&&['production.sewing.execute','production.sewing.view'].some(code=>permissions.has(code));
+      if(!canView&&!sewingOnly)throw Error('Seu perfil não tem acesso ao estoque de enxoval.');
+      canManage=permissions.has('textiles.inventory.manage')||member.role_name==='Administrador Geral';
+      canWrite=canManage||permissions.has('textiles.production.manage');
+      canSew=canWrite||permissions.has('production.sewing.execute');
       const org='eq.'+organization;
-      const [snapshots,ideals,saved,history]=await Promise.all([
+      if(sewingOnly){await loadWorkflow(org);return;}
+      const [snapshots,ideals,saved,history,stock]=await Promise.all([
         api('/rest/v1/linen_rfid_snapshots?select=rows,as_of,informed_at,updated_at&organization_id='+org+'&limit=1'),
         all('linen_ideal_references',{select:'product_key,ideal',organization_id:org,order:'product_key'}),
         all('linen_transfer_requests',{select:'*',organization_id:org,order:'created_at.desc,id.desc'}),
         all('linen_transfer_events',{select:'*,request:linen_transfer_requests!inner(product_code,product_key,product_name,direction,organization_id)', 'request.organization_id':org,order:'occurred_at.desc,id.desc'}),
+        all('linen_eligible_stock',{organization_id:org,order:'snapshot_version.desc,product_key'}),
       ]);
       snapshot=snapshots[0];
       requests=saved;
+      balances=stock;
       events=history;
       const source=applyIdealReferences(snapshot?.rows||[],new Map(ideals.map(row=>[row.product_key,Number(row.ideal)])));
       proposals=listMovementItems(source).map(row=>({
         product_key:idealReferenceKey(row), product_code:row.produtoId, product_name:row.produtoNome,
         direction:row.direcao, planned:row.quantidade, gross:row.direcao==='supply'?row.deposito:row.mercadoAtual
       }));
+      if(native && (page==='painel'||!['supply','return','pendencias'].includes(page)))await loadWorkflow(org);
     }catch(error){failed=true;message=error.message;}
     finally{loading=false;render();}
   }
 
-  function operationRows(){
-    const moved=new Map();
-    for(const event of events)moved.set(event.request_id,(moved.get(event.request_id)||0)+event.quantity);
-    const key=row=>row.direction+'|'+row.product_key;
-    const saved=new Map(requests.filter(row=>row.planned>(moved.get(row.id)||0) || Date.parse(row.snapshot_version)===Date.parse(snapshot?.updated_at)).map(row=>[key(row),row]));
-    const rows=proposals.map(row=>({...row,...saved.get(key(row))}));
-    const shown=new Set(rows.map(row=>row.id));
-    rows.push(...requests.filter(row=>!shown.has(row.id)));
-    return rows.map(row=>{const done=moved.get(row.id)||0;return {...row,done,remaining:Math.max(0,row.planned-done)};});
+  async function loadWorkflow(org) {
+    const sources={
+      painel:['items'],recepcao:['products','invoices'],ficha:['products','specs'],
+      quarentena:['items','specs'],rfid:['items','tags'],chip:['items','products'],
+      costura:['items'],retorno:['items','tags'],descarte:['items'],
+      cliente:['products','clients','client_orders'],compras:['purchases','client_orders'],
+      configuracoes:['settings','audit']
+    };
+    const definitions={
+      products:['laundry_products',{select:'id,code,name',active:'eq.true',order:'name,id'}],
+      clients:['laundry_clients',{select:'id,name',active:'eq.true',order:'name,id'}],
+      invoices:['linen_management_invoices',{select:'id,access_key,invoice_number,supplier,created_at',order:'created_at.desc,id'}],
+      items:['linen_management_items',{select:'*,product:laundry_products(name,code)',order:'created_at.desc,id'}],
+      specs:['linen_management_specs',{select:'*,product:laundry_products(name,code)',order:'version.desc,id'}],
+      tags:['linen_management_tags',{select:'*,item:linen_management_items(product:laundry_products(name,code))',order:'created_at.desc,id'}],
+      settings:['linen_management_settings',{}],
+      client_orders:['linen_management_client_orders',{select:'*,client:laundry_clients(name),product:laundry_products(name,code)',order:'created_at.desc,id'}],
+      purchases:['linen_ready_orders',{select:'id,product_name,order_number,ordered_pieces,received_pieces,status',order:'created_at.desc,id'}],
+      audit:['linen_management_audit',{select:'id,action,record_id,created_at,responsible',order:'created_at.desc,id'}]
+    };
+    const entries=await Promise.all((sources[page]||[]).map(async name=>{
+      const [table,params]=definitions[name];
+      return [name,await all(table,['products','clients'].includes(name)?params:{...params,organization_id:org})];
+    }));
+    workflow=Object.fromEntries(entries);
   }
 
-  async function savePending(rows){
+  function transferKey(row){return row.id||row.direction+'|'+row.product_key;}
+  function inputId(data){
+    const key=JSON.stringify(data);
+    if(!outstanding.has(key))outstanding.set(key,crypto.randomUUID());
+    return outstanding.get(key);
+  }
+  async function saveChoices(rows){
     if(saving||!canWrite||!snapshot||!rows.length)return;
+    let payload;
+    try{
+      payload=rows.map(row=>{
+        const entry=choices.get(transferKey(row));
+        const amount=entry?.decision==='yes'?Number(entry.quantity):0;
+        if(!Number.isSafeInteger(amount)||amount<0||(entry?.decision==='yes'&&(amount===0||amount>Math.min(row.remaining,row.eligible??0))))
+          throw Error('Confira a quantidade de '+row.product_name+'.');
+        const data={requestId:row.id||null,productKey:row.product_key,direction:row.direction,quantity:amount,expectedRemaining:row.remaining};
+        return {...data,eventId:inputId(data)};
+      });
+    }catch(error){message=error.message;render();return;}
     saving=true;message='';render();
     try{
-      const saved=await api('/rest/v1/rpc/linen_mark_transfer_pending',{
-        p_org:organization,p_version:snapshot.updated_at,
-        p_keys:rows.map(row=>({productKey:row.product_key,direction:row.direction}))
-      });
-      const ids=new Set(saved.map(row=>row.id));
-      requests=[...saved,...requests.filter(row=>!ids.has(row.id))];
-      message='Pendências registradas. Nenhuma baixa de estoque foi lançada.';
+      await api('/rest/v1/rpc/linen_confirm_transfers',{p_org:organization,p_version:snapshot.updated_at,p_choices:payload});
+      for(const {eventId,...data} of payload)outstanding.delete(JSON.stringify(data));
+      for(const row of rows)choices.delete(transferKey(row));
+      message='Movimentações e pendências salvas.';await load();
     }catch(error){message=error.message;}
     finally{saving=false;render();}
   }
 
-  function table(rows,pending){
-    if(!rows.length)return '<p>Nenhum item nesta lista.</p>';
-    return '<div class="leo-scroll"><table><thead><tr><th>Produto</th><th>Solicitação e sentido</th><th>Previsto</th><th>Saldo bruto RFID</th><th>Elegível</th><th>Movimentado</th><th>Restante</th><th>Ação</th></tr></thead><tbody>'+
-      rows.map((row,i)=>'<tr><td><strong>'+esc(row.product_name)+'</strong><small>'+esc(row.product_code||'')+'</small></td><td>'+directionLabel(row.direction)+'<small>'+esc(row.id||'Sugestão da posição RFID')+'</small></td><td>'+qty(row.planned)+'</td><td>'+(row.gross==null?'—':qty(row.gross))+'</td><td>Indisponível</td><td>'+qty(row.done)+'</td><td>'+qty(row.remaining)+'</td><td>'+
-      (row.remaining&&!row.id&&row.product_code&&canWrite?'<button type="button" data-leo-pending="'+i+'" '+(saving?'disabled':'')+'>Não movimentou</button>':row.remaining?'Em aberto':'Concluído')+
-      (pending||row.id?'<button type="button" data-leo-history="'+i+'">Ver histórico</button>':'')+'</td></tr>').join('')+'</tbody></table></div>';
+  function table(rows){
+    if(!rows.length)return '<p>Nenhum produto neste recorte.</p>';
+    return '<div class="leo-scroll"><table><thead><tr><th>Produto</th><th>Solicitação e sentido</th><th>Previsto</th><th>Disponível elegível</th><th>Movimentado</th><th>Restante</th><th>Confirmação</th></tr></thead><tbody>'+
+      rows.map((row,i)=>{
+        const edit=canWrite&&row.remaining>0&&((row.id)||row.product_key.startsWith('ID:'));
+        const draft=choices.get(transferKey(row));
+        const limit=Math.min(row.remaining,row.eligible??0);
+        const decision=draft?.decision||'';
+        const status=row.remaining?(row.id?'Pendente':'Em aberto'):'Concluído';
+        return '<tr><td><strong>'+esc(row.product_name)+'</strong><small>'+esc(row.product_code||'')+'</small></td><td>'+directionLabel(row.direction)+'<small>'+esc(row.id||'Sugestão da posição semanal')+'</small></td><td>'+qty(row.planned)+'</td><td>'+(row.eligible===null?'A conferir':qty(row.eligible))+'</td><td>'+qty(row.done)+'</td><td>'+qty(row.remaining)+'</td><td><small>'+status+'</small>'+
+          (edit?'<div class="leo-confirm"><select data-leo-decision="'+i+'" aria-label="Movimentou '+esc(row.product_name)+'" '+(saving?'disabled':'')+'><option value="">Movimentou?</option><option value="yes" '+(decision==='yes'?'selected ':'')+(!limit?'disabled':'')+'>Sim</option><option value="no" '+(decision==='no'?'selected':'')+'>Não</option></select><input data-leo-quantity="'+i+'" aria-label="Quantidade movimentada de '+esc(row.product_name)+'" type="number" min="1" max="'+limit+'" step="1" value="'+esc(draft?.quantity||'')+'" '+(decision!=='yes'||saving?'disabled':'')+'><button type="button" data-leo-save="'+i+'" '+(!decision||saving?'disabled':'')+'>'+ (page==='pendencias'?'Confirmar quantidade':'Confirmar')+'</button></div>':'')+
+          (row.id?'<button type="button" data-leo-history="'+i+'">Ver histórico</button>':'')+'</td></tr>';
+      }).join('')+'</tbody></table></div>';
   }
 
   function history() {
@@ -110,24 +163,93 @@ function mount(host) {
     return {shown,labels:{product:products.get(filters.product),responsible:people.get(filters.responsible)},html:'<section class="gao-card"><h2>Histórico de movimentações</h2><form data-leo-filters>'+selectors+'<button type="submit">Filtrar</button><button type="button" data-leo-clear>Limpar filtros</button><button type="button" data-leo-export '+(!shown.length?'disabled':'')+'>Exportar Excel</button></form>'+records+'</section>'};
   }
 
+  function go(target){
+    page=target; message='';workflow={};
+    if(native){
+      const url=new URL(location.href);
+      if(page==='painel')url.searchParams.delete('tela');else url.searchParams.set('tela',page);
+      historyReplace(url);
+    }
+    void load();
+  }
+
+  function historyReplace(url){window.history.replaceState(window.history.state,'',url);}
+
+  function stockSetup(){
+    const registered=new Set(balances.filter(row=>Date.parse(row.snapshot_version)===Date.parse(snapshot?.updated_at)).map(row=>row.product_key));
+    const items=(snapshot?.rows||[]).filter(row=>idealReferenceKey(row).startsWith('ID:')&&!registered.has(idealReferenceKey(row)));
+    return '<section class="leo-card"><h2>Saldo elegível para movimentações</h2><p>Confira as quantidades por local após descontar peças bloqueadas, reservadas, em quarentena, costura ou descarte. A conferência vale para a posição semanal atual. Desconte também as separações em aberto das semanas anteriores.</p>'+
+      (canManage&&items.length?'<form data-leo-stock><label>Produto<select name="product" required><option value="">Selecione</option>'+items.map(row=>'<option value="'+esc(idealReferenceKey(row))+'">'+esc(row.produtoNome)+'</option>').join('')+'</select></label><label>Depósito<input name="depot" type="number" min="0" step="1" required></label><label>Mercado<input name="market" type="number" min="0" step="1" required></label><button>Salvar conferência</button></form>':'')+
+      '<p>'+qty(registered.size)+' produto(s) conferido(s) nesta posição.</p></section>';
+  }
+
+  async function workflowSubmit(action,data){
+    if(saving)return;
+    const key=action+'|'+JSON.stringify(data);
+    if(!workflowIds.has(key))workflowIds.set(key,crypto.randomUUID());
+    saving=true;message='';
+    host.querySelectorAll('button').forEach(button=>{if(!button.disabled){button.disabled=true;button.dataset.leoBusy='1';}});
+    try{
+      await api('/rest/v1/rpc/linen_management_action',{p_org:organization,p_event:workflowIds.get(key),p_action:action,p_data:data});
+      workflowIds.delete(key);
+      if(action==='invoice')draft=undefined;
+      message='Registro salvo no SGQ.';await load();
+    }catch(error){
+      message=error.message;host.querySelector('[role=status]').textContent=message;
+      host.querySelectorAll('[data-leo-busy]').forEach(button=>{button.disabled=false;delete button.dataset.leoBusy;});
+      return;
+    }finally{saving=false;}
+    render();
+  }
+
   function render(){
     if(!host.isConnected)return;
-    let rows=[], content='', report;
-    if(loading)content='<p role="status">Carregando o histórico do SGQ…</p>';
+    let rows=[],content='',report;
+    if(loading)content='<p role="status">Carregando registros do SGQ…</p>';
     else if(!failed){
-      rows=operationRows().filter(row=>row.remaining>0);
-      report=history();
-      content='<p>'+blocked+'</p>'+table(rows,true)+report.html;
+      const allRows=movementRows(proposals,requests,events,balances,snapshot?.updated_at);
+      if(native&&page==='painel'){
+        const groups=[['return','Mercado para Depósito',allRows.filter(x=>x.direction==='return'&&x.remaining).reduce((a,b)=>a+b.remaining,0)],
+          ['supply','Depósito para Mercado',allRows.filter(x=>x.direction==='supply'&&x.remaining).reduce((a,b)=>a+b.remaining,0)],
+          ['pendencias','Solicitações pendentes',allRows.filter(x=>x.id&&x.remaining).length],
+          ['quarentena','Peças em quarentena',(workflow.items||[]).filter(x=>['quarantine','rejected'].includes(x.status)).reduce((a,b)=>a+b.quantity,0)]];
+        content='<div class="leo-kpis">'+groups.map(([key,label,total])=>'<button type="button" data-leo-view="'+key+'"><span>'+label+'</span><strong>'+qty(total)+'</strong></button>').join('')+'</div>'+
+          '<section class="leo-card"><h2>Fluxo da operação</h2><div class="leo-flow">'+views.slice(1,14).map(([key,label])=>'<button type="button" data-leo-view="'+key+'">'+label+'</button>').join('')+'</div></section>';
+      }else if(!native||['return','supply','pendencias'].includes(page)){
+        rows=allRows.filter(row=>!native||page==='pendencias'?row.remaining>0:row.direction===page);
+        const chosen=rows.filter(row=>choices.get(transferKey(row))?.decision);
+        content='<section class="leo-card"><p>As quantidades previstas vêm da posição semanal e das trocas ideais. Confirme após a movimentação física nos dois locais. <a href="/producao/gestao-enxoval?tela=configuracoes">Conferir saldo elegível</a>.</p>'+
+          '<button type="button" data-leo-list '+(!chosen.length||saving?'disabled':'')+'>Salvar lista</button>'+table(rows)+'</section>';
+        if(!native||page==='pendencias'){report=history();content+=report.html;}
+      }else if(page==='configuracoes'){
+        report=history();content=stockSetup()+workflowView(page,workflow,{canManage,canSew,saving,draft})+report.html;
+      }else content=workflowView(page,workflow,{canManage,canSew,saving,draft});
     }
-    host.innerHTML='<p role="status">'+esc(message)+'</p>'+content;
-    host.querySelectorAll('[data-leo-pending]').forEach(button=>button.onclick=()=>savePending([rows[Number(button.dataset.leoPending)]]));
+    const heading=native?'<header class="leo-head"><div><div class="gao-eyebrow">PRODUÇÃO</div><h1>Gestão de Enxoval</h1><p>Posição semanal '+esc(sewingOnly?'· fila de recuperação':snapshot?.informed_at||snapshot?.as_of||'a publicar')+'</p></div><button type="button" data-leo-refresh '+(saving||loading?'disabled':'')+'>Atualizar</button></header>'+
+      '<div class="leo-layout"><nav class="leo-nav" aria-label="Telas da Gestão de Enxoval">'+views.filter(([key])=>!sewingOnly||key==='costura').map(([key,label])=>'<button type="button" data-leo-view="'+key+'" '+(loading||saving?'disabled ':'')+'aria-current="'+(key===page?'page':'false')+'">'+label+'</button>').join('')+'</nav><div class="leo-main"><h2>'+views.find(([key])=>key===page)[1]+'</h2>':'';
+    host.innerHTML=heading+'<p role="status">'+esc(message)+'</p>'+content+(native?'</div></div>':'');
+    host.querySelectorAll('[data-leo-view]').forEach(button=>button.onclick=()=>go(button.dataset.leoView));
+    host.querySelector('[data-leo-refresh]')?.addEventListener('click',()=>{message='';void load();});
+    host.querySelectorAll('[data-leo-decision]').forEach(select=>select.onchange=()=>{
+      const row=rows[Number(select.dataset.leoDecision)];
+      const key=transferKey(row);
+      choices.set(key,{quantity:choices.get(key)?.quantity||'',decision:select.value});render();
+    });
+    host.querySelectorAll('[data-leo-quantity]').forEach(input=>input.oninput=()=>{
+      const row=rows[Number(input.dataset.leoQuantity)];
+      choices.get(transferKey(row)).quantity=input.value;
+    });
+    host.querySelectorAll('[data-leo-save]').forEach(button=>button.onclick=()=>saveChoices([rows[Number(button.dataset.leoSave)]]));
+    host.querySelector('[data-leo-list]')?.addEventListener('click',()=>saveChoices(rows.filter(row=>choices.get(transferKey(row))?.decision)));
     host.querySelectorAll('[data-leo-history]').forEach(button=>button.onclick=()=>{
-      filters={product:rows[Number(button.dataset.leoHistory)].product_key,direction:'',start:'',end:'',responsible:''};render();
+      filters={...newFilters(),product:rows[Number(button.dataset.leoHistory)].product_key};
+      if(native&&page!=='pendencias'){page='pendencias';const url=new URL(location.href);url.searchParams.set('tela',page);historyReplace(url);}
+      render();host.querySelector('[data-leo-filters]')?.scrollIntoView({block:'start'});
     });
     host.querySelector('[data-leo-filters]')?.addEventListener('submit',event=>{
       event.preventDefault();filters=Object.fromEntries(new FormData(event.currentTarget));render();
     });
-    host.querySelector('[data-leo-clear]')?.addEventListener('click',()=>{filters={product:'',direction:'',start:'',end:'',responsible:''};render();});
+    host.querySelector('[data-leo-clear]')?.addEventListener('click',()=>{filters=newFilters();render();});
     host.querySelector('[data-leo-export]')?.addEventListener('click',()=>{
       try{
         if(!window.XLSX)throw Error('O gerador de Excel ainda não está disponível.');
@@ -135,24 +257,56 @@ function mount(host) {
         window.XLSX.writeFile(file,'historico-movimentacoes-enxoval.xlsx');
       }catch(error){message=error.message;render();}
     });
+    host.querySelector('[data-leo-stock]')?.addEventListener('submit',async event=>{
+      event.preventDefault();
+      const data=new FormData(event.currentTarget);
+      saving=true;message='';render();
+      try{
+        await api('/rest/v1/rpc/linen_set_eligible_stock',{p_org:organization,p_version:snapshot.updated_at,
+          p_key:data.get('product'),p_depot:Number(data.get('depot')),p_market:Number(data.get('market'))});
+        message='Saldo elegível conferido.';await load();
+      }catch(error){message=error.message;}finally{saving=false;render();}
+    });
+    host.querySelector('[data-leo-xml]')?.addEventListener('change',async event=>{
+      try{
+        const file=event.target.files[0];
+        if(!file)return;
+        if(file.size>2000000)throw Error('Selecione um XML de até 2 MB.');
+        const xml=await file.text();
+        draft={...invoiceFromXml(xml),xml};message='';
+      }catch(error){draft=undefined;message=error.message;}render();
+    });
+    host.querySelectorAll('[data-leo-workflow]').forEach(form=>{
+      form.onsubmit=event=>{
+        event.preventDefault();
+        const data=Object.fromEntries(new FormData(form));
+        const action=form.dataset.leoWorkflow;
+        if(action==='invoice'){
+          const {key,number,issuer,xml,items}=draft;
+          void workflowSubmit(action,{key,number,supplier:issuer,xml,lines:items.map(({line})=>({line,
+            product:data['product-'+line],quantity:data['quantity-'+line]}))});
+        }else void workflowSubmit(action,data);
+      };
+    });
+    host.querySelectorAll('[data-leo-measure]').forEach(form=>form.oninput=()=>{
+      const fields=new FormData(form);
+      const [width,length,weight]=['width','length','weight'].map(key=>Number(fields.get(key)));
+      form.querySelector('output').value=width>0&&length>0&&weight>0?new Intl.NumberFormat('pt-BR',{maximumFractionDigits:1,minimumFractionDigits:1}).format(weight*10000/(width*length))+' g/m²':'';
+    });
   }
   void load();
 }
 
-const style=document.createElement('style');
-style.textContent='#gao-linen-operations{color:#082d52;padding:10px}#gao-linen-operations h1,#gao-linen-operations h2{color:#082d52}#lr150-movement-records{margin-top:14px}#lr150-movement-records>summary{font-weight:700;cursor:pointer;padding:8px}.leo-head{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}.leo-nav{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.leo-link,#gao-linen-operations button{display:inline-block;border:1px solid #5f7d9b;border-radius:8px;background:#182c40;color:#e8f0ff;padding:8px 12px;min-height:38px;font:inherit;cursor:pointer;margin:2px}#gao-linen-operations button[aria-pressed=true]{background:#276999;color:white}#gao-linen-operations button:disabled{opacity:.6;cursor:default}.leo-kpis{display:flex;gap:12px;flex-wrap:wrap}.leo-kpis div{padding:12px;border:1px solid #57728c;border-radius:8px;flex:1}.leo-kpis dd{font-size:24px;font-weight:700;margin:4px 0}.leo-scroll{overflow:auto;margin-top:12px}#gao-linen-operations table{border-collapse:collapse;width:100%;min-width:740px}#gao-linen-operations th,#gao-linen-operations td{padding:9px;border-bottom:1px solid #57728c;text-align:left}#gao-linen-operations td small{display:block;margin-top:5px}#gao-linen-operations form{display:flex;gap:8px;flex-wrap:wrap;align-items:end}#gao-linen-operations form label{display:grid;gap:4px}#gao-linen-operations form :is(input,select){padding:7px;font:inherit}';
-document.head.append(style);
 let currentHost;
 function connect(){
-  const host=document.getElementById(HOST);
-  const details=host?.closest('details');
-  if (!host || host===currentHost) return;
+  const host=document.getElementById(nativeHost)||document.getElementById(HOST);
+  if(!host||host===currentHost)return;
   currentHost=host;
-  if(details?.open)mount(host);
-  else details?.addEventListener('toggle',function start(){
+  const details=host.closest('details');
+  if(!details||details.open)mount(host);
+  else details.addEventListener('toggle',function start(){
     if(!details.open)return;
-    details.removeEventListener('toggle',start);
-    mount(host);
+    details.removeEventListener('toggle',start);mount(host);
   });
 }
 connect();

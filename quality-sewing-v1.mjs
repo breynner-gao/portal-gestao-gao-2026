@@ -231,7 +231,7 @@ export async function mountSewing(host,api){
   const operators=await api('rpc/quality_sewing_operators');
   const names=new Map(operators.map(r=>[r.id,r.label]));
   const identity=names.get(user.id)||user.email||user.id;
-  root.insertAdjacentHTML('beforeend','<div class="q142-tabs">'+(access.write?'<button type="button" data-entry>Lançar serviço</button>':'')+'<button type="button" data-panel>'+(access.manage?'Painel da Costura':'Meus lançamentos')+'</button>'+(access.manage?'<button type="button" data-tv>Modo TV</button>':'')+'</div><section data-content></section>');
+  root.insertAdjacentHTML('beforeend','<div class="q142-tabs">'+(access.write?'<button type="button" data-entry>Lançar serviço</button>':'')+'<a href="/producao/gestao-enxoval?tela=costura">Ordens de recuperação de enxoval</a><button type="button" data-panel>'+(access.manage?'Painel da Costura':'Meus lançamentos')+'</button>'+(access.manage?'<button type="button" data-tv>Modo TV</button>':'')+'</div><section data-content></section>');
   const content=root.querySelector('[data-content]');
   message.textContent='';
   const labelCurrent=r=>({...r,responsible:names.get(r.operator_id)||(r.operator_id===user.id?identity:r.operator_id),label:activities[r.activity]||r.activity});

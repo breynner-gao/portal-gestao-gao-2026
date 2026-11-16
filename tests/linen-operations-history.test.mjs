@@ -40,19 +40,27 @@ test('Excel mantém a seleção em ordem, quantidades numéricas e a aba de filt
   assert.throws(()=>transferWorkbook(xlsx,[],{},{}),/Nenhum registro/);
 });
 
-test('endereço antigo encaminha à única aba Movimentações do Enxoval', async () => {
-  const core=await readFile(new URL('../portal-sgq-core.js',import.meta.url),'utf8');
-  const redirect=core.slice(core.indexOf('if(location.pathname'),core.indexOf('const I='));
-  const visits=[];
-  runInNewContext('(()=>{'+redirect+'})()',{
-    location:{pathname:'/producao/gestao-enxoval',replace:path=>visits.push(path)}
-  });
-  assert.deepEqual(visits,['/enxoval-tecidos#movimentacoes-enxoval']);
-});
-
-test('Produção mostra Gestão de Enxoval com destino direto para Movimentações', async () => {
+test('Produção abre o módulo nativo com as 15 telas', async () => {
   const core=await readFile(new URL('../portal-sgq-core.js',import.meta.url),'utf8');
   const submenu=core.slice(core.indexOf('const qualitySubnav='),core.indexOf(';const R='));
-  const html=runInNewContext(submenu+';qualitySubnav()', {location:{hash:'#producao'}});
-  assert.match(html,/<a href="\/enxoval-tecidos#movimentacoes-enxoval">Gestão de Enxoval<\/a>/);
+  const html=runInNewContext(submenu+';qualitySubnav()', {location:{hash:'',pathname:'/producao/gestao-enxoval'}});
+  assert.match(html,/<a href="\/producao\/gestao-enxoval"[^>]*aria-current="page">Gestão de Enxoval<\/a>/);
+  assert.match(core,/id="gao-linen-management"/);
+  const {views}=await import('../linen-management-views-v1.mjs');
+  assert.equal(views.length,15);
+  assert.equal(new Set(views.map(([key])=>key)).size,15);
+});
+
+test('atendimento de posição anterior permanece concluído na semana em que foi finalizado', async () => {
+  const {movementRows}=await import('../linen-management-views-v1.mjs');
+  const position='2026-11-16T11:00:00Z';
+  const proposal={product_key:'ID:1',direction:'supply',planned:100};
+  const saved={...proposal,id:'pedido',snapshot_version:'2026-11-09T11:00:00Z'};
+  const partial={request_id:'pedido',quantity:30,remaining:70,stock_version:position};
+  const eligible={product_key:'ID:1',snapshot_version:position,depot:90,market:30};
+  const open=movementRows([proposal],[saved],[partial],[eligible],position);
+  assert.deepEqual(open.map(row=>[row.id,row.done,row.remaining,row.eligible]),[['pedido',30,70,90]]);
+  const finished={...partial,quantity:70,remaining:0};
+  const completed=movementRows([proposal],[saved],[partial,finished],[{...eligible,depot:20}],position);
+  assert.deepEqual(completed.map(row=>[row.id,row.done,row.remaining,row.eligible]),[['pedido',100,0,20]]);
 });
