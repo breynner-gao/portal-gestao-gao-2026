@@ -42,3 +42,15 @@ test('operador registra a primeira pesagem e a revisão requer perfil de gestor'
   assert.equal(current().weighing,weighing);
   await assert.rejects(api.saveOperationWeighing({key},{...weighing,received:22}),/Conta de gestor/);
 });
+
+test('a revisão permite ao gestor alterar a data da expedição junto da pesagem', async()=>{
+  const {api,key,weighing,current}=fixture(true);
+  const updated=await api.saveOperationWeighing({key,date:'2026-11-15'},weighing,'2026-11-14');
+  assert.equal(updated.date,'2026-11-14');
+  assert.equal(updated.weighing,weighing);
+  assert.equal(current().date,'2026-11-14');
+  await assert.rejects(api.saveOperationWeighing({key},weighing,'2026-02-31'),/data.*válida/);
+  const operator=fixture(false,false);
+  await assert.rejects(operator.api.saveOperationWeighing({key},weighing,'2026-11-14'),/Conta de gestor/);
+  assert.equal(operator.current().date,'2026-11-15');
+});

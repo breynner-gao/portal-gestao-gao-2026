@@ -427,12 +427,25 @@ async function saveOperationRecord(record,key){
  await syncRelaveOperation();
  return operationRecord(all().find(row=>row.id===id));
 }
-async function saveOperationWeighing(record,weighing){
- const row=all().find(entry=>entry.__key===record.key);
+async function saveOperationWeighing(record,weighing,expeditionDate){
+ const rows=all();
+ const row=rows.find(entry=>entry.__key===record.key);
  if(!row||row.kind==='customer'||!Array.isArray(row.relaveItems))throw Error('Comanda indisponível para conferência.');
- if(row.weighing)requireRelaveManager();
- updateEntry(row.__key,{...state().overrides[row.__key],weighing});
+ const changedDate=expeditionDate!==undefined&&expeditionDate!==row.date;
+ if(row.weighing||changedDate)requireRelaveManager();
+ const correction={};
+ if(changedDate){
+  const date=new Date(expeditionDate+'T12:00:00Z');
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(expeditionDate)||!Number.isFinite(date.getTime())||date.toISOString().slice(0,10)!==expeditionDate)
+   throw Error('Informe uma data de expedição válida.');
+  const command=String(row.command).toLowerCase();
+  if(rows.some(other=>other.__key!==row.__key&&(other.kind||'internal')===(row.kind||'internal')&&other.date===expeditionDate&&String(other.command).toLowerCase()===command))
+   throw Error('Já existe um lançamento para esta comanda na data informada.');
+  Object.assign(correction,{date:expeditionDate,week:weekNo(expeditionDate)});
+ }
+ updateEntry(row.__key,{...state().overrides[row.__key],...correction,weighing});
  await syncRelaveOperation();
+ return operationRecord({...row,...correction,weighing});
 }
 async function excludeOperationRecord(record){
  requireRelaveManager();
@@ -465,7 +478,7 @@ async function loadRelaveOperation(root){
  host.textContent='Carregando painel de relave…';
  try{
   const [{mountRelave},{mergeRelaveArchive}]=await Promise.all([
-   import('/relave-operation-v1.mjs?v=21'),import('/relave-archive-v1.mjs?v=3')
+   import('/relave-operation-v1.mjs?v=22'),import('/relave-archive-v1.mjs?v=3')
   ]);
   let archive,archiveError=false;
   try{await window.GAO_CHEM_DB_LOAD?.();archive=await window.GAO_RELAVE_ARCHIVE?.()}
