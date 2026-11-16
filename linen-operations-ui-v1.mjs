@@ -176,7 +176,7 @@ function mount(host) {
       if(page==='painel')url.searchParams.delete('tela');else url.searchParams.set('tela',page);
       historyReplace(url);
     }
-    void load();
+    return load();
   }
 
   function historyReplace(url){window.history.replaceState(window.history.state,'',url);}
@@ -237,10 +237,19 @@ function mount(host) {
         report=history();content=stockSetup()+workflowView(page,workflow,{canManage,canSew,saving,draft})+report.html;
       }else content=workflowView(page,workflow,{canManage,canSew,saving,draft});
     }
-    const heading=native?'<header class="leo-head"><div><div class="gao-eyebrow">PRODUÇÃO</div><h1>Gestão de Enxoval</h1><p>Posição semanal '+esc(sewingOnly?'· fila de recuperação':snapshot?.informed_at||snapshot?.as_of||'a publicar')+'</p></div><button type="button" data-leo-refresh '+(saving||loading?'disabled':'')+'>Atualizar</button></header>'+
-      '<div class="leo-layout"><nav class="leo-nav" aria-label="Telas da Gestão de Enxoval">'+views.filter(([key])=>!sewingOnly||key==='costura').map(([key,label])=>'<button type="button" data-leo-view="'+key+'" '+(loading||saving?'disabled ':'')+'aria-current="'+(key===page?'page':'false')+'">'+label+'</button>').join('')+'</nav><div class="leo-main"><h2>'+views.find(([key])=>key===page)[1]+'</h2>':'';
-    host.innerHTML=heading+'<p role="status">'+esc(message)+'</p>'+content+(native?'</div></div>':'');
+    const headerControls=(saving||loading?'disabled':'');
+    const availableViews=views.filter(([key])=>!sewingOnly||key==='costura');
+    const heading=native?'<header class="leo-head"><div><div class="gao-eyebrow">PRODUÇÃO</div><h1>Gestão de Enxoval</h1><p>Posição semanal '+esc(sewingOnly?'· fila de recuperação':snapshot?.informed_at||snapshot?.as_of||'a publicar')+'</p></div>'+
+      '<div class="leo-head-actions"><label>Tela<select data-leo-view-select '+headerControls+'>'+availableViews.map(([key,label])=>'<option value="'+key+'" '+(key===page?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
+      '<button type="button" data-leo-refresh '+headerControls+'>Atualizar</button></div></header>'+
+      '<div class="leo-main"><h2>'+views.find(([key])=>key===page)[1]+'</h2>':'';
+    host.innerHTML=heading+'<p role="status">'+esc(message)+'</p>'+content+(native?'</div>':'');
     host.querySelectorAll('[data-leo-view]').forEach(button=>button.onclick=()=>go(button.dataset.leoView));
+    const viewSelect=host.querySelector('[data-leo-view-select]');
+    if(viewSelect)viewSelect.onchange=async()=>{
+      await go(viewSelect.value);
+      host.querySelector('[data-leo-view-select]')?.focus({preventScroll:true});
+    };
     host.querySelector('[data-leo-refresh]')?.addEventListener('click',()=>{message='';void load();});
     host.querySelectorAll('[data-leo-decision]').forEach(select=>select.onchange=()=>{
       const row=rows[Number(select.dataset.leoDecision)];

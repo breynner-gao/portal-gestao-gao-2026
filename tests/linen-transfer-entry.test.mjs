@@ -30,3 +30,19 @@ test('saldo conferido limita o lançamento e quem só movimenta não ganha acess
   assert.doesNotMatch(render(null,false),/<form data-leo-stock>/);
   assert.doesNotMatch(render(null,false,'no'),/<button[^>]*data-leo-save[^>]*disabled/);
 });
+
+test('navegação da Gestão de Enxoval fica junto de Atualizar e respeita a visualização de Costura', async () => {
+  const {views}=await import('../linen-management-views-v1.mjs');
+  const renderSource=source.slice(source.indexOf('  function render(){'),source.indexOf('    host.querySelectorAll(\'[data-leo-decision]\')'));
+  for(const sewingOnly of [false,true]){
+    const page=sewingOnly?'costura':'return';
+    const host={isConnected:true,querySelector:()=>null,querySelectorAll:()=>[]};
+    runInNewContext(renderSource+'}render()',{
+      native:true,host,loading:true,saving:false,sewingOnly,page,snapshot:null,views,esc:String,message:''
+    });
+    assert.match(host.innerHTML,/<div class="leo-head-actions">[\s\S]*<select data-leo-view-select[\s\S]*<button[^>]*data-leo-refresh/);
+    assert.equal((host.innerHTML.match(/<option/g)||[]).length,sewingOnly?1:views.length);
+    assert.match(host.innerHTML,new RegExp('<option value="'+page+'" selected'));
+    assert.doesNotMatch(host.innerHTML,/class="leo-nav"/);
+  }
+});

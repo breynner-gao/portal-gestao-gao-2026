@@ -7,6 +7,7 @@
 #gao-linen-management .leo-head {
   display:flex;
   justify-content:space-between;
+  flex-wrap:wrap;
   align-items:center;
   gap:1rem;
   padding:1.25rem;
@@ -17,10 +18,11 @@
 }
 #gao-linen-management .leo-head h1 {color:inherit;margin:0}
 #gao-linen-management .leo-head p {margin-bottom:0}
-.leo-layout {display:grid;grid-template-columns:minmax(12rem,15rem) minmax(0,1fr);gap:1rem;align-items:start}
+.leo-head-actions {display:flex;align-items:end;gap:.6rem;flex-wrap:wrap;max-width:100%;min-width:0}
+#gao-linen-management .leo-head-actions label {flex:1 1 13rem;min-width:0}
+#gao-linen-management .leo-head-actions select {max-width:100%;min-height:40px}
 .leo-main {padding:1rem;background:var(--leo-bg);border:1px solid var(--leo-border);border-radius:12px;min-width:0}
 #gao-linen-management h2,#gao-linen-management h3 {color:inherit}
-.leo-nav {display:grid;gap:.35rem;padding:.65rem;background:#e9f4fe;border-radius:12px}
 .leo-flow,.leo-kpis {display:grid;gap:.7rem;grid-template-columns:repeat(auto-fit,minmax(10rem,1fr))}
 .leo-kpis strong {display:block;font-size:1.7rem;margin-top:.4rem}
 .leo-card {margin:.8rem 0;padding:1rem;background:white;border:1px solid var(--leo-border);border-radius:12px}
@@ -60,8 +62,5 @@
 #gao-linen-operations .gao-card {color:#0c3352}
 :is(#gao-linen-management,#gao-linen-operations) [role=status]:empty {display:none}
 @media(max-width:850px) {
-  .leo-layout {display:block}
-  .leo-nav {display:flex;overflow-x:auto;margin-bottom:.8rem}
-  .leo-nav button {white-space:nowrap}
   .leo-main {padding:.65rem}
 }
