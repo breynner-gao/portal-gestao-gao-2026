@@ -2,7 +2,7 @@ import { createEnfestoControls } from "./fabric-enfesto-v1.mjs?v=2";
 import {
   buildBuyingRows,
 } from "./linen-buying-rules-v1.mjs?v=1";
-import { buyingView, buyingStyles, buyingSortStyles, buyingSortLabel, sortBuyingRows } from "./linen-buying-view-v1.mjs?v=5";
+import { buyingView, buyingStyles, buyingSortStyles, buyingSortLabel, sortBuyingRows } from "./linen-buying-view-v1.mjs?v=6";
 import { compactDimensionKey } from "./linen-risk-rules-v150.mjs?v=226";
 export function createBuyingController(env) {
   const { state, esc, n, br, rpc, reload, render, uid } = env;
@@ -498,11 +498,12 @@ export function createBuyingController(env) {
   document.addEventListener("input", (e) => {
     if (!e.target.matches("[data-fw-buy-search]")) return;
     query = e.target.value;
+    const term = query.trim().toLocaleLowerCase("pt-BR");
     document.querySelectorAll("[data-fw-buy-row]").forEach((el) => {
-      el.hidden = !el.dataset.search.includes(
-        query.trim().toLocaleLowerCase("pt-BR"),
-      );
+      el.hidden = term ? !el.dataset.search.includes(term) : el.hasAttribute("data-fw-buy-covered");
     });
+    const empty = document.querySelector("[data-fw-buy-empty]");
+    if (empty) empty.hidden = Boolean(term);
   });
   document.addEventListener(
     "toggle",

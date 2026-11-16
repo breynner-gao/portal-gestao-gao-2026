@@ -1,4 +1,4 @@
-import { applyFactionToRows, buildFactionMap, buildPendingProductionCoverage, applyPendingProductionCoverage, factionQuantityFor, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, updateIdealReference } from './linen-risk-rules-v150.mjs?v=226';
+import { applyFactionToRows, buildFactionMap, buildPendingProductionCoverage, applyPendingProductionCoverage, factionQuantityFor, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, applyIdealReferences, idealReferenceKey } from './linen-risk-rules-v150.mjs?v=227';
 
 const DATA = '/assets/linen-rfid-report-2026-10-13.json';
 const FACTION_DATA = '/assets/linen-production-pending-2026-10-13.json';
@@ -71,26 +71,88 @@ function snapshot(label = state.fileName) {
 }
 function saveHistory() { const item = snapshot(); const old = readHistory(); localStorage.setItem(HISTORY_KEY, JSON.stringify([item, ...old].slice(0, 24))); }
 function resetCurrentBase() { localStorage.removeItem(CURRENT_KEY); location.reload(); }
-function editIdealReference(event) {
+const IDEALS_TABLE = 'linen_ideal_references';
+let idealReferences = new Map();
+let idealRevision = 0;
+let idealSaving = false;
+let idealMessage = '';
+
+function rowsWithIdeal(rows = state.baseRows) {
+  return applyIdealReferences(rows, idealReferences);
+}
+
+function recalculateIdealDecisions() {
+  const base = rowsWithIdeal();
+  state.rows = state.coverageReady
+    ? applyPendingProductionCoverage(base, state)
+    : applyFactionToRows(base, state.factionMap);
+}
+
+async function readIdealReferences(context) {
+  const all = new Map(), limit = 500;
+  for (let offset = 0; ; offset += limit) {
+    const query = new URLSearchParams({select:'product_key,ideal',organization_id:'eq.'+context.organizationId,order:'product_key',limit,offset});
+    const response = await fetch(SUPABASE_URL + '/rest/v1/' + IDEALS_TABLE + '?' + query, {
+      headers: {apikey:SUPABASE_KEY, Authorization:'Bearer '+context.token}, cache:'no-store'
+    });
+    if (!response.ok) throw Error('Não foi possível carregar as trocas ideais salvas.');
+    const page = await response.json();
+    for (const row of page) all.set(row.product_key, Number(row.ideal));
+    if (page.length < limit) return all;
+  }
+}
+
+async function refreshIdealReferences() {
+  if (!route() || !state.loaded || idealSaving) return;
+  const revision = idealRevision;
+  try {
+    const references = await readIdealReferences(await cloudContext());
+    if (idealRevision !== revision || idealSaving) return;
+    if (references.size === idealReferences.size && [...references].every(([key,value]) => idealReferences.get(key) === value)) return;
+    idealReferences = references;
+    recalculateIdealDecisions();
+    render();
+  } catch (error) {
+    idealMessage = error.message;
+    render();
+  }
+}
+window.addEventListener('focus', refreshIdealReferences);
+
+async function editIdealReference(event) {
   const input = event.currentTarget;
-  const produtoId = input.dataset.produtoId || '';
-  const produtoNome = input.dataset.produtoNome || '';
+  const {produtoId, produtoNome, previousValue} = input.dataset;
+  const productKey = idealReferenceKey({produtoId, produtoNome});
   const value = Number(String(input.value || '').replace(',', '.'));
-  if (!Number.isFinite(value) || value <= 0 || value > 99) {
-    input.value = input.dataset.previousValue || '';
+  if (!productKey || !input.validity.valid || !Number.isFinite(value) || value < 0.1 || value > 99 || idealSaving) {
+    input.value = previousValue || '';
     return;
   }
-  const matches = row => (produtoId && row.produtoId === produtoId) || (!produtoId && row.produtoNome === produtoNome);
-  const update = row => matches(row) ? updateIdealReference(row, value) : row;
-  state = {
-    ...state,
-    baseRows: state.baseRows.map(update),
-    rows: state.rows.map(update),
-    needsCloudSync: true,
-    uploadMessage: `Troca ideal de ${produtoNome} ajustada para ${br(value, 1)}. Necessidade, movimentação e pedido foram recalculados.`
-  };
-  saveCurrent();
-  render();
+  if (idealReferences.get(productKey) === value) return;
+  idealSaving = true;
+  idealRevision++;
+  input.disabled = true;
+  try {
+    const context = await cloudContext();
+    const response = await fetch(SUPABASE_URL + '/rest/v1/' + IDEALS_TABLE + '?on_conflict=organization_id,product_key', {
+      method: 'POST',
+      headers: {apikey:SUPABASE_KEY, Authorization:'Bearer '+context.token, 'Content-Type':'application/json', Prefer:'resolution=merge-duplicates,return=minimal'},
+      body: JSON.stringify({organization_id:context.organizationId,product_key:productKey,ideal:value})
+    });
+    if (!response.ok) throw Error(response.status === 401 || response.status === 403
+      ? 'Seu perfil não pode salvar trocas ideais.'
+      : 'Não foi possível salvar a troca ideal. Tente novamente.');
+    idealReferences.set(productKey, value);
+    recalculateIdealDecisions();
+    idealMessage = `Meta de ${produtoNome} salva: ${br(value, 1)} trocas ideais.`;
+  } catch (error) {
+    input.value = previousValue;
+    idealMessage = error.message;
+  } finally {
+    idealSaving = false;
+    input.disabled = false;
+    render();
+  }
 }
 function deleteSelectedHistory() { const id = document.querySelector('#lr150-history-select')?.value; if (!id) return; const next = readHistory().filter(item => item.id !== id); localStorage.setItem(HISTORY_KEY, JSON.stringify(next)); render(); }
 function deleteAllHistory() { localStorage.removeItem(HISTORY_KEY); render(); }
@@ -178,7 +240,7 @@ async function fetchOnlineFaction() {
   const [tracking,orders,items,returns]=await Promise.all([get('fabric_faction_tracking','product_name,product_reference,quantity,delivered,delivery_status'),get('fabric_production_orders','id,status'),get('fabric_production_order_items','id,order_id,product_reference,product_name,ordered_pieces'),get('fabric_faction_returns','order_item_id,accepted_pieces,rejected_pieces')]);
   const coverage=buildPendingProductionCoverage({tracking,orders,items,returns});
   state={...state,coverageReady:true,productionError:'',trackingMap:coverage.trackingMap,serviceOrderMap:coverage.serviceOrderMap,factionMap:coverage.totalMap,factionSource:'Pedidos em andamento registrados no sistema'};
-  state.rows=applyPendingProductionCoverage(state.baseRows,coverage);
+  state.rows=applyPendingProductionCoverage(rowsWithIdeal(),coverage);
   state.factionMap=buildFactionMap(state.rows.map(row=>({PRODUTO:row.produtoNome,product_reference:row.produtoId,QUANTIDADE:row.pecasFaccao,ENTREGA:0,Status:'PENDENTE'})));
   for(const row of state.rows)if(row.produtoId)state.factionMap['ID:'+String(row.produtoId)]=row.pecasFaccao;
   saveCurrent();render();
@@ -193,14 +255,21 @@ async function load(force = false) {
   try {
     const context = await cloudContext();
     state = { ...state, cloudReady: true, cloudCanWrite: context.canWrite, cloudOrgId: context.organizationId };
-    shared = await loadSharedSnapshot(context);
+    const revision = idealRevision;
+    const [snapshot, references] = await Promise.allSettled([loadSharedSnapshot(context), readIdealReferences(context)]);
+    if (references.status === 'fulfilled' && revision === idealRevision && !idealSaving) {
+      idealReferences = references.value;
+      idealMessage = '';
+    } else if (references.status === 'rejected') idealMessage = references.reason.message;
+    if (snapshot.status === 'rejected') throw snapshot.reason;
+    shared = snapshot.value;
     if (shared?.rows?.length && !current?.needsCloudSync) {
       state = {
         ...state,
         loaded: true,
         error: '',
         baseRows: shared.rows,
-        rows: applyFactionToRows(shared.rows, current?.factionMap || {}),
+        rows: applyFactionToRows(rowsWithIdeal(shared.rows), current?.factionMap || {}),
         asOf: shared.as_of || '',
         informedAt: shared.informed_at || shared.as_of || '',
         sourceSheet: shared.source_sheet || 'Base RFID compartilhada',
@@ -226,7 +295,7 @@ async function load(force = false) {
       loaded: true,
       error: '',
       baseRows: current.baseRows,
-      rows: applyFactionToRows(current.baseRows, current.factionMap || {}),
+      rows: applyFactionToRows(rowsWithIdeal(current.baseRows), current.factionMap || {}),
       asOf: current.asOf || '',
       informedAt: current.informedAt || current.asOf || '',
       sourceSheet: current.sourceSheet || 'Arquivo importado',
@@ -252,7 +321,7 @@ async function load(force = false) {
       loaded: true,
       error: '',
       baseRows: summary.rows,
-      rows: applyFactionToRows(summary.rows, {}),
+      rows: applyFactionToRows(rowsWithIdeal(summary.rows), {}),
       asOf: data.asOf || '',
       informedAt: data.informedAt || data.asOf || '',
       sourceSheet: data.sheet || '',
@@ -366,7 +435,7 @@ function applyUploadedRows(rows, fileName) {
     loaded: true,
     error: '',
     baseRows: summary.rows,
-    rows: applyFactionToRows(summary.rows, factionMap || {}),
+    rows: applyFactionToRows(rowsWithIdeal(summary.rows), factionMap || {}),
     fileName,
     asOf: new Date().toISOString().slice(0, 10),
     informedAt: new Date().toISOString().slice(0, 10),
@@ -425,7 +494,7 @@ function applyUploadedFaction(rows, fileName) {
   const total = Object.values(map).reduce((sum, value) => sum + Number(value || 0), 0);
   state = {
     ...state,
-    rows: applyFactionToRows(state.baseRows.map(r=>({...r,pecasFaccao:0,emProducao:0})), map),
+    rows: applyFactionToRows(rowsWithIdeal().map(r=>({...r,pecasFaccao:0,emProducao:0})), map),
     factionMap: map,
     factionSource: fileName,
     uploadMessage: `${Object.keys(map).length} itens de facção carregados de ${fileName}. ${br(total)} pç pendentes consideradas.`
@@ -448,7 +517,7 @@ function readFactionFile(file) {
       if (parsed.byProduct && !rows.length) {
         state = {
           ...state,
-          rows: applyFactionToRows(state.baseRows, parsed.byProduct),
+          rows: applyFactionToRows(rowsWithIdeal(), parsed.byProduct),
           factionMap: parsed.byProduct,
           factionSource: file.name,
           uploadMessage: `Status de facção carregado de ${file.name}.`
@@ -587,6 +656,7 @@ function panel() {
   return `<section class="lr150-shell">
     ${textileMenu()}
     ${returnToolbar}
+    ${idealMessage ? `<div class="lr150-message" role="status">${esc(idealMessage)}</div>` : ''}
     ${!state.coverageReady?`<div class="lr150-message" role="status">${state.productionError?'Pedidos em andamento não atualizados: '+esc(state.productionError)+'. Aguarde a atualização antes de emitir novo pedido.':'Carregando pedidos em andamento para conferir a necessidade…'}</div>`:''}
     ${state.dimensionView === 'imports' ? `
     <div class="lr150-top">
@@ -702,7 +772,7 @@ function panel() {
             <span><b>Merc</b>${br(row.trocasMercado, 1)}</span>
             <span><b>GAO</b>${br(row.trocasGao, 1)}</span>
             <span class="strong lr150-total-card"><b>Total</b>${br(row.trocasTotal, 1)}</span>
-            <label class="lr150-ideal-card" title="${row.idealInformado ? 'Trocas ideais informadas na planilha' : 'Referência por categoria usada no cálculo de reposição'}"><b>Ideal</b><input class="lr150-ideal-input" type="number" min="0.1" max="99" step="0.1" value="${esc(row.trocasIdeal)}" data-produto-id="${esc(row.produtoId)}" data-produto-nome="${esc(row.produtoNome)}" data-previous-value="${esc(row.trocasIdeal)}" aria-label="Troca ideal de ${esc(row.produtoNome)}"><em>trocas</em></label>
+            <label class="lr150-ideal-card" title="Meta usada em Necessidades e Movimentações. Pressione Enter para salvar."><b>Ideal</b><input class="lr150-ideal-input" type="number" min="0.1" max="99" step="0.1" value="${esc(row.trocasIdeal)}" data-produto-id="${esc(row.produtoId)}" data-produto-nome="${esc(row.produtoNome)}" data-previous-value="${esc(row.trocasIdeal)}" aria-label="Troca ideal de ${esc(row.produtoNome)}"><em>trocas</em></label>
           </div></td>
           <td><div class="lr150-decision">
             <span><b>Necessidade</b>${br(row.necessidade)} pç</span>
@@ -733,7 +803,14 @@ function bind() {
   document.querySelector('#lr150-sync-cloud')?.addEventListener('click', syncSharedSnapshot);
   document.querySelector('#lr150-file')?.addEventListener('change', event => readRfidFile(event.target.files?.[0]));
   document.querySelector('#lr150-faction-file')?.addEventListener('change', event => readFactionFile(event.target.files?.[0]));
-  document.querySelectorAll('.lr150-ideal-input').forEach(input => input.addEventListener('change', editIdealReference));
+  document.querySelectorAll('.lr150-ideal-input').forEach(input => {
+    input.addEventListener('change', editIdealReference);
+    input.addEventListener('keydown', event => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      void editIdealReference(event);
+    });
+  });
   document.querySelector('#lr150-history-select')?.addEventListener('change', event => {
     const h = readHistory().find(item => item.id === event.target.value);
     if (!h) return;
@@ -861,7 +938,7 @@ function render() {
   const activeId = document.activeElement?.id || '';
   const activeStart = document.activeElement?.selectionStart;
   window.GAO_LINEN_SOURCE_UPDATED_AT = state.cloudUpdatedAt || null;
-  window.GAO_LINEN_NEED_SNAPSHOT = state.rows.map(row => ({ produtoId: row.produtoId, produtoNome: row.produtoNome, pedidoReal: row.pedidoReal, estoqueUtil:row.estoqueUtil, estoqueGao:row.estoqueGao, metaTrocas:row.mediaDiaria>0&&row.trocaReferencia>0?Math.ceil(row.mediaDiaria*row.trocaReferencia):null, coverageReady:state.coverageReady, necessidade:row.compraSugerida, pendingTracking:factionQuantityFor(row,state.trackingMap), pendingServiceOrders:factionQuantityFor(row,state.serviceOrderMap), needWithoutTracking:Math.max(0,Number(row.compraSugerida||0)-factionQuantityFor(row,state.trackingMap)), asOf: state.asOf }));
+  window.GAO_LINEN_NEED_SNAPSHOT = state.rows.map(row => ({ produtoId: row.produtoId, produtoNome: row.produtoNome, pedidoReal: row.pedidoReal, estoqueUtil:row.estoqueUtil, estoqueGao:row.estoqueGao, trocaReferencia:row.trocaReferencia, metaTrocas:row.mediaDiaria>0&&row.trocaReferencia>0?Math.ceil(row.mediaDiaria*row.trocaReferencia):null, coverageReady:state.coverageReady, necessidade:row.compraSugerida, pendingTracking:factionQuantityFor(row,state.trackingMap), pendingServiceOrders:factionQuantityFor(row,state.serviceOrderMap), needWithoutTracking:Math.max(0,Number(row.compraSugerida||0)-factionQuantityFor(row,state.trackingMap)), asOf: state.asOf }));
   shell.innerHTML = panel();
   mountTextileSubmenu(shell);
   bind();

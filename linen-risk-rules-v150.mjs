@@ -264,12 +264,25 @@ function movementRecommendation({ media, mercado, deposito, estoqueCirculacao, t
 
 // Recalcula uma linha normalizada quando o gestor ajusta a troca ideal na tela.
 // O estoque informado permanece intacto; somente as metas e decisões derivadas mudam.
+export function idealReferenceKey({ produtoId, produtoNome }) {
+  const id = String(produtoId || '').trim();
+  const name = compactDimensionKey(produtoNome);
+  return id ? 'ID:' + id : name ? 'NOME:' + name : '';
+}
+
+export function applyIdealReferences(rows, references) {
+  return rows.map(row => {
+    const ideal = references.get(idealReferenceKey(row));
+    return ideal === undefined ? row : updateIdealReference(row, ideal);
+  });
+}
+
 export function updateIdealReference(row, value) {
   const ideal = Math.max(0, n(value));
   const media = n(row.mediaDiaria);
-  const metaCirculacao = media > 0 && ideal > 0 ? Math.ceil(media * ideal) : 0;
-  const compraPorIdeal = media > 0 && ideal > 0 ? Math.max(0, metaCirculacao - n(row.estoqueUtil)) : 0;
-  const compraSugerida = compraPorIdeal;
+  const apuravel = media > 0 && ideal > 0;
+  const compraPorIdeal = apuravel ? Math.max(0, Math.ceil(media * ideal - n(row.estoqueUtil))) : 0;
+  const compraSugerida = apuravel ? compraPorIdeal : n(row.compraSugerida);
   const pedidoReal = Math.max(0, compraSugerida - n(row.pecasFaccao));
   const movimentacao = movementRecommendation({
     media,
@@ -286,6 +299,7 @@ export function updateIdealReference(row, value) {
     compraPorIdeal,
     compraSugerida,
     pedidoReal,
+    condutaDimensionamento: dimensioningAction({ ...row, compraSugerida }),
     ...movimentacao
   };
 }
