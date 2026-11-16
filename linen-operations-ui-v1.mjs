@@ -3,7 +3,7 @@ import {directionLabel, filterTransferHistory, localTimestamp, transferWorkbook}
 
 import {views,newFilters,movementRows,invoiceFromXml} from './linen-management-views-v1.mjs?v=3';
 import {productivityView, productivityRecords, shiftDate} from './linen-productivity-v1.mjs?v=1';
-import {workflowView} from './linen-management-workflow-v1.mjs?v=3';
+import {workflowView,bindEvaluationProductPickers} from './linen-management-workflow-v1.mjs?v=4';
 
 const HOST='gao-linen-operations';
 const SB='https://fquzuxdqvhecijjuxbmg.supabase.co';
@@ -92,7 +92,7 @@ function mount(host) {
       configuracoes:['settings','audit'],produtividade:['activityLog','targets']
     };
     const definitions={
-      products:['laundry_products',{select:'id,code,name',active:'eq.true',order:'name,id'}],
+      products:['laundry_products',{select:'id,code,name,category',active:'eq.true',order:'name,id'}],
       clients:['laundry_clients',{select:'id,name',active:'eq.true',order:'name,id'}],
       invoices:['linen_management_invoices',{select:'id,access_key,invoice_number,supplier,created_at',order:'created_at.desc,id'}],
       items:['linen_management_items',{select:'*,product:laundry_products(name,code)',order:'created_at.desc,id'}],
@@ -336,6 +336,7 @@ function mount(host) {
         draft={...invoiceFromXml(xml),xml};message='';
       }catch(error){draft=undefined;message=error.message;}render();
     });
+    if(page==='chip')bindEvaluationProductPickers(host,workflow.products||[]);
     host.querySelectorAll('[data-leo-workflow]').forEach(form=>{
       form.onsubmit=event=>{
         event.preventDefault();

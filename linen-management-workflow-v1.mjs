@@ -35,6 +35,28 @@ const defects=[['seam','Costura ou acabamento'],['tear','Furo ou rasgo'],['stain
 const defectLabels=new Map(defects);
 const sourceName=item=>item.invoice_id?'Peça nova':'Peça usada/recuperada';
 
+const productCategory=product=>{
+  const category=String(product?.category??'').trim();
+  return !category||category.toLowerCase()==='sem categoria'?'Sem categoria':category;
+};
+
+function evaluationProductOptions(products,category,selected){
+  return '<option value="">'+(category?'Selecione':'Escolha a categoria primeiro')+'</option>'+
+    (category?products.filter(product=>productCategory(product)===category).map(product=>
+      '<option value="'+esc(product.id)+'"'+(product.id===selected?' selected':'')+'>'+esc(product.code+' · '+product.name)+'</option>'
+    ).join(''):'');
+}
+
+export function bindEvaluationProductPickers(host,products){
+  host.querySelectorAll('[data-leo-product-category]').forEach(category=>{
+    const product=category.closest('form').querySelector('[data-leo-category-product]');
+    category.onchange=()=>{
+      product.innerHTML=evaluationProductOptions(products,category.value);
+      product.disabled=!category.value;
+    };
+  });
+}
+
 export function workflowView(page,model,{canManage,canSew,saving,draft}){
   const {products=[],clients=[],items=[],specs=[],invoices=[],client_orders:orders=[],purchases=[],settings=[],audit=[],tags=[]}=model;
   const choices=products.map(p=>[p.id,p.code+' · '+p.name]);
@@ -87,10 +109,17 @@ export function workflowView(page,model,{canManage,canSew,saving,draft}){
     const chipStates=[['working','Funcionando'],['missing','Sem chip'],['dead','Chip morto'],['unchecked','Ainda não testado']];
     const destinations=[['inspection_pending','Manter em avaliação'],['sewing','Costura'],['discard_pending','Avaliar descarte']];
     const savedTags=new Set(tags.map(tag=>tag.item_id));
+    const categories=[...new Set(products.map(productCategory))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
     const fields=(item={})=>{
       const linked=savedTags.has(item.id);
-      const productField=linked||item.product_id&&!choices.some(([id])=>id===item.product_id)?
-        '<p>'+esc(productOf(item))+'</p>'+hidden('product',item.product_id):product('product',item.product_id);
+      const selectedProduct=products.find(product=>product.id===item.product_id);
+      const selectedCategory=selectedProduct?productCategory(selectedProduct):'';
+      const productField=linked||item.product_id&&!selectedProduct?
+        '<p>'+esc(productOf(item))+'</p>'+hidden('product',item.product_id):
+        '<label>Categoria<select data-leo-product-category required><option value="">Selecione</option>'+
+          categories.map(category=>'<option value="'+esc(category)+'"'+(category===selectedCategory?' selected':'')+'>'+esc(category)+'</option>').join('')+
+        '</select></label><label>Produto do SGQ<select name="product" data-leo-category-product required'+(selectedCategory?'':' disabled')+'>'+
+          evaluationProductOptions(products,selectedCategory,item.product_id)+'</select></label>';
       return productField+field('piece','Identificação permanente da peça','text','required maxlength="150" value="'+esc(item.legacy_identifier||'')+'" '+(linked?'readonly':''))+
         select('chipCondition','Condição do chip',chipStates,item.chip_condition)+select('defect','Problema encontrado',defects,item.defect)+
         select('destination','Encaminhamento',destinations,item.status||'inspection_pending')+
