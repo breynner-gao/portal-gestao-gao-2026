@@ -49,3 +49,10 @@ test('endereço antigo encaminha à única aba Movimentações do Enxoval', asyn
   });
   assert.deepEqual(visits,['/enxoval-tecidos#movimentacoes-enxoval']);
 });
+
+test('Produção mostra Gestão de Enxoval com destino direto para Movimentações', async () => {
+  const core=await readFile(new URL('../portal-sgq-core.js',import.meta.url),'utf8');
+  const submenu=core.slice(core.indexOf('const qualitySubnav='),core.indexOf(';const R='));
+  const html=runInNewContext(submenu+';qualitySubnav()', {location:{hash:'#producao'}});
+  assert.match(html,/<a href="\/enxoval-tecidos#movimentacoes-enxoval">Gestão de Enxoval<\/a>/);
+});
