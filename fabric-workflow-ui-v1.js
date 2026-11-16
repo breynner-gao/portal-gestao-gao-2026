@@ -1,4 +1,4 @@
-import { purchaseReportStatuses, renderPurchaseReport } from '/fabric-purchase-report-v1.mjs?v=2';
+import { purchaseReportStatuses, renderPurchaseReport } from '/fabric-purchase-report-v1.mjs?v=3';
 import { openReport as openPurchaseReportWindow } from '/relave-report-export-v1.mjs?v=1';
 import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=5';
 import {createFactionDesk} from '/fabric-faction-portal-v1.mjs?v=2';

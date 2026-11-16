@@ -46,13 +46,32 @@ export function renderPurchaseReport(data,{supplierId,orderId,statusFilter='',lo
  const stamp=new Intl.DateTimeFormat('pt-BR',{dateStyle:'short',timeStyle:'short',timeZone:'America/Sao_Paulo'}).format(issuedAt);
  const safeLogo=/^data:image\/(?:png|webp);base64,[A-Za-z0-9+/=]+$/.test(logo||'')?`<img src="${logo}" alt="GAO Lavanderia">`:'<strong>GAO Lavanderia</strong>';
  const card=(label,value,caption)=>`<div><strong>${label}</strong><b>${value}</b><small>${caption}</small></div>`;
+ const productName=(f,standard)=>standard?[standard.code,standard.name].join(' · '):f?.name||'Tecido não identificado';
+ const supplierReference=(f)=>[f?.code,f?.name,f?.color_reference,f?.quality_code&&'Q'+f.quality_code].filter(Boolean).join(' · ')||null;
+ const specifications=(f,standard)=>[f?.color,f?.composition,f?.width_m&&qty(n(f.width_m))+' de largura',standard?.gsm&&standard.gsm+' g/m²'].filter(Boolean).join(' · ')||null;
+ const technicalBlock=general&&rows.length?`<section class="technical"><h2>Descrição técnica por fornecedor e produto</h2>${[...groups.values()]
+ .sort((a,b)=>name(a[0].supplier).localeCompare(name(b[0].supplier),'pt-BR'))
+ .map(orders=>{
+  const products=new Map();
+  for(const {o,lines} of orders){
+   for(const {i,f,standard} of lines){
+    const key=i.fabric_id??i.id;
+    if(!products.has(key))products.set(key,{f,standard,orderNumbers:new Set()});
+    products.get(key).orderNumbers.add(o.order_number);
+   }
+  }
+  const productRows=[...products.values()].map(({f,standard,orderNumbers})=>[
+   productName(f,standard),supplierReference(f),specifications(f,standard),[...orderNumbers].join(', ')
+  ]).sort((a,b)=>a[0].localeCompare(b[0],'pt-BR'));
+  return `<h3>${e(name(orders[0].supplier))}</h3>${table(['Produto GAO','Referência do fornecedor','Especificações técnicas','Ordens de compra'],productRows)}`;
+ }).join('')}</section>`:'';
  const details=rows.map(({o,supplier,status,lines,planned,pending,balance})=>`<section class="order"><h2>OC ${e(o.order_number)} · ${e(name(supplier))}</h2>
  <p><b>Situação</b> ${e(status)} · <b>Pedido</b> ${date(o.ordered_date)} · <b>Previsão</b> ${date(o.expected_date)}</p>
  <p><b>Logística</b> ${e({COTACAO:'Cotação',CONFIRMADO:'Confirmado',EM_TRANSPORTE:'Em transporte'}[o.logistics_stage])} · <b>Transportadora</b> ${e(o.carrier||null)} · <b>Rastreio</b> ${e(o.tracking_code||null)}</p>
  ${o.notes?`<p><b>Observações</b> ${e(o.notes)}</p>`:''}
- ${lines.map(({i,f,standard,ordered,received,pending,price,planned,status:lineStatus,receipts})=>`<h3>${e(standard?[standard.code,standard.name].join(' · '):f?.name||'Tecido não identificado')}</h3>
- <p><b>Referência do fornecedor</b> ${e([f?.code,f?.name,f?.color_reference,f?.quality_code&&'Q'+f.quality_code].filter(Boolean).join(' · ')||null)}</p>
- <p><b>Especificações</b> ${e([f?.color,f?.composition,f?.width_m&&qty(n(f.width_m))+' de largura',standard?.gsm&&standard.gsm+' g/m²'].filter(Boolean).join(' · ')||null)}</p>
+ ${lines.map(({i,f,standard,ordered,received,pending,price,planned,status:lineStatus,receipts})=>`<h3>${e(productName(f,standard))}</h3>
+ <p><b>Referência do fornecedor</b> ${e(supplierReference(f))}</p>
+ <p><b>Especificações</b> ${e(specifications(f,standard))}</p>
  ${table(['Situação','Pedido','Recebido','A receber','Preço previsto/m','Subtotal previsto'],[[lineStatus,qty(ordered),qty(received),qty(pending),money(price,4),money(planned/100)]])}
  ${i.expected_date?`<p><b>Previsão do item</b> ${date(i.expected_date)}</p>`:''}${i.notes?`<p><b>Observações do item</b> ${e(i.notes)}</p>`:''}
  <h4>Notas fiscais e lotes</h4>${table(['NF / lote','Recebimento','Quantidade','Frete / outros','Custo efetivo/m','Qualidade'],receipts.map(({r,lot})=>[
@@ -61,7 +80,7 @@ export function renderPurchaseReport(data,{supplierId,orderId,statusFilter='',lo
  ]))}`).join('')||'<p>Nenhum item registrado.</p>'}
  <p class="order-total"><b>Total previsto da ordem</b> ${money(planned/100)} · <b>Saldo a receber</b> ${qty(pending)} (${money(balance/100)})</p></section>`).join('');
  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GAO · ${title}</title><style>${reportCss}
- h3,h4{break-after:avoid;margin:10px 0 4px}h3{font-size:13px}h4{font-size:11px}.order{border-top:2px solid #dbe5ed;margin-top:14px}.order-total{background:#eef5f9;padding:8px}.order p{overflow-wrap:anywhere}.cards{margin-bottom:10px}
+ h3,h4{break-after:avoid;margin:10px 0 4px}h3{font-size:13px}h4{font-size:11px}.order{border-top:2px solid #dbe5ed;margin-top:14px}.order-total{background:#eef5f9;padding:8px}.order p{overflow-wrap:anywhere}.cards{margin-bottom:10px}.technical{margin-top:18px;padding-top:4px;border-top:2px solid #dbe5ed}
  </style></head><body><div class="print"></div><main><header><div class="brand">${safeLogo}<span>GESTÃO DE COMPRAS</span></div><h1>${title}</h1><p>Emissão ${e(stamp)}${general?'':' · '+e(name(selected))}</p>${!orderId?`<p>Status do pedido · ${e(purchaseReportStatuses[statusFilter]||statusFilter)}</p>`:''}</header>
  ${selected&&!general?`<h2>Fornecedor</h2>${table(['Razão social','CNPJ','Contato','Condições de pagamento','Prazo (dias)'],[[selected.legal_name,selected.cnpj,selected.contact,selected.payment_terms,selected.lead_days]])}`:''}
  ${!orderId?`<div class="cards">${card('Ordens registradas',rows.length,confirmed.length+' confirmadas')}${card('Volume confirmado',qty(sum.ordered),qty(sum.received)+' recebidos · '+qty(sum.pending)+' a receber')}${card('Valor previsto confirmado',money(sum.planned/100),money(sum.balance/100)+' referente ao saldo a receber')}</div><p class="note">Os totais confirmados excluem cotações e cancelamentos.</p>`:''}
@@ -69,5 +88,6 @@ export function renderPurchaseReport(data,{supplierId,orderId,statusFilter='',lo
  const t=totals(group.filter(r=>r.confirmed));return [name(group[0].supplier),group.length,qty(t.ordered),qty(t.received),qty(t.pending),money(t.planned/100)];
  }).sort((a,b)=>a[0].localeCompare(b[0],'pt-BR')))}
  <h2>Ordens de compra</h2>${table(['OC / fornecedor','Pedido / previsão','Situação','Pedido / recebido','A receber','Valor previsto'],rows.map(r=>[r.o.order_number+' · '+name(r.supplier),date(r.o.ordered_date)+' / '+date(r.o.expected_date),r.status,qty(r.ordered)+' / '+qty(r.received),qty(r.pending),money(r.planned/100)]))}`:details||'<p>Nenhuma ordem de compra encontrada.</p>'}
+ ${technicalBlock}
  </main></body></html>`;
 }
