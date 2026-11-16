@@ -85,6 +85,8 @@ const updateProfileSchema = z.object({
     organizationId: dbUuid,
     fullName: z.string().trim().min(2).max(120),
     email: z.string().trim().toLowerCase().email().max(254),
+    username: z.string().trim().toLowerCase().min(3).max(40).regex(/^[a-z0-9._-]+$/, 'Usuário inválido').optional(),
+    password: z.string().min(8).max(128).optional(),
   }).strict(),
 }).strict()
 
@@ -966,26 +968,43 @@ Deno.serve(async req => {
     ===================================================== */
 
     if(parsed.data.action==='update-profile'){
-      const {profileId,organizationId,fullName,email}=parsed.data.input
+      const {profileId,organizationId,fullName,email,username,password}=parsed.data.input
       await requireEditableAccount(admin,actorProfileId,organizationId,profileId)
-      const {data: profile,error: profileError}=await admin.from('profiles').select('email,full_name').eq('id',profileId).single()
+      const {data: profile,error: profileError}=await admin.from('profiles').select('email,full_name,username').eq('id',profileId).single()
       if(profileError||!profile) throw Error('Perfil não localizado.')
       const {data: auth,error: authError}=await admin.auth.admin.getUserById(profileId)
       if(authError||!auth.user?.email||(auth.user as typeof auth.user & {deleted_at?: string}).deleted_at) throw Error('Conta de login não localizada.')
-      const previousEmail=auth.user.email
-      if(previousEmail!==email){
-        const {error}=await admin.auth.admin.updateUserById(profileId,{email})
-        if(error) throw error
+
+      const nextProfile={email,full_name:fullName,username:username??profile.username}
+      const profileChanged=nextProfile.email!==profile.email||nextProfile.full_name!==profile.full_name||nextProfile.username!==profile.username
+      if(profileChanged){
+        const {error}=await admin.from('profiles').update(nextProfile).eq('id',profileId)
+        if(error?.code==='23505')throw Error('Já existe um usuário cadastrado com este nome de login.')
+        if(error)throw error
       }
-      const {error: saveError}=await admin.from('profiles').update({email,full_name:fullName}).eq('id',profileId)
-      if(saveError){
-        if(previousEmail!==email){
-          const {error: rollbackError}=await admin.auth.admin.updateUserById(profileId,{email:previousEmail})
-          if(rollbackError) throw Error('O e-mail do login foi alterado, mas o cadastro ainda não foi sincronizado. Confira o e-mail exibido e salve novamente.')
+
+      const emailChanged=auth.user.email!==email
+      if(emailChanged||password){
+        const {error}=await admin.auth.admin.updateUserById(profileId,{
+          ...(emailChanged?{email}:{}),
+          ...(password?{password}:{})
+        })
+        if(error){
+          if(profileChanged){
+            const rollback=admin.from('profiles').update(profile).eq('id',profileId).eq('email',email).eq('full_name',fullName)
+            const matchUsername=nextProfile.username===null?rollback.is('username',null):rollback.eq('username',nextProfile.username)
+            const {data: restored,error: rollbackError}=await matchUsername.select('id').maybeSingle()
+            if(rollbackError||!restored)throw Error('O serviço de login recusou a atualização e o cadastro mudou durante a operação. Reabra o usuário e confira os dados.')
+          }
+          if(error.code==='email_exists')throw Error('Já existe um usuário cadastrado com este e-mail.')
+          if(error.code==='weak_password')throw Error('A nova senha foi recusada. Escolha uma senha mais forte.')
+          if(error.code==='same_password')throw Error('Escolha uma senha diferente da atual.')
+          throw Error('O serviço de login recusou a atualização. Confira os dados e tente novamente.')
         }
-        throw saveError
       }
-      await audit(admin,actorProfileId,organizationId,'usuario',profileId,'atualizar_dados',{fullName,email},correlationId)
+      await audit(admin,actorProfileId,organizationId,'usuario',profileId,'atualizar_dados',{
+        fullName,email,username:nextProfile.username,passwordChanged:Boolean(password)
+      },correlationId)
       return json({success:true})
     }
 

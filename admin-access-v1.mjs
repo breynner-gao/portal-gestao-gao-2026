@@ -61,16 +61,37 @@ function deleteLoginDialog(user){
 function profileDialog(user){
   const {d,close}=dialog('Editar dados do usuário',`<div class="ga-form-grid">
     <label>Nome completo<input name="fullName" required minlength="2" maxlength="120" value="${esc(user.fullName)}"></label>
+    <label>Usuário de login<input name="username" value="${esc(user.username)}" autocomplete="off" autocapitalize="none" spellcheck="false"></label>
     <label>E-mail de acesso<input name="email" type="email" required maxlength="254" value="${esc(user.email)}"></label>
-    </div><p class="ga-help">O e-mail salvo será usado no próximo login.</p>`);
+    </div><details><summary>Definir nova senha</summary><fieldset class="ga-form-grid" disabled style="border:0;padding:0;margin:0;min-width:0">
+    <label>Nova senha<input name="password" type="password" minlength="8" maxlength="128" autocomplete="new-password"></label>
+    <label>Confirmar nova senha<input name="confirmPassword" type="password" maxlength="128" autocomplete="new-password"></label>
+    </fieldset><p class="ga-help">Deixe os dois campos em branco para manter a senha atual.</p></details>`);
+  const passwordSection=d.querySelector('details'),passwordFields=passwordSection.querySelector('fieldset');
+  passwordSection.ontoggle=()=>{passwordFields.disabled=!passwordSection.open;};
   d.querySelector('form').onsubmit=async event=>{
     event.preventDefault();
-    const form=event.currentTarget,button=form.querySelector('[type=submit]'),values=new FormData(form);
+    const form=event.currentTarget,button=form.querySelector('[type=submit]'),errorBox=form.querySelector('[data-error]');
+    const values=new FormData(form),username=values.get('username').trim(),password=values.get('password')||'';
+    const changes={profileId:user.id,organizationId:context.org,fullName:values.get('fullName'),email:values.get('email')};
+    errorBox.textContent='';
+    if(username!==(user.username||'')){
+      if(!/^[a-zA-Z0-9._-]{3,40}$/.test(username)){
+        errorBox.textContent='Informe um usuário de 3 a 40 caracteres, com letras, números, ponto, hífen ou sublinhado.';
+        return;
+      }
+      changes.username=username;
+    }
+    if(password!==(values.get('confirmPassword')||'')){
+      errorBox.textContent='A confirmação da senha precisa ser igual à nova senha.';
+      return;
+    }
+    if(password)changes.password=password;
     button.disabled=true;
     try{
-      await edge('update-profile',{profileId:user.id,organizationId:context.org,fullName:values.get('fullName'),email:values.get('email')});
+      await edge('update-profile',changes);
       close();notice='Dados do usuário salvos.';await load();
-    }catch(error){form.querySelector('[data-error]').textContent=error.message;button.disabled=false;}
+    }catch(error){errorBox.textContent=error.message;button.disabled=false;}
   };
 }
 async function userDialog(user){let scope={all_clients:false,client_ids:[]};if(user?.membershipId){try{scope=(await api('/rest/v1/gao_membership_scope?select=*&membership_id=eq.'+user.membershipId))[0]||scope;}catch(e){status(e.message);return;}}const selected=user?.roleId||model.roles.find(r=>r.name===user?.roleName)?.id||'';
