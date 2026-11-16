@@ -1,4 +1,4 @@
-import { renderPurchaseReport } from '/fabric-purchase-report-v1.mjs?v=1';
+import { purchaseReportStatuses, renderPurchaseReport } from '/fabric-purchase-report-v1.mjs?v=2';
 import { openReport as openPurchaseReportWindow } from '/relave-report-export-v1.mjs?v=1';
 import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=5';
 import {createFactionDesk} from '/fabric-faction-portal-v1.mjs?v=2';
@@ -323,6 +323,7 @@ function openPurchaseReport(button){
  const error=panel.querySelector('[data-fw-purchase-report-error]');
  error.hidden=true;
  const orderId=button.dataset.fwPurchaseReportOrder;
+ const statusFilter=orderId?'':panel.querySelector('[data-fw-report-status]').value;
  const bySupplier=button.dataset.fwPurchaseReport==='supplier';
  const supplierId=bySupplier?panel.querySelector('[data-fw-report-supplier]').value:undefined;
  try{
@@ -333,7 +334,7 @@ function openPurchaseReport(button){
   const supplier=state.suppliers.find(item=>item.id===supplierId);
   const name=order?'oc-'+order.order_number:supplier?'fornecedor-'+(supplier.trade_name||supplier.legal_name):'resumo-geral';
   const filename='gao-compras-'+name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9-]+/g,'-');
-  openPurchaseReportWindow(renderPurchaseReport(state,{supplierId,orderId,logo}),filename);
+  openPurchaseReportWindow(renderPurchaseReport(state,{supplierId,orderId,statusFilter,logo}),filename);
  }catch(err){error.textContent=err.message;error.hidden=false;}
 }
 
@@ -376,7 +377,8 @@ function purchaseOrderView(readyOrders=''){
   return '<details class="fw-po-order" data-fw-detail-key="oc-'+esc(order.id)+'" data-fw-purchase-row data-pending="'+pendingOrders.has(order.id)+'" data-search="'+esc([order.order_number,supplier?.trade_name,supplier?.legal_name,...lines.map(i=>{const f=state.fabric.find(f=>f.id===i.fabric_id);return [f?.code,f?.name,f?.color,f?.color_reference].join(' ')})].join(' ').toLocaleLowerCase('pt-BR'))+'"><summary><b>'+(/^(DANFE|NF)\b/i.test(order.order_number)?'Compra importada • ':'OC ')+esc(order.order_number)+' • '+esc(supplier?.trade_name||supplier?.legal_name||'Fornecedor')+' <span class="fw-status">'+esc(summary.label)+'</span></b><span class="fw-order-meter">'+br(summary.receivedMeters,3)+' / '+br(summary.orderedMeters,3)+' m recebidos</span>'+(canExcludePurchase(order,lines)?'<button type="button" class="fw-exclude-po" data-fw-exclude-po="'+esc(order.id)+'">Excluir pedido</button>':'')+'</summary><p>Pedido em '+esc(order.ordered_date||'—')+' • Previsão '+esc(order.expected_date||'não informada')+' • Total recebido '+br(summary.receivedMeters,3)+' / '+br(summary.orderedMeters,3)+' m</p><p><button type="button" data-fw-purchase-report-order="'+esc(order.id)+'">Relatório desta OC</button></p><div data-fw-purchase-products>'+lineRows+'</div>'+incomingView(order.id)+'</details>';
  }).join('');
  const suppliersWithOrders=new Set(state.purchaseOrders.map(order=>order.supplier_id));
- const reportControls='<div class="fw-tabs" aria-label="Relatórios de compra"><button type="button" data-fw-purchase-report="general">Resumo geral</button><label class="fw-field">Fornecedor do relatório<select data-fw-report-supplier><option value="">Selecione um fornecedor</option>'+state.suppliers.filter(supplier=>suppliersWithOrders.has(supplier.id)).map(supplier=>'<option value="'+esc(supplier.id)+'">'+esc(supplier.trade_name||supplier.legal_name)+'</option>').join('')+'</select></label><button type="button" data-fw-purchase-report="supplier">Relatório por fornecedor</button></div><p class="fw-error" data-fw-purchase-report-error role="alert" hidden></p>';
+ const statusOptions=Object.entries(purchaseReportStatuses).map(([key,label])=>'<option value="'+esc(key)+'">'+esc(label)+'</option>').join('');
+ const reportControls='<div class="fw-tabs" aria-label="Relatórios de compra"><label class="fw-field">Status do pedido<select data-fw-report-status>'+statusOptions+'</select></label><button type="button" data-fw-purchase-report="general">Resumo geral</button><label class="fw-field">Fornecedor do relatório<select data-fw-report-supplier><option value="">Selecione um fornecedor</option>'+state.suppliers.filter(supplier=>suppliersWithOrders.has(supplier.id)).map(supplier=>'<option value="'+esc(supplier.id)+'">'+esc(supplier.trade_name||supplier.legal_name)+'</option>').join('')+'</select></label><button type="button" data-fw-purchase-report="supplier">Relatório por fornecedor</button></div><p class="fw-error" data-fw-purchase-report-error role="alert" hidden></p>';
  return '<div class="fw-panel fw-purchase-orders"><h3>Ordens de compra de tecido</h3><p class="fw-error" data-fw-exclude-error role="alert" hidden></p>'+reportControls+stages+(readyOrders?'<div data-fw-ready-orders hidden>'+readyOrders+'</div>':'')+'<div data-fw-shortages hidden>'+materialCoverageView(true,plan)+'</div><div data-fw-ordered hidden><details class="fw-catalog-edit" data-fw-order-summary><summary>Resumo dos pedidos</summary>'+cards+'</details><details class="fw-new-order"><summary>+ Novo pedido de compra</summary><form data-fw-form="purchaseOrder"><input name="order_number" placeholder="Número do pedido / OC" required><select name="supplier_id" required><option value="">Fornecedor</option>'+state.suppliers.map(x=>'<option value="'+x.id+'">'+esc(x.trade_name||x.legal_name)+'</option>').join('')+'</select><input name="ordered_date" type="date" value="'+new Date().toISOString().slice(0,10)+'" required><input name="expected_date" type="date" aria-label="Previsão de entrega"><input name="notes" placeholder="Observação (opcional)"><div data-fw-po-lines>'+poLineHtml()+'</div><button type="button" data-fw-add-po-line>Adicionar tecido/cor</button><button type="submit">Registrar pedido de tecido</button></form></details><label>Buscar pedido<input type="search" data-fw-purchase-search placeholder="Pedido, fornecedor, tecido ou cor"></label><p>Abra a OC, depois o produto. As notas, lotes e recebimentos ficam dentro dele.</p>'+rows+'<p data-fw-purchase-empty hidden>Nenhum pedido para esta seleção.</p></div></div>';
 }
 function receivePurchaseItem(id){

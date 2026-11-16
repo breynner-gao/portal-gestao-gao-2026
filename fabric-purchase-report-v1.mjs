@@ -1,7 +1,18 @@
 import { normalizeFabricNumber as n, summarizeFabricPurchaseOrder } from './fabric-workflow-rules-v1.mjs?v=3';
 import { reportCss } from './relave-daily-report-v1.mjs?v=2';
 
-export function renderPurchaseReport(data,{supplierId,orderId,logo,issuedAt=new Date()}={}){
+export const purchaseReportStatuses = Object.freeze({
+ '': 'Todos os status',
+ ABERTA: 'Aguardando recebimento',
+ PARCIAL: 'Recebimento parcial',
+ AGUARDA_QUALIDADE: 'Aguardando inspeção',
+ LIBERADA: 'Liberado no estoque',
+ REPROVADA: 'Recebido com lote reprovado',
+ COTACAO: 'Em cotação',
+ CANCELADA: 'Cancelado'
+});
+
+export function renderPurchaseReport(data,{supplierId,orderId,statusFilter='',logo,issuedAt=new Date()}={}){
  const e=value=>String(value??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const qty=value=>new Intl.NumberFormat('pt-BR',{maximumFractionDigits:3}).format(value)+' m';
  const money=(value,digits=2)=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:digits}).format(value);
@@ -19,8 +30,9 @@ export function renderPurchaseReport(data,{supplierId,orderId,logo,issuedAt=new 
    const receipts=data.purchaseReceipts.filter(r=>r.purchase_order_item_id===i.id).map(r=>({r,lot:data.lots.find(l=>l.id===r.lot_id)}));
    return {i,f,standard,ordered,received,pending,price,planned:Math.round(ordered*price*100),balance:Math.round(pending*price*100),receipts,status:summary.lines[index]?.label};
   });
-  return {o,supplier:data.suppliers.find(s=>s.id===o.supplier_id),lines,confirmed,...totals(lines),status:o.status!=='CANCELADA'&&o.logistics_stage==='COTACAO'?'Em cotação':summary.label};
- }).sort((a,b)=>String(b.o.ordered_date).localeCompare(String(a.o.ordered_date))||String(a.o.order_number).localeCompare(String(b.o.order_number),'pt-BR',{numeric:true}));
+  const statusKey=confirmed||o.status==='CANCELADA'?summary.status:'COTACAO';
+  return {o,statusKey,supplier:data.suppliers.find(s=>s.id===o.supplier_id),lines,confirmed,...totals(lines),status:o.status!=='CANCELADA'&&o.logistics_stage==='COTACAO'?'Em cotação':summary.label};
+ }).filter(row=>orderId||!statusFilter||row.statusKey===statusFilter).sort((a,b)=>String(b.o.ordered_date).localeCompare(String(a.o.ordered_date))||String(a.o.order_number).localeCompare(String(b.o.order_number),'pt-BR',{numeric:true}));
  const selected=data.suppliers.find(s=>s.id===(supplierId||rows[0]?.o.supplier_id));
  const confirmed=rows.filter(r=>r.confirmed), sum=totals(confirmed);
  const groups=new Map();
@@ -50,10 +62,10 @@ export function renderPurchaseReport(data,{supplierId,orderId,logo,issuedAt=new 
  <p class="order-total"><b>Total previsto da ordem</b> ${money(planned/100)} · <b>Saldo a receber</b> ${qty(pending)} (${money(balance/100)})</p></section>`).join('');
  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GAO · ${title}</title><style>${reportCss}
  h3,h4{break-after:avoid;margin:10px 0 4px}h3{font-size:13px}h4{font-size:11px}.order{border-top:2px solid #dbe5ed;margin-top:14px}.order-total{background:#eef5f9;padding:8px}.order p{overflow-wrap:anywhere}.cards{margin-bottom:10px}
- </style></head><body><div class="print"></div><main><header><div class="brand">${safeLogo}<span>GESTÃO DE COMPRAS</span></div><h1>${title}</h1><p>Emissão ${e(stamp)}${general?'':' · '+e(name(selected))}</p></header>
+ </style></head><body><div class="print"></div><main><header><div class="brand">${safeLogo}<span>GESTÃO DE COMPRAS</span></div><h1>${title}</h1><p>Emissão ${e(stamp)}${general?'':' · '+e(name(selected))}</p>${!orderId?`<p>Status do pedido · ${e(purchaseReportStatuses[statusFilter]||statusFilter)}</p>`:''}</header>
  ${selected&&!general?`<h2>Fornecedor</h2>${table(['Razão social','CNPJ','Contato','Condições de pagamento','Prazo (dias)'],[[selected.legal_name,selected.cnpj,selected.contact,selected.payment_terms,selected.lead_days]])}`:''}
  ${!orderId?`<div class="cards">${card('Ordens registradas',rows.length,confirmed.length+' confirmadas')}${card('Volume confirmado',qty(sum.ordered),qty(sum.received)+' recebidos · '+qty(sum.pending)+' a receber')}${card('Valor previsto confirmado',money(sum.planned/100),money(sum.balance/100)+' referente ao saldo a receber')}</div><p class="note">Os totais confirmados excluem cotações e cancelamentos.</p>`:''}
- ${general?`<h2>Resumo por fornecedor</h2>${table(['Fornecedor','OC registradas','Pedido','Recebido','A receber','Valor previsto'],[...groups.values()].map(group=>{
+ ${general?`<h2>Resumo por fornecedor</h2>${!rows.length?'<p>Nenhuma ordem de compra encontrada para os filtros selecionados.</p>':''}${table(['Fornecedor','OC registradas','Pedido','Recebido','A receber','Valor previsto'],[...groups.values()].map(group=>{
  const t=totals(group.filter(r=>r.confirmed));return [name(group[0].supplier),group.length,qty(t.ordered),qty(t.received),qty(t.pending),money(t.planned/100)];
  }).sort((a,b)=>a[0].localeCompare(b[0],'pt-BR')))}
  <h2>Ordens de compra</h2>${table(['OC / fornecedor','Pedido / previsão','Situação','Pedido / recebido','A receber','Valor previsto'],rows.map(r=>[r.o.order_number+' · '+name(r.supplier),date(r.o.ordered_date)+' / '+date(r.o.expected_date),r.status,qty(r.ordered)+' / '+qty(r.received),qty(r.pending),money(r.planned/100)]))}`:details||'<p>Nenhuma ordem de compra encontrada.</p>'}
