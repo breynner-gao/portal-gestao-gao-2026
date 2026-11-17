@@ -1,4 +1,4 @@
-import { renderSewingDailyReport, sewingDailyData } from './sewing-daily-report-v1.mjs?v=1';
+import { renderSewingDailyReport, sewingDailyData } from './sewing-daily-report-v1.mjs?v=2';
 import { openReport } from './relave-report-export-v1.mjs?v=2';
 
 const activities={entrada:'Avaliação de entrada',reparo:'Pequenos reparos',remodelagem:'Remodelagem',peca_nova:'Avaliação de peças novas',chipagem:'Chipagem',troca_chip:'Troca de chip',condicao:'Avaliação da condição e descarte',retirada_chip:'Retirada de chip',auditoria:'Auditoria'};
@@ -225,7 +225,7 @@ function professionalSeries(rows,periods,scale,today){
  const forecast=periods.flatMap((period,index)=>period.offset>0?[[index+.5,Math.max(0,Math.round(y1+(y2-y1)*(index+.5-x1)/(x2-x1)))]]:[]);
  return {observed,trend,forecast};
 }
-function professionalCharts(rows,scale,today){
+export function professionalCharts(rows,scale,today,{report=false}={}){
  const periods=productionPeriods(today,scale);
  const people=new Map();
  for(const row of rows){
@@ -240,12 +240,12 @@ function professionalCharts(rows,scale,today){
   const polyline=(points,color,dash='')=>'<polyline points="'+points.map(([x,y])=>x+','+(100-100*Math.max(0,y)/max)).join(' ')+'" fill="none" stroke="'+color+'" stroke-width="2" vector-effect="non-scaling-stroke" '+dash+'/>';
   const lines=trend?polyline(trend,'#77dfbf')+polyline([trend.at(-1),...forecast],'#ffc078','stroke-dasharray="6 4"'):'';
   const projected=new Map(forecast.map(([x,value])=>[Math.floor(x),value]));
-  return '<article class="sew-chart"><h4>'+escape(person[0].responsible)+'</h4><div class="sew-chart-scroll"><div class="sew-column-chart sew-professional-chart" style="--periods:'+periods.length+';min-width:'+periods.length*60+'px">'+(lines?'<svg class="sew-trend" viewBox="0 0 '+periods.length+' 100" preserveAspectRatio="none" aria-hidden="true">'+lines+'</svg>':'')+observed.map((g,index)=>{
+  return '<article class="sew-chart"><h4>'+escape(person[0].responsible)+'</h4><div class="sew-chart-scroll"><div class="sew-column-chart sew-professional-chart" style="--periods:'+periods.length+(report?'':';min-width:'+periods.length*60+'px')+'">'+(lines?'<svg class="sew-trend" viewBox="0 0 '+periods.length+' 100" preserveAspectRatio="none" aria-hidden="true">'+lines+'</svg>':'')+observed.map((g,index)=>{
    const value=g.offset>0?projected.get(index):g.total|| (g.measured?0:null);
    return '<div class="sew-professional-period"><span class="sew-column-plot">'+(value!=null&&g.offset<=0?'<span class="sew-column" style="height:'+(100*value/max)+'%"></span>':'')+'</span><strong>'+escape(g.label)+(g.offset===0?'*':'')+'</strong><span class="'+(g.offset>0?'sew-projected':'')+'">'+(value==null?'—':number(value))+'</span></div>';
   }).join('')+'</div></div>'+(trend?'':'<p>Sem projeção. São necessários pelo menos dois períodos encerrados com quantidade registrada.</p>')+'</article>';
  });
- return '<section><h3>Produção por funcionária · '+escape(scale)+'</h3><p class="sew-chart-legend"><span>■ Registrado</span><span style="color:#77dfbf">━ Tendência</span><span style="color:#ffc078">╌ Projeção</span></p><p><small>* Período atual parcial. Projeção linear baseada nos oito períodos anteriores, usando os períodos encerrados com registros. Dias sem lançamento ficam sem valor. A previsão não considera escala ou feriados.</small></p>'+(charts.join('')||'<p>Sem produção registrada nas datas exibidas.</p>')+'</section>';
+ return '<section class="sew-professional-section"><h3>Produção por funcionária · '+escape(scale)+'</h3><p class="sew-chart-legend"><span>■ Registrado</span><span style="color:#77dfbf">━ Tendência</span><span style="color:#ffc078">╌ Projeção</span></p><p><small>* Período atual parcial. Projeção linear baseada nos oito períodos anteriores, usando os períodos encerrados com registros. Dias sem lançamento ficam sem valor. A previsão não considera escala ou feriados.</small></p>'+(charts.join('')||'<p>Sem produção registrada nas datas exibidas.</p>')+'</section>';
 }
 function renderPanel(root,rows,manage){
  const people=[...new Map(rows.map(row=>[operatorKey(row),row.responsible]))].sort((a,b)=>a[1].localeCompare(b[1],'pt-BR'));
@@ -336,8 +336,8 @@ export async function mountSewing(host,api){
    await refreshNames();
    return rows.map(labelCurrent);
   }));
-  async function loadPanelRows(day) {
-   const filter=day?'&service_date=eq.'+encodeURIComponent(day):'';
+  async function loadPanelRows(from, through) {
+   const filter=from?'&service_date=gte.'+encodeURIComponent(from)+'&service_date=lte.'+encodeURIComponent(through):'';
    const [current,history,links]=await Promise.all([
     pages(api,'quality_sewing_entries','service_date.desc,id.asc',filter),
     access.manage?pages(api,'quality_sewing_history','service_date.desc,source_row.asc',filter):[],
@@ -380,11 +380,13 @@ export async function mountSewing(host,api){
     submit.disabled=true;
     status.textContent='Carregando lançamentos da data selecionada…';
     try{
-     const rows=await loadPanelRows(day);
+     const from=productionPeriods(day,'Semana ISO')[0].key;
+     const rows=await loadPanelRows(from,day);
      const data=sewingDailyData(rows,day,sewingScore,operatorKey);
+     const charts=['Dia','Semana ISO'].map(scale=>professionalCharts(rows,scale,day,{report:true})).join('');
      const logo=getComputedStyle(document.documentElement).getPropertyValue('--liquid-logo')
       .match(/data:image\/(?:png|webp);base64,[A-Za-z0-9+/=]+/)?.[0];
-     if(!page.closed)openReport(renderSewingDailyReport(data,day,logo),'gao-costura-'+day,{page});
+     if(!page.closed)openReport(renderSewingDailyReport(data,day,logo,charts),'gao-costura-'+day,{page,orientation:'landscape'});
      status.textContent='';
     }catch{
      if(!page.closed)page.close();
