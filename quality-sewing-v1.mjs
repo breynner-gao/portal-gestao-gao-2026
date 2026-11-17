@@ -1,3 +1,6 @@
+import { renderSewingDailyReport, sewingDailyData } from './sewing-daily-report-v1.mjs?v=1';
+import { openReport } from './relave-report-export-v1.mjs?v=2';
+
 const activities={entrada:'Avaliação de entrada',reparo:'Pequenos reparos',remodelagem:'Remodelagem',peca_nova:'Avaliação de peças novas',chipagem:'Chipagem',troca_chip:'Troca de chip',condicao:'Avaliação da condição e descarte',retirada_chip:'Retirada de chip',auditoria:'Auditoria'};
 function activityCards(){
  return '<div class="sew-activities" data-activity-cards aria-label="Atividades da costura">'+Object.entries(activities).map(([key,label],index)=>{
@@ -88,7 +91,7 @@ async function pages(api,table,sort,filter=''){
  }
 }
 const sewingShare=new Intl.NumberFormat('pt-BR',{style:'percent',maximumFractionDigits:1});
-function sewingScore(row){
+export function sewingScore(row){
  const qty=row.quantity;
  if(qty==null||!Number.isFinite(Number(qty)))return [];
  const activity=row.source_row?historicalLabels[row.activity]:row.activity;
@@ -324,7 +327,7 @@ export async function mountSewing(host,api){
   };
   await refreshNames();
   const identity=names.get(user.id)||'Usuário conectado';
-  root.insertAdjacentHTML('beforeend','<div class="q142-tabs">'+(access.write?'<button type="button" data-entry>Lançar serviço</button>':'')+'<a href="/producao/gestao-enxoval?tela=costura">Ordens de recuperação de enxoval</a><button type="button" data-panel>'+(access.manage?'Painel da Costura':'Meus lançamentos')+'</button>'+(access.manage?'<button type="button" data-tv>Modo TV</button>':'')+'</div><section data-content></section>');
+  root.insertAdjacentHTML('beforeend','<div class="q142-tabs">'+(access.write?'<button type="button" data-entry>Lançar serviço</button>':'')+'<a href="/producao/gestao-enxoval?tela=costura">Ordens de recuperação de enxoval</a><button type="button" data-panel>'+(access.manage?'Painel da Costura':'Meus lançamentos')+'</button>'+(access.manage?'<button type="button" data-daily-report>Relatório diário</button><button type="button" data-tv>Modo TV</button>':'')+'</div><section data-content></section>');
   const content=root.querySelector('[data-content]');
   message.textContent='';
   const labelCurrent=r=>({...r,responsible:names.get(r.operator_id)||(r.operator_id===user.id?identity:'Profissional não identificado'),label:activities[r.activity]||r.activity});
@@ -333,24 +336,61 @@ export async function mountSewing(host,api){
    await refreshNames();
    return rows.map(labelCurrent);
   }));
+  async function loadPanelRows(day) {
+   const filter=day?'&service_date=eq.'+encodeURIComponent(day):'';
+   const [current,history,links]=await Promise.all([
+    pages(api,'quality_sewing_entries','service_date.desc,id.asc',filter),
+    access.manage?pages(api,'quality_sewing_history','service_date.desc,source_row.asc',filter):[],
+    access.manage?pages(api,'quality_sewing_history_operator_links','imported_name.asc'):[]
+   ]);
+   await refreshNames();
+   const importedOperators=new Map(links.map(link=>[link.imported_name,link.operator_id]));
+   const imported=history.map(row=>{
+    const operator_id=importedOperators.get(row.responsible.trim().toLocaleUpperCase('pt-BR'));
+    return {...row,operator_id,imported_name:row.responsible,responsible:names.get(operator_id)||row.responsible,label:activities[historicalLabels[row.activity]]||row.activity};
+   });
+   return [...current.map(labelCurrent),...imported].sort((a,b)=>b.service_date.localeCompare(a.service_date));
+  }
   let screen=0;
   const panel=async()=>{
    const version=++screen;content.textContent='Carregando lançamentos…';
    try{
-    const [current,history,links]=await Promise.all([
-     pages(api,'quality_sewing_entries','service_date.desc,id.asc'),
-     access.manage?pages(api,'quality_sewing_history','service_date.desc,source_row.asc'):[],
-     access.manage?pages(api,'quality_sewing_history_operator_links','imported_name.asc'):[]
-    ]);
-    await refreshNames();
-    if(version!==screen)return;
-    const importedOperators=new Map(links.map(link=>[link.imported_name,link.operator_id]));
-    const imported=history.map(row=>{
-     const operator_id=importedOperators.get(row.responsible.trim().toLocaleUpperCase('pt-BR'));
-     return {...row,operator_id,imported_name:row.responsible,responsible:names.get(operator_id)||row.responsible,label:activities[historicalLabels[row.activity]]||row.activity};
-    });
-    renderPanel(content,[...current.map(labelCurrent),...imported].sort((a,b)=>b.service_date.localeCompare(a.service_date)),access.manage);
+    const rows=await loadPanelRows();
+    if(version===screen)renderPanel(content,rows,access.manage);
    }catch{if(version===screen)content.textContent='Não foi possível carregar os lançamentos. Clique no painel para tentar novamente.';}
+  };
+  const dailyReport=()=>{
+   ++screen;
+   content.innerHTML='<h2>Relatório diário da Costura</h2><form class="sew-grid">'+
+    input('service_date','Data do serviço','date',true)+
+    '<div class="sew-entry-actions"><button class="q142-btn q142-primary" type="submit">Emitir relatório</button></div></form><p role="status"></p>';
+   const form=content.querySelector('form'), status=content.querySelector('[role=status]');
+   const submit=form.querySelector('button');
+   const field=form.elements.service_date;
+   field.value=field.max=dateNow();
+   form.addEventListener('submit',async event=>{
+    event.preventDefault();
+    if(submit.disabled||!field.checkValidity())return;
+    const day=field.value;
+    const page=window.open('','_blank');
+    if(!page){status.textContent='Permita pop-ups para abrir o relatório.';return;}
+    page.opener=null;
+    page.document.title='Relatório diário da Costura';
+    page.document.body.textContent='Carregando relatório…';
+    submit.disabled=true;
+    status.textContent='Carregando lançamentos da data selecionada…';
+    try{
+     const rows=await loadPanelRows(day);
+     const data=sewingDailyData(rows,day,sewingScore,operatorKey);
+     const logo=getComputedStyle(document.documentElement).getPropertyValue('--liquid-logo')
+      .match(/data:image\/(?:png|webp);base64,[A-Za-z0-9+/=]+/)?.[0];
+     if(!page.closed)openReport(renderSewingDailyReport(data,day,logo),'gao-costura-'+day,{page});
+     status.textContent='';
+    }catch{
+     if(!page.closed)page.close();
+     status.textContent='Não foi possível emitir o relatório. Tente novamente.';
+    }finally{submit.disabled=false;}
+   });
   };
   const entry=()=>{
    ++screen;
@@ -487,6 +527,7 @@ export async function mountSewing(host,api){
   };
   root.querySelector('[data-entry]')?.addEventListener('click',entry);
   root.querySelector('[data-panel]').addEventListener('click',panel);
+  root.querySelector('[data-daily-report]')?.addEventListener('click',dailyReport);
   if(access.write)entry();else await panel();
  }catch{message.textContent='Não foi possível abrir a Costura. Atualize a página para tentar novamente.';}
 }
