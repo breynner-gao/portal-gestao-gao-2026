@@ -228,15 +228,20 @@ export async function mountSewing(host,api){
   if(!access.write&&!access.manage){message.textContent='Acesso à Costura não concedido.';return;}
   const session=await window.GAO_AUTH_READY;
   const user=(window.GAO_AUTH_SESSION||session).user;
-  const operators=await api('rpc/quality_sewing_operators');
-  const names=new Map(operators.map(r=>[r.id,r.label]));
-  const identity=names.get(user.id)||user.email||user.id;
+  const names=new Map();
+  const refreshNames=async()=>{
+   const operators=await api('rpc/quality_sewing_operators');
+   for(const {id,label} of operators) names.set(id,label);
+  };
+  await refreshNames();
+  const identity=names.get(user.id)||'Usuário conectado';
   root.insertAdjacentHTML('beforeend','<div class="q142-tabs">'+(access.write?'<button type="button" data-entry>Lançar serviço</button>':'')+'<a href="/producao/gestao-enxoval?tela=costura">Ordens de recuperação de enxoval</a><button type="button" data-panel>'+(access.manage?'Painel da Costura':'Meus lançamentos')+'</button>'+(access.manage?'<button type="button" data-tv>Modo TV</button>':'')+'</div><section data-content></section>');
   const content=root.querySelector('[data-content]');
   message.textContent='';
-  const labelCurrent=r=>({...r,responsible:names.get(r.operator_id)||(r.operator_id===user.id?identity:r.operator_id),label:activities[r.activity]||r.activity});
+  const labelCurrent=r=>({...r,responsible:names.get(r.operator_id)||(r.operator_id===user.id?identity:'Profissional não identificado'),label:activities[r.activity]||r.activity});
   root.querySelector('[data-tv]')?.addEventListener('click',()=>openProductionTV(root,async date=>{
    const rows=await pages(api,'quality_sewing_entries','service_date.desc,id.asc','&service_date=eq.'+encodeURIComponent(date));
+   await refreshNames();
    return rows.map(labelCurrent);
   }));
   let screen=0;
@@ -244,6 +249,7 @@ export async function mountSewing(host,api){
    const version=++screen;content.textContent='Carregando lançamentos…';
    try{
     const [current,history]=await Promise.all([pages(api,'quality_sewing_entries','service_date.desc,id.asc'),access.manage?pages(api,'quality_sewing_history','service_date.desc,source_row.asc'):[]]);
+    await refreshNames();
     if(version!==screen)return;
     renderPanel(content,[...current.map(labelCurrent),...history.map(r=>({...r,label:activities[historicalLabels[r.activity]]||r.activity}))].sort((a,b)=>b.service_date.localeCompare(a.service_date)),access.manage);
    }catch{if(version===screen)content.textContent='Não foi possível carregar os lançamentos. Clique no painel para tentar novamente.';}
