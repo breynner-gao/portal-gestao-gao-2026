@@ -11,6 +11,7 @@
  @media(max-width:760px){#chem-v81{padding:16px}.c81-grid{grid-template-columns:1fr}.c81-wide,.c81-calc{grid-column:auto}.c81-head{display:block}}
  `;document.head.appendChild(s)}
  function nativeCard(){
+   const host=document.getElementById('chemical-products-host');if(host)return host;
    const hs=[...document.querySelectorAll('h1,h2,h3')].filter(h=>/Princípios ativos e fornecedores/i.test(h.textContent||''));
    for(const h of hs){
      if(h.closest('#chem-v81')) continue;

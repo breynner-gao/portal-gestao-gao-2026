@@ -5,7 +5,8 @@ const API='sb_publishable_icrk6TaZexgiSIq63zX_ng_40JGaYlJ';
 const LEGACY_RELAVE='gao.chemicals.relave.v118';
 const RELAVE='gao.chemicals.relave.v122';
 const WASTE='gao.chemicals.waste.v1';
-const KEYS=['gao.chemicals.master.v78','gao.chemicals.inventory.v74',RELAVE,WASTE];
+const INVENTORY='gao.chemicals.inventory.v74';
+const KEYS=['gao.chemicals.master.v78',INVENTORY,RELAVE,WASTE];
 const FETCH_KEYS=[...KEYS,LEGACY_RELAVE];
 const rawSet=Storage.prototype.setItem, rawGet=Storage.prototype.getItem;
 let hydrating=true, queue=Promise.resolve(), bootPromise;
@@ -93,5 +94,13 @@ window.GAO_RELAVE_ARCHIVE_EXCLUDE=async(command,date)=>{
 window.GAO_CHEM_DB_READY=false;window.GAO_CHEM_DB_SYNC_ERROR='';
 window.GAO_CHEM_DB_LOAD=()=>bootPromise;
 window.GAO_CHEM_DB_SYNC=async(key)=>{await bootPromise;if(!window.GAO_CHEM_DB_READY)throw Error(window.GAO_CHEM_DB_SYNC_ERROR||'Banco indisponível');for(const stateKey of (key ? [key] : [RELAVE,WASTE])){if(!KEYS.includes(stateKey))throw Error('Estado inválido.');const value=rawGet.call(localStorage,stateKey);if(value)await enqueue(stateKey,value)}};
+window.GAO_CHEM_SAVE_INVENTORY=async(state)=>{
+ await bootPromise;
+ if(!window.GAO_CHEM_DB_READY)throw Error('O inventário ainda não está conectado ao banco.');
+ const value=JSON.stringify(state);
+ await enqueue(INVENTORY,value);
+ rawSet.call(localStorage,INVENTORY,value);
+ backup(INVENTORY,value,'latest');
+};
 bootPromise=boot();
 })();
