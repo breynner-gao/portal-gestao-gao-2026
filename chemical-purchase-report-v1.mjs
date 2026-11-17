@@ -59,7 +59,7 @@ async function loadWeeklyConsumption(issuedOn, resolve) {
   return weeklyConsumption(await result.json(), resolve);
 }
 
-function purchaseTable(rows) {
+function purchaseTable(rows, totals) {
   const headers = [
     'Princípio ativo', 'Consumo até o fechamento', 'Saldo para o próximo mês',
     'Consumo do próximo mês', 'Necessidade do próximo mês', 'Fornecedor / produto',
@@ -80,7 +80,11 @@ function purchaseTable(rows) {
       return `<tr>${cells.map((cell, i) => i === 0
         ? `<th scope="row">${escape(cell)}</th>`
         : `<td>${escape(cell)}</td>`).join('')}</tr>`;
-    }).join('')}</tbody></table></div>`;
+    }).join('')}</tbody><tfoot><tr>
+    <th scope="row" colspan="9">Total da solicitação</th>
+    <td>${orders.reduce((sum,row) => sum + row.packs,0).toLocaleString('pt-BR')}</td>
+    <td>${liters(totals.liters)}</td><td>${brl.format(totals.value)}</td>
+    </tr></tfoot></table></div>`;
 }
 
 function consumptionChart(product, weeks, issuedOn) {
@@ -109,6 +113,8 @@ const css = `
   main{max-width:1160px}.meta{display:flex;flex-wrap:wrap;gap:4px 18px;margin:12px 0}
   .table-wrap{overflow-x:auto}table{min-width:830px}tbody th{background:#f5f8fa}
   td,th{vertical-align:top}td:last-child{font-weight:bold}
+  tfoot th,tfoot td{background:#e2edf4;border-top:2px solid #2269a4;font-weight:bold}
+  .order-dates{display:flex;flex-wrap:wrap;gap:6px 24px;margin-top:10px;color:#d5f3f8}
   h3{font-size:14px;margin:0;color:#102d45}
   .chart-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
   .chart{border:1px solid #dbe5ed;border-radius:8px;padding:10px}
@@ -138,12 +144,14 @@ export function renderChemicalPurchaseReport({rows, totals, inventoryDate, perio
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
     <title>GAO · ${title}</title><style>${reportCss}${css}</style></head><body><div class="print"></div><main>
     <header><div class="brand">${safeLogo}<span>GESTÃO DE QUÍMICOS</span></div>
-      <h1>${title}</h1><p>${escape(period.nextMonth)} · ${period.nextDays} dias de consumo projetado</p></header>
+      <h1>${title}</h1><p>${escape(period.nextMonth)} · ${period.nextDays} dias de consumo projetado</p>
+      <div class="order-dates"><span><strong>Data do pedido</strong> ${date(issuedOn)}</span>
+      <span><strong>Início previsto do consumo</strong> ${date(period.startDate)}</span></div></header>
     <div class="cards">${cards.map(([name,value,detail]) => `<div><strong>${name}</strong><b>${escape(value)}</b><small>${escape(detail)}</small></div>`).join('')}</div>
-    <div class="meta"><span><strong>Emissão</strong> ${date(issuedOn)}</span><span><strong>Inventário base</strong> ${date(inventoryDate)}</span>
+    <div class="meta"><span><strong>Inventário base</strong> ${date(inventoryDate)}</span>
       <span><strong>Fechamento</strong> ${date(period.closeDate)} · ${period.toClose} dias após o inventário</span></div>
     <p class="note">A projeção considera o recebimento do volume em trânsito até o fechamento.</p>
-    <h2>Itens da solicitação</h2>${purchaseTable(rows)}
+    <h2>Itens da solicitação</h2>${purchaseTable(rows, totals)}
     ${gaps.length ? `<h2>Falta prevista antes do fechamento</h2><p>${gaps.map(row => escape(row.n) + ' · ' + liters(row.currentGap)).join(' | ')}</p>` : ''}
     ${missingOffers.length ? `<h2>Necessidade sem fornecedor selecionado</h2><p>${missingOffers.map(row => escape(row.n) + ' · ' + liters(row.need)).join(' | ')}</p>` : ''}
     <section class="trends"><header><div class="brand">${safeLogo}<span>GESTÃO DE QUÍMICOS</span></div><h2>Consumo semanal por produto</h2>

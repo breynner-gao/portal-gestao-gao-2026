@@ -14,6 +14,7 @@ const round=value=>Math.round(value*100)/100;
 test('compra de dezembro desconta o consumo até 30 de novembro e arredonda por embalagem',()=>{
   assert.equal(plan.toClose,13);
   assert.equal(plan.closeDate,'2026-11-30');
+  assert.equal(plan.startDate,'2026-12-01');
   assert.equal(plan.nextDays,31);
   const row=soda(760);
   assert.equal(round(row.consumptionToClose),542.78);
@@ -36,6 +37,7 @@ test('posição antiga, último dia, mudança de ano e fevereiro usam dias do ca
   assert.equal(purchasePeriod('2026-10-30','2026-11-17').toClose,31);
   const december=purchasePeriod('2026-12-31','2026-12-31');
   assert.equal(december.toClose,0);
+  assert.equal(december.startDate,'2027-01-01');
   assert.equal(december.nextMonth,'janeiro de 2027');
   assert.equal(purchasePeriod('2028-01-25','2028-01-26').nextDays,29);
   assert.equal(purchasePeriod('2026-11-18','2026-11-17'),null);

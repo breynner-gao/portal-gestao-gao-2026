@@ -25,14 +25,14 @@ export function transferWorkbook(xlsx, events, filters, labels, now = new Date()
   if (!events.length) throw Error('Nenhum registro encontrado para exportar.');
   const workbook = xlsx.utils.book_new();
   const history = xlsx.utils.aoa_to_sheet([
-    ['Data e hora','Produto','Código','Sentido','Quantidade movimentada','Responsável','Saldo restante','Referência da movimentação'],
+    ['Data e hora','Produto','Código','Sentido','Quantidade movimentada','Responsável','Saldo restante','Referência da movimentação','Resultado'],
     ...events.map(event => [
       {t:'n',v:excelDate(event.occurred_at),z:'dd/mm/yyyy hh:mm:ss'}, event.request.product_name,
       event.request.product_code || '', directionLabel(event.request.direction), event.quantity,
-      event.responsible, event.remaining, event.id
+      event.responsible, event.remaining, event.id, Number(event.quantity) === 0 ? 'Não movimentado' : 'Movimentado'
     ])
   ]);
-  history['!cols'] = [22,34,14,24,22,28,17,38].map(wch=>({wch}));
+  history['!cols'] = [22,34,14,24,22,28,17,38,21].map(wch=>({wch}));
   history['!autofilter'] = {ref:history['!ref']};
   xlsx.utils.book_append_sheet(workbook,history,'Movimentações');
   const applied = xlsx.utils.aoa_to_sheet([

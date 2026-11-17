@@ -26,7 +26,7 @@ const reportData = {
   }],
   totals: {value: 10000, liters: 2000, kg: 3058, avgL: 5, avgKg: 3.27},
   inventoryDate: '2026-11-17', issuedOn: '2026-11-17',
-  period: {nextMonth: 'dezembro de 2026', closeDate: '2026-11-30', nextDays: 31, toClose: 13}
+  period: {nextMonth: 'dezembro de 2026', closeDate: '2026-11-30', startDate: '2026-12-01', nextDays: 31, toClose: 13}
 };
 
 test('totais semanais somam os equipamentos em litros, preferem ISO e distinguem zero de ausência', () => {
@@ -42,6 +42,9 @@ test('relatório preserva a solicitação e exibe um gráfico por produto regist
   assert.match(html, /10\.000,00/);
   assert.match(html, /1\.077,10 L/);
   assert.match(html, /30\/11\/2026/);
+  assert.match(html, /<strong>Data do pedido<\/strong> 17\/11\/2026/);
+  assert.match(html, /<strong>Início previsto do consumo<\/strong> 01\/12\/2026/);
+  assert.match(html, /<tfoot><tr>\s*<th scope="row" colspan="9">Total da solicitação<\/th>\s*<td>2<\/td>\s*<td>2\.000,00 L<\/td><td>R\$\s10\.000,00<\/td>/);
   assert.match(html, /151,35/);
   assert.match(html, /S44\/2026 †/);
   assert.match(html, /<h3>Cloro<\/h3>/);

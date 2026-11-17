@@ -26,6 +26,7 @@
   return {
    toClose:(start-inventory)/dayMs-1,
    closeDate:new Date(start-dayMs).toISOString().slice(0,10),
+   startDate:new Date(start).toISOString().slice(0,10),
    nextDays:(after-start)/dayMs,
    nextMonth:new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric',timeZone:'UTC'}).format(start)
   };
@@ -64,7 +65,7 @@
   page.document.body.textContent='Carregando relatório de compras…';
   const reportData={rows,totals:totals(rows),inventoryDate:I.date,period,issuedOn:today()};
   try{
-   const report=await import('./chemical-purchase-report-v1.mjs?v=1');
+   const report=await import('./chemical-purchase-report-v1.mjs?v=2');
    await report.openChemicalPurchaseReport(page,reportData,code=>resolve(code,M));
   }catch{
    if(!page.closed)page.document.body.textContent='Não foi possível abrir o relatório. Atualize a página de compras e tente novamente.';

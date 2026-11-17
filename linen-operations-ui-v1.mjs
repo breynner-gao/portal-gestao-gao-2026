@@ -1,7 +1,7 @@
 import {applyIdealReferences, idealReferenceKey, listMovementItems} from './linen-risk-rules-v150.mjs?v=227';
-import {directionLabel, filterTransferHistory, localTimestamp, transferWorkbook} from './linen-operations-history-v1.mjs?v=1';
+import {directionLabel, filterTransferHistory, localTimestamp, transferWorkbook} from './linen-operations-history-v1.mjs?v=2';
 
-import {views,newFilters,movementRows,invoiceFromXml} from './linen-management-views-v1.mjs?v=4';
+import {views,newFilters,movementRows,invoiceFromXml} from './linen-management-views-v1.mjs?v=5';
 import {productivityView, productivityRecords, shiftDate} from './linen-productivity-v1.mjs?v=1';
 import {workflowView,bindEvaluationProductPickers} from './linen-management-workflow-v1.mjs?v=4';
 
@@ -44,8 +44,9 @@ function mount(host) {
     }
   }
 
-  async function load() {
-    loading=true; failed=false; render();
+  async function load({refreshOnly=false}={}) {
+    loading=!refreshOnly; failed=false;
+    if(!refreshOnly)render();
     try{
       session=await window.GAO_AUTH_READY;
       session=window.GAO_AUTH_SESSION||session;
@@ -136,15 +137,23 @@ function mount(host) {
         const data={requestId:row.id||null,productKey:row.product_key,direction:row.direction,quantity:amount,expectedRemaining:row.remaining};
         return {...data,eventId:inputId(data)};
       });
-    }catch(error){message=error.message;render();return;}
+    }catch(error){message=error.message;render();revealSaveMessage();return;}
     saving=true;message='';render();
+    let saveFailed=false;
     try{
       await api('/rest/v1/rpc/linen_confirm_transfers',{p_org:organization,p_version:snapshot.updated_at,p_choices:payload});
       for(const {eventId,...data} of payload)outstanding.delete(JSON.stringify(data));
       for(const row of rows)choices.delete(transferKey(row));
-      message='Movimentações e pendências salvas.';await load();
-    }catch(error){message=error.message;}
-    finally{saving=false;render();}
+      const pending=payload.filter(choice=>choice.quantity===0).length;
+      message=pending===payload.length?'Pendência registrada sem movimentar estoque.':
+        pending?'Movimentações e pendências salvas.':'Movimentação salva.';
+      await load({refreshOnly:true});
+    }catch(error){message=error.message;saveFailed=true;}
+    finally{saving=false;render();if(saveFailed||failed)revealSaveMessage();}
+  }
+
+  function revealSaveMessage(){
+    host.querySelector('[role=status]')?.scrollIntoView({block:'center'});
   }
 
   function table(rows){
@@ -156,10 +165,11 @@ function mount(host) {
         const limit=Math.min(row.remaining,row.eligible??row.remaining);
         const missingStock=row.eligible===null;
         const decision=draft?.decision||'';
-        const status=row.remaining?(row.id?'Pendente':'Em aberto'):'Concluído';
+        const status=row.remaining?(row.lastUnmoved?'Pendente · Não movimentado':row.id?'Pendente':'Em aberto'):'Concluído';
         return '<tr><td><strong>'+esc(row.product_name)+'</strong><small>'+esc(row.product_code||'')+'</small></td><td>'+directionLabel(row.direction)+'<small>'+esc(row.id||'Sugestão da posição semanal')+'</small></td><td>'+qty(row.planned)+'</td><td>'+(row.eligible===null?'Sem posição':qty(row.eligible))+'</td><td>'+qty(row.done)+'</td><td>'+qty(row.remaining)+'</td><td><small>'+status+'</small>'+
-          (edit?'<div class="leo-confirm"><select data-leo-decision="'+i+'" aria-label="Movimentou '+esc(row.product_name)+'" '+(saving?'disabled':'')+'><option value="">Movimentou?</option><option value="yes" '+(decision==='yes'?'selected ':'')+'>Sim</option><option value="no" '+(decision==='no'?'selected':'')+'>Não</option></select><input data-leo-quantity="'+i+'" aria-label="Quantidade movimentada de '+esc(row.product_name)+'" type="number" min="1" max="'+limit+'" step="1" value="'+esc(draft?.quantity||'')+'" '+(decision!=='yes'||saving?'disabled':'')+'><button type="button" data-leo-save="'+i+'" '+(!decision||saving||(decision==='yes'&&(missingStock||!limit))?'disabled':'')+'>'+ (page==='pendencias'?'Confirmar quantidade':'Confirmar')+'</button></div>':'')+
+          (edit?'<div class="leo-confirm"><select data-leo-decision="'+i+'" aria-label="Movimentou '+esc(row.product_name)+'" '+(saving?'disabled':'')+'><option value="">Movimentou?</option><option value="yes" '+(decision==='yes'?'selected ':'')+'>Sim</option><option value="no" '+(decision==='no'?'selected':'')+'>Não</option></select>'+(decision==='yes'?'<input data-leo-quantity="'+i+'" aria-label="Quantidade movimentada de '+esc(row.product_name)+'" placeholder="Peças movidas" type="number" min="1" max="'+limit+'" step="1" value="'+esc(draft?.quantity||'')+'" '+(saving||missingStock||!limit?'disabled':'')+'>':'')+'<button type="button" data-leo-save="'+i+'" '+(!decision||saving||(decision==='yes'&&(missingStock||!limit))?'disabled':'')+'>'+ (decision==='no'?'Registrar pendência':decision==='yes'?'Confirmar quantidade':'Confirmar')+'</button></div>':'')+
           (edit&&row.eligible===0?'<small>Sem saldo registrado na origem.</small>':'')+
+          (edit&&decision==='no'?'<small>0 peças movimentadas. O restante fica pendente.</small>':'')+
           (row.id?'<button type="button" data-leo-history="'+i+'">Ver histórico</button>':'')+'</td></tr>';
       }).join('')+'</tbody></table></div>';
   }
@@ -171,7 +181,7 @@ function mount(host) {
     let shown=[],error='';
     try{shown=filterTransferHistory(events,filters);}catch(reason){error=reason.message;}
     const selectors='<label>Produto<select name="product">'+options(products,filters.product)+'</select></label><label>Sentido<select name="direction">'+options(new Map([['return',directionLabel('return')],['supply',directionLabel('supply')]]),filters.direction)+'</select></label><label>De<input name="start" type="date" value="'+esc(filters.start)+'"></label><label>Até<input name="end" type="date" value="'+esc(filters.end)+'"></label><label>Responsável<select name="responsible">'+options(people,filters.responsible)+'</select></label>';
-    const records=shown.length?'<div class="leo-scroll"><table><thead><tr><th>Data e hora</th><th>Produto</th><th>Sentido</th><th>Quantidade</th><th>Responsável</th><th>Saldo restante</th><th>Referência</th></tr></thead><tbody>'+shown.map(event=>'<tr><td>'+esc(localTimestamp(event.occurred_at))+'</td><td>'+esc(event.request.product_name)+'</td><td>'+directionLabel(event.request.direction)+'</td><td>'+qty(event.quantity)+'</td><td>'+esc(event.responsible)+'</td><td>'+qty(event.remaining)+'</td><td>'+esc(event.id)+'</td></tr>').join('')+'</tbody></table></div>':'<p>'+(error?esc(error):'Nenhum registro de movimentação confirmado neste recorte.')+'</p>';
+    const records=shown.length?'<div class="leo-scroll"><table><thead><tr><th>Data e hora</th><th>Produto</th><th>Sentido</th><th>Quantidade</th><th>Responsável</th><th>Saldo restante</th><th>Referência</th></tr></thead><tbody>'+shown.map(event=>'<tr><td>'+esc(localTimestamp(event.occurred_at))+'</td><td>'+esc(event.request.product_name)+'</td><td>'+directionLabel(event.request.direction)+'</td><td>'+(Number(event.quantity)===0?'0 · Não movimentado':qty(event.quantity))+'</td><td>'+esc(event.responsible)+'</td><td>'+qty(event.remaining)+'</td><td>'+esc(event.id)+'</td></tr>').join('')+'</tbody></table></div>':'<p>'+(error?esc(error):'Nenhum registro de movimentação confirmado neste recorte.')+'</p>';
     return {shown,labels:{product:products.get(filters.product),responsible:people.get(filters.responsible)},html:'<section class="gao-card"><h2>Histórico de movimentações</h2><form data-leo-filters>'+selectors+'<button type="submit">Filtrar</button><button type="button" data-leo-clear>Limpar filtros</button><button type="button" data-leo-export '+(!shown.length?'disabled':'')+'>Exportar Excel</button></form>'+records+'</section>'};
   }
 
@@ -222,9 +232,9 @@ function mount(host) {
         content='<div class="leo-kpis">'+groups.map(([key,label,total])=>'<button type="button" data-leo-view="'+key+'"><span>'+label+'</span><strong>'+qty(total)+'</strong></button>').join('')+'</div>'+
           '<section class="leo-card"><h2>Fluxo da operação</h2><div class="leo-flow">'+views.filter(([key])=>!['painel','configuracoes'].includes(key)).map(([key,label])=>'<button type="button" data-leo-view="'+key+'">'+label+'</button>').join('')+'</div></section>';
       }else if(!native||['return','supply','pendencias'].includes(page)){
-        rows=allRows.filter(row=>!native||page==='pendencias'?row.remaining>0:row.direction===page);
+        rows=allRows.filter(row=>!native?row.remaining>0:page==='pendencias'?row.id&&row.remaining>0:row.direction===page);
         const chosen=rows.filter(row=>choices.get(transferKey(row))?.decision);
-        content='<section class="leo-card"><p>Informe a quantidade efetivamente movimentada. O saldo na origem é atualizado a cada confirmação.</p>'+
+        content='<section class="leo-card"><p>Selecione Sim e informe as peças movimentadas. Se nenhuma peça foi movimentada, selecione Não e registre a pendência.</p>'+
           '<button type="button" data-leo-list '+(!chosen.length||saving?'disabled':'')+'>Salvar lista</button>'+table(rows)+'</section>';
         if(!native||page==='pendencias'){report=history();content+=report.html;}
       }else if(page==='produtividade'){

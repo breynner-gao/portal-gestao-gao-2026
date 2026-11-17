@@ -27,7 +27,11 @@ test('movimentação usa o saldo da origem sem solicitar conferência manual', (
 test('saldo zero ou produto sem posição bloqueia confirmar saída e permite registrar pendência', () => {
   for(const available of [null,0]){
     assert.match(render(available),/<button[^>]*data-leo-save[^>]*disabled/);
-    assert.doesNotMatch(render(available,false,'no'),/<button[^>]*data-leo-save[^>]*disabled/);
+    const no=render(available,false,'no');
+    assert.doesNotMatch(no,/<button[^>]*data-leo-save[^>]*disabled/);
+    assert.doesNotMatch(no,/<input data-leo-quantity/);
+    assert.match(no,/Registrar pendência/);
+    assert.match(no,/0 peças movimentadas/);
   }
 });
 
@@ -62,4 +66,22 @@ test('navegação da Gestão de Enxoval fica junto de Atualizar e respeita a vis
     assert.match(host.innerHTML,new RegExp('<option value="'+page+'" selected'));
     assert.doesNotMatch(host.innerHTML,/class="leo-nav"/);
   }
+});
+
+test('registrar que não houve movimentação mantém o saldo de origem e o restante', async () => {
+  const {movementRows}=await import('../linen-management-views-v1.mjs');
+  const version='2026-11-16T12:00:00Z';
+  const request={id:'req',product_key:'ID:3154',direction:'return',planned:159,snapshot_version:version};
+  const no={request_id:'req',stock_version:version,occurred_at:version,quantity:0,remaining:159};
+  const stock=new Map([[request.product_key,{market:679,depot:0}]]);
+  const [pending]=movementRows([request],[request],[no],[],version,stock);
+  assert.equal(pending.lastUnmoved,true);
+  assert.equal(pending.eligible,679);
+  assert.equal(pending.done,0);
+  assert.equal(pending.remaining,159);
+  const moved={...no,occurred_at:'2026-11-16T13:00:00Z',quantity:50,remaining:109};
+  const [partial]=movementRows([request],[request],[no,moved],[],version,stock);
+  assert.equal(partial.lastUnmoved,false);
+  assert.equal(partial.eligible,629);
+  assert.equal(partial.remaining,109);
 });

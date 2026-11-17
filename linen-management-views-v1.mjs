@@ -22,10 +22,13 @@ export const newFilters=()=>({product:'',direction:'',start:'',end:'',responsibl
 export function movementRows(proposals, requests, events, balances, version, weeklyStock=new Map()) {
   const key=row=>row.direction+'|'+row.product_key;
   const moved=new Map();
+  const latest=new Map();
   const fulfilled=new Set();
   const netSupply=new Map();
   const requestsById=new Map(requests.map(row=>[row.id,row]));
   for(const event of events){
+    const previous=latest.get(event.request_id);
+    if(!previous||Date.parse(event.occurred_at)>Date.parse(previous.occurred_at))latest.set(event.request_id,event);
     moved.set(event.request_id,(moved.get(event.request_id)||0)+event.quantity);
     if(Date.parse(event.stock_version)!==Date.parse(version))continue;
     if(event.remaining===0)fulfilled.add(event.request_id);
@@ -54,7 +57,7 @@ export function movementRows(proposals, requests, events, balances, version, wee
     const weekly=weeklyStock.get(row.product_key);
     const delta=netSupply.get(row.product_key)||0;
     const available=weekly?Math.max(0,weekly[source]+(fromDepot?-delta:delta)):null;
-    return {...row,done,remaining:row.planned-done,eligible:counted?.[source]??available};
+    return {...row,done,remaining:row.planned-done,lastUnmoved:latest.get(row.id)?.quantity===0,eligible:counted?.[source]??available};
   });
 }
 
