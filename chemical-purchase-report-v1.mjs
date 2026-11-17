@@ -5,6 +5,8 @@ const database = 'https://fquzuxdqvhecijjuxbmg.supabase.co/rest/v1/';
 const apiKey = 'sb_publishable_icrk6TaZexgiSIq63zX_ng_40JGaYlJ';
 const weeksInReport = 8;
 const monthsInReport = 6;
+const forecastMonths = 3;
+const minRecordedWeeks = 4;
 const monthLabel = new Intl.DateTimeFormat('pt-BR', {month: 'short', year: 'numeric', timeZone: 'UTC'});
 const fmt = new Intl.NumberFormat('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 const brl = new Intl.NumberFormat('pt-BR', {style: 'currency', currency: 'BRL'});
@@ -47,13 +49,15 @@ export function weeklyConsumption(records, resolve) {
   return {weeks, products: [...products.values()].sort((a,b) => a.name.localeCompare(b.name,'pt-BR'))};
 }
 
-function reportMonths(issuedOn) {
+function monthRange(issuedOn, offset, count) {
   const [year, month] = issuedOn.split('-').map(Number);
-  return Array.from({length: monthsInReport}, (_, index) => {
-    const start = new Date(Date.UTC(year, month - monthsInReport + index, 1));
+  return Array.from({length: count}, (_, index) => {
+    const start = new Date(Date.UTC(year, month - 1 + offset + index, 1));
     return {key: start.toISOString().slice(0,7), label: monthLabel.format(start)};
   });
 }
+
+const reportMonths = issuedOn => monthRange(issuedOn, 1 - monthsInReport, monthsInReport);
 
 const total = () => ({volume: 0, cost: 0, priced: 0, unpriced: 0});
 
@@ -178,6 +182,94 @@ function monthlySection(monthly, issuedOn, safeLogo) {
     <p class="note">— Sem lançamento no período.${hasUnpriced ? ' * Total parcial: há consumo sem custo registrado.' : ''}</p></section>`;
 }
 
+function weeklyClosings(key) {
+  const [year, month] = key.split('-').map(Number);
+  const first = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+  const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return Math.floor((days - 1 + first) / 7) + (first === 0 ? 1 : 0);
+}
+
+function forecastSeries(history, future, current, key) {
+  const observed = history.flatMap((month, index) => {
+    if (month.weeks === 0 || (key === 'cost' && month.priced === 0)) return [];
+    const partial = month.key === current || month.weeks < minRecordedWeeks || (key === 'cost' && month.unpriced > 0);
+    return [{index, value: month[key], weeks: month.weeks, partial}];
+  });
+  const base = observed.filter(point => !point.partial);
+  if (base.length < 3) return {observed, trend: [], forecast: [], baseCount: base.length};
+  const center = base.reduce((sum, point) => sum + point.index, 0) / base.length;
+  const rate = base.reduce((sum, point) => sum + point.value / point.weeks, 0) / base.length;
+  const slope = base.reduce((sum, point) => sum + (point.index - center) * (point.value / point.weeks - rate), 0) /
+    base.reduce((sum, point) => sum + (point.index - center) ** 2, 0);
+  const predict = (index, weeks) => Math.max(0, rate + slope * (index - center)) * weeks;
+  return {
+    observed,
+    trend: base.map(({index, weeks}) => ({index, value: predict(index, weeks)})),
+    forecast: future.map(({key}, i) => {
+      const index = history.length + i;
+      return {index, value: predict(index, weeklyClosings(key))};
+    }),
+    baseCount: base.length
+  };
+}
+
+export function monthlyForecast(months, issuedOn) {
+  const current = issuedOn.slice(0,7);
+  const future = monthRange(issuedOn, 1, forecastMonths);
+  return {
+    periods: [...months, ...future],
+    future,
+    volume: forecastSeries(months, future, current, 'volume'),
+    cost: forecastSeries(months, future, current, 'cost')
+  };
+}
+
+const axisNumber = new Intl.NumberFormat('pt-BR', {notation: 'compact', maximumFractionDigits: 1});
+
+function forecastChart(title, unit, format, periods, {observed, trend, forecast, baseCount}) {
+  const step = 590 / periods.length;
+  const x = index => 58 + (index + .5) * step;
+  const max = Math.max(1, ...[...observed, ...trend, ...forecast].map(point => point.value));
+  const scale = Math.pow(10, Math.floor(Math.log10(max / 4)));
+  const tick = Math.ceil(max / (4 * scale)) * scale;
+  const y = value => 130 - 112 * value / (4 * tick);
+  const line = (points, color, dash = '') => points.length
+    ? `<polyline fill="none" stroke="${color}" stroke-width="2.5" ${dash} points="${points.map(point => x(point.index) + ',' + y(point.value)).join(' ')}"/>` : '';
+  const grid = Array.from({length: 5}, (_, i) => {
+    const value = i * tick;
+    return `<line x1="58" x2="648" y1="${y(value)}" y2="${y(value)}" stroke="#dbe5ed"/><text x="52" y="${y(value) + 3}" text-anchor="end">${axisNumber.format(value)}</text>`;
+  }).join('');
+  const barWidth = Math.min(32, step * .55);
+  const bars = observed.map(({index, value, partial}) =>
+    `<rect x="${x(index) - barWidth / 2}" y="${y(value)}" width="${barWidth}" height="${Math.max(1, 130 - y(value))}" fill="${partial ? '#adccdf' : '#2269a4'}"><title>${escape(periods[index].label)} · ${escape(format(value))}${partial ? ' · Parcial' : ''}</title></rect>`).join('');
+  const dots = forecast.map(({index, value}) =>
+    `<circle cx="${x(index)}" cy="${y(value)}" r="3" fill="#95540c"><title>${escape(periods[index].label)} · Projeção de ${escape(format(value))}</title></circle>`).join('');
+  return `<article class="forecast-chart"><h3>${title}</h3><div class="table-wrap">
+    <svg viewBox="0 0 650 156" role="img" aria-label="${title} por mês, com tendência e projeção quando há dados suficientes">
+    <text x="52" y="10" text-anchor="end">${unit}</text>${grid}${bars}
+    ${line(trend, '#087e73')}${line(forecast, '#95540c', 'stroke-dasharray="6 4"')}${dots}
+    ${periods.map((p, i) => `<text x="${x(i)}" y="147" text-anchor="middle">${escape(p.label.replace('. de ', '/'))}</text>`).join('')}
+    </svg></div><p class="note">${baseCount} meses encerrados na base${forecast.length ? '.' : '. A projeção requer pelo menos 3.'}</p></article>`;
+}
+
+function forecastSection(monthly, issuedOn) {
+  if (!monthly?.months.some(month => month.weeks)) return '';
+  const {periods, future, volume, cost} = monthlyForecast(monthly.months, issuedOn);
+  const showForecast = volume.forecast.length || cost.forecast.length;
+  return `<section class="trends"><h2>Tendência e projeção mensal</h2>
+    <div class="legend forecast-legend"><span><i style="color:#2269a4"></i>Registrado</span><span><i style="color:#adccdf"></i>Parcial</span>
+      <span><i style="color:#087e73"></i>Tendência</span><span><i style="color:#95540c;border-top-style:dashed"></i>Projeção</span></div>
+    ${forecastChart('Consumo mensal (L)', 'L', liters, periods, volume)}
+    ${forecastChart('Gasto mensal com consumo (R$)', 'R$', value => brl.format(value), periods, cost)}
+    ${showForecast ? `<h3>Estimativa dos próximos ${forecastMonths} meses</h3>
+      <div class="table-wrap"><table class="monthly-summary"><thead><tr><th scope="col">Mês</th><th scope="col">Consumo projetado</th><th scope="col">Gasto projetado</th></tr></thead><tbody>
+      ${future.map((month, i) => `<tr><th scope="row">${escape(month.label)}</th>
+        <td>${volume.forecast[i] ? liters(volume.forecast[i].value) : '—'}</td>
+        <td>${cost.forecast[i] ? brl.format(cost.forecast[i].value) : '—'}</td></tr>`).join('')}
+      </tbody></table></div>` : ''}
+    <p class="note">Tendência linear do consumo e do gasto médios por semana nos meses encerrados com pelo menos quatro semanas registradas. A projeção considera quantas semanas ISO encerram em cada mês. Meses parciais ficam fora do cálculo. O gasto projetado estima o custo do consumo.</p></section>`;
+}
+
 function consumptionChart(product, weeks, issuedOn) {
   const max = Math.max(1, ...product.values);
   return `<article class="chart">
@@ -211,6 +303,10 @@ const css = `
   .monthly-products{min-width:720px;margin:6px 0 8px}
   .monthly-products td,.monthly-summary td{white-space:nowrap}
   .monthly-products tbody td:last-child{font-weight:normal}
+  .forecast-legend{margin:8px 0 12px}
+  .forecast-chart{margin-bottom:12px}
+  .forecast-chart svg{min-width:520px;max-height:none;height:auto}
+  .forecast-chart svg text{font-size:10px}
   .chart-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
   .chart{border:1px solid #dbe5ed;border-radius:8px;padding:10px}
   .bars{display:flex;list-style:none;margin:8px 0 0;padding:0}
@@ -222,7 +318,7 @@ const css = `
   .bar.partial{background:#087e73}
   @media screen and (max-width:740px){main{margin:0;padding:12px}.chart-grid{grid-template-columns:1fr}}
   @media screen and (max-width:420px){.chart{padding:8px 4px}.bars li{font-size:9px}.cards{gap:4px}.cards b{font-size:15px}}
-  @media print{table,.monthly-summary,.monthly-products{min-width:0}.table-wrap{overflow:visible}.chart-grid{display:block;column-count:2;column-gap:10px}.chart{margin-bottom:10px}}
+  @media print{table,.monthly-summary,.monthly-products,.forecast-chart svg{min-width:0}.forecast-chart svg{max-height:49mm}.table-wrap{overflow:visible}.chart-grid{display:block;column-count:2;column-gap:10px}.chart{margin-bottom:10px}}
 `;
 
 export function renderChemicalPurchaseReport({rows, totals, inventoryDate, period, issuedOn, history, monthly, logo}) {
@@ -250,6 +346,7 @@ export function renderChemicalPurchaseReport({rows, totals, inventoryDate, perio
     ${gaps.length ? `<h2>Falta prevista antes do fechamento</h2><p>${gaps.map(row => escape(row.n) + ' · ' + liters(row.currentGap)).join(' | ')}</p>` : ''}
     ${missingOffers.length ? `<h2>Necessidade sem fornecedor selecionado</h2><p>${missingOffers.map(row => escape(row.n) + ' · ' + liters(row.need)).join(' | ')}</p>` : ''}
     ${monthlySection(monthly, issuedOn, safeLogo)}
+    ${forecastSection(monthly, issuedOn)}
     <section class="trends"><header><div class="brand">${safeLogo}<span>GESTÃO DE QUÍMICOS</span></div><h2>Consumo semanal por produto</h2>
     <p>Histórico de consumo registrado no SGQ · Litros</p></header>
     ${history?.products.length ? `<p class="note">${history.weeks.length} semanas registradas. † Calendário anterior. * Semana em andamento. — Sem lançamento para o produto na semana.</p>

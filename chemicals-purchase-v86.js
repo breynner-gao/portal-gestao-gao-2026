@@ -65,7 +65,7 @@
   page.document.body.textContent='Carregando relatório de compras…';
   const reportData={rows,totals:totals(rows),inventoryDate:I.date,period,issuedOn:today()};
   try{
-   const report=await import('./chemical-purchase-report-v1.mjs?v=3');
+   const report=await import('./chemical-purchase-report-v1.mjs?v=4');
    await report.openChemicalPurchaseReport(page,reportData,code=>resolve(code,M));
   }catch{
    if(!page.closed)page.document.body.textContent='Não foi possível abrir o relatório. Atualize a página de compras e tente novamente.';

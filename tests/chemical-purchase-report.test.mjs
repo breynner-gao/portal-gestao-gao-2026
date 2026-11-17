@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { monthlyConsumption, renderChemicalPurchaseReport, weeklyConsumption } from '../chemical-purchase-report-v1.mjs';
+import { monthlyConsumption, monthlyForecast, renderChemicalPurchaseReport, weeklyConsumption } from '../chemical-purchase-report-v1.mjs';
 
 const consumption = (name, code, liters) => ({
   product_id: code,
@@ -86,4 +86,46 @@ test('consumo mensal soma os custos originais por produto e usa o mês do encerr
   assert.match(html, /R\$\s89,20 \*/);
   assert.match(html, /há consumo sem custo registrado/);
   assert.match(html, /<tfoot><tr><th scope="row">Total por mês/);
+});
+
+const closedMonth = (key, weeks, weeklyVolume, weeklyCost, unpriced = 0) => ({
+  key, label: key, weeks, volume: weeklyVolume * weeks,
+  cost: weeklyCost * weeks, priced: weeks, unpriced
+});
+
+test('projeção usa a tendência semanal dos meses completos e respeita o calendário futuro', () => {
+  const months = [
+    closedMonth('2026-07', 0, 0, 0),
+    closedMonth('2026-08', 5, 100, 1000),
+    closedMonth('2026-09', 4, 90, 900),
+    closedMonth('2026-10', 4, 80, 800),
+    closedMonth('2026-11', 3, 1000, 10000)
+  ];
+  const estimate = monthlyForecast(months, reportData.issuedOn);
+  assert.deepEqual(estimate.future.map(month => month.key), ['2026-12', '2027-01', '2027-02']);
+  assert.deepEqual(estimate.volume.forecast.map(point => point.value), [240, 250, 160]);
+  assert.deepEqual(estimate.cost.forecast.map(point => point.value), [2400, 2500, 1600]);
+  assert.equal(estimate.volume.observed.at(-1).partial, true);
+  assert.equal(estimate.cost.baseCount, 3);
+  assert.deepEqual(estimate.volume.trend.map(point => point.value), [500, 360, 320]);
+  const html = renderChemicalPurchaseReport({...reportData, history, monthly: {months, products: []}});
+  assert.match(html, /Consumo mensal \(L\)[\s\S]*Gasto mensal com consumo \(R\$\)/);
+  assert.match(html, /stroke-dasharray="6 4"/);
+  assert.match(html, /jan\. de 2027<\/th>[\s\S]*250,00 L<\/td>[\s\S]*R\$\s2\.500,00/);
+});
+
+test('custos incompletos e meses sem cobertura ficam fora do ajuste, sem estimativas negativas', () => {
+  const estimate = monthlyForecast([
+    closedMonth('2026-07', 2, 999, 999),
+    closedMonth('2026-08', 5, 42, 1000),
+    closedMonth('2026-09', 4, 20, 900, 1),
+    closedMonth('2026-10', 4, 1, 800),
+    closedMonth('2026-11', 0, 0, 0)
+  ], reportData.issuedOn);
+  assert.equal(estimate.volume.baseCount, 3);
+  assert.deepEqual(estimate.volume.forecast.map(point => point.value), [0, 0, 0]);
+  assert.equal(estimate.cost.baseCount, 2);
+  assert.deepEqual(estimate.cost.forecast, []);
+  assert.equal(estimate.cost.observed[0].partial, true);
+  assert.equal(estimate.cost.observed[2].partial, true);
 });
