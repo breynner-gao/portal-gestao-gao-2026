@@ -225,42 +225,68 @@ export function monthlyForecast(months, issuedOn) {
 }
 
 const axisNumber = new Intl.NumberFormat('pt-BR', {notation: 'compact', maximumFractionDigits: 1});
+const chartMonth = new Intl.DateTimeFormat('pt-BR', {month: 'short', timeZone: 'UTC'});
+const chartNumber = new Intl.NumberFormat('pt-BR', {maximumFractionDigits: 0});
+const chartColors = {recorded: '#245783', partial: '#d5e4ef', trend: '#77519c', projection: '#087d73'};
 
-function forecastChart(title, unit, format, periods, {observed, trend, forecast, baseCount}) {
-  const step = 590 / periods.length;
-  const x = index => 58 + (index + .5) * step;
+function forecastChart(title, unit, format, periods, first, firstFuture, {observed, trend, forecast, baseCount}) {
+  const left = 56, right = 752, axisBottom = 162;
+  const step = (right - left) / (periods.length - first);
+  const x = index => left + (index - first + .5) * step;
+  const boundary = x(firstFuture) - step / 2;
+  const nTicks = 4;
   const max = Math.max(1, ...[...observed, ...trend, ...forecast].map(point => point.value));
-  const scale = Math.pow(10, Math.floor(Math.log10(max / 4)));
-  const tick = Math.ceil(max / (4 * scale)) * scale;
-  const y = value => 130 - 112 * value / (4 * tick);
+  const magnitude = .5 * Math.pow(10, Math.floor(Math.log10(max / nTicks)));
+  const tick = Math.ceil(max / (nTicks * magnitude)) * magnitude;
+  const y = value => axisBottom - 106 * value / (nTicks * tick);
   const line = (points, color, dash = '') => points.length
-    ? `<polyline fill="none" stroke="${color}" stroke-width="2.5" ${dash} points="${points.map(point => x(point.index) + ',' + y(point.value)).join(' ')}"/>` : '';
-  const grid = Array.from({length: 5}, (_, i) => {
+    ? `<polyline fill="none" stroke="${color}" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" ${dash} points="${points.map(point => x(point.index) + ',' + y(point.value)).join(' ')}"/>` : '';
+  const grid = Array.from({length: nTicks + 1}, (_, i) => {
     const value = i * tick;
-    return `<line x1="58" x2="648" y1="${y(value)}" y2="${y(value)}" stroke="#dbe5ed"/><text x="52" y="${y(value) + 3}" text-anchor="end">${axisNumber.format(value)}</text>`;
+    return `<line x1="${left}" x2="${right}" y1="${y(value)}" y2="${y(value)}" stroke="#dce5ed"/><text x="${left - 9}" y="${y(value) + 4}" text-anchor="end">${axisNumber.format(value)}</text>`;
   }).join('');
-  const barWidth = Math.min(32, step * .55);
-  const bars = observed.map(({index, value, partial}) =>
-    `<rect x="${x(index) - barWidth / 2}" y="${y(value)}" width="${barWidth}" height="${Math.max(1, 130 - y(value))}" fill="${partial ? '#adccdf' : '#2269a4'}"><title>${escape(periods[index].label)} · ${escape(format(value))}${partial ? ' · Parcial' : ''}</title></rect>`).join('');
+  const zones = firstFuture < periods.length
+    ? `<rect x="${boundary}" y="6" width="${right - boundary}" height="200" rx="10" fill="#eaf6f3"/>
+      <line x1="${boundary}" x2="${boundary}" y1="36" y2="${axisBottom}" stroke="#9cc8c0" stroke-dasharray="3 4"/>
+      <text x="${boundary + 13}" y="24" class="forecast-zone">Projeção</text>` : '';
+  const barWidth = Math.min(42, step * .48);
+  const trendByIndex = new Map(trend.map(point => [point.index, point.value]));
+  const valueLabel = (index, value, level, color) =>
+    `<text x="${x(index)}" y="${y(level) - 11}" text-anchor="middle" class="forecast-value" style="fill:${color}">${chartNumber.format(value)}</text>`;
+  const bars = observed.map(({index, value, partial}) => {
+    const color = partial ? chartColors.partial : chartColors.recorded;
+    return `<rect x="${x(index) - barWidth / 2}" y="${y(value)}" width="${barWidth}" height="${Math.max(1, axisBottom - y(value))}"
+      rx="4" fill="${color}"${partial ? ' stroke="#7090a8" stroke-dasharray="3 3"' : ''}><title>${escape(periods[index].label)} · ${escape(format(value))}${partial ? ' · Parcial' : ''}</title></rect>`;
+  }).join('');
   const dots = forecast.map(({index, value}) =>
-    `<circle cx="${x(index)}" cy="${y(value)}" r="3" fill="#95540c"><title>${escape(periods[index].label)} · Projeção de ${escape(format(value))}</title></circle>`).join('');
-  return `<article class="forecast-chart"><h3>${title}</h3><div class="table-wrap">
-    <svg viewBox="0 0 650 156" role="img" aria-label="${title} por mês, com tendência e projeção quando há dados suficientes">
-    <text x="52" y="10" text-anchor="end">${unit}</text>${grid}${bars}
-    ${line(trend, '#087e73')}${line(forecast, '#95540c', 'stroke-dasharray="6 4"')}${dots}
-    ${periods.map((p, i) => `<text x="${x(i)}" y="147" text-anchor="middle">${escape(p.label.replace('. de ', '/'))}</text>`).join('')}
-    </svg></div><p class="note">${baseCount} meses encerrados na base${forecast.length ? '.' : '. A projeção requer pelo menos 3.'}</p></article>`;
+    `<circle cx="${x(index)}" cy="${y(value)}" r="4.2" fill="#fff" stroke="${chartColors.projection}" stroke-width="2.6"><title>${escape(periods[index].label)} · Projeção de ${escape(format(value))}</title></circle>`).join('');
+  const labels = periods.slice(first).map((p, i) => {
+    const [year, month] = p.key.split('-');
+    const name = chartMonth.format(new Date(Date.UTC(Number(year), Number(month) - 1, 1))).replace('.', '');
+    return `<text x="${x(i + first)}" y="183" text-anchor="middle" class="forecast-month">${name}</text>
+      <text x="${x(i + first)}" y="198" text-anchor="middle" class="forecast-year">${year}</text>`;
+  }).join('');
+  return `<article class="forecast-chart"><h3>${title} <span>${unit}</span></h3><div class="table-wrap">
+    <svg viewBox="0 0 768 212" role="img" aria-label="${title} por mês em ${unit}, com tendência e projeção quando há dados suficientes">
+    ${zones}<text x="${left + 8}" y="24" class="forecast-zone">Histórico</text>${grid}${bars}
+    ${line(trend, chartColors.trend)}${line(forecast, chartColors.projection, 'stroke-dasharray="6 4"')}${dots}
+    ${observed.map(({index, value}) => valueLabel(index, value, Math.max(value, trendByIndex.get(index) ?? 0), '#173b57')).join('')}
+    ${forecast.map(({index, value}) => valueLabel(index, value, value, '#08675f')).join('')}${labels}
+    </svg></div>${forecast.length ? '' : `<p class="note">Projeção indisponível. ${baseCount} de 3 meses necessários para o cálculo.</p>`}</article>`;
 }
 
 function forecastSection(monthly, issuedOn) {
   if (!monthly?.months.some(month => month.weeks)) return '';
   const {periods, future, volume, cost} = monthlyForecast(monthly.months, issuedOn);
   const showForecast = volume.forecast.length || cost.forecast.length;
-  return `<section class="trends"><h2>Tendência e projeção mensal</h2>
-    <div class="legend forecast-legend"><span><i style="color:#2269a4"></i>Registrado</span><span><i style="color:#adccdf"></i>Parcial</span>
-      <span><i style="color:#087e73"></i>Tendência</span><span><i style="color:#95540c;border-top-style:dashed"></i>Projeção</span></div>
-    ${forecastChart('Consumo mensal (L)', 'L', liters, periods, volume)}
-    ${forecastChart('Gasto mensal com consumo (R$)', 'R$', value => brl.format(value), periods, cost)}
+  const first = volume.observed[0].index;
+  const firstFuture = monthly.months.length;
+  const chartPeriods = showForecast ? periods : monthly.months;
+  return `<section class="trends forecast-section"><h2>Tendência e projeção mensal</h2>
+    <div class="legend forecast-legend"><span><i class="forecast-key-recorded"></i>Registrado</span><span><i class="forecast-key-partial"></i>Parcial</span>
+      ${showForecast ? '<span><i class="forecast-key-trend"></i>Tendência</span><span><i class="forecast-key-projection"></i>Projeção</span>' : ''}</div>
+    ${forecastChart('Consumo de químicos', 'L', liters, chartPeriods, first, firstFuture, volume)}
+    ${forecastChart('Gasto com consumo', 'R$', value => brl.format(value), chartPeriods, first, firstFuture, cost)}
     ${showForecast ? `<h3>Estimativa dos próximos ${forecastMonths} meses</h3>
       <div class="table-wrap"><table class="monthly-summary"><thead><tr><th scope="col">Mês</th><th scope="col">Consumo projetado</th><th scope="col">Gasto projetado</th></tr></thead><tbody>
       ${future.map((month, i) => `<tr><th scope="row">${escape(month.label)}</th>
@@ -303,10 +329,22 @@ const css = `
   .monthly-products{min-width:720px;margin:6px 0 8px}
   .monthly-products td,.monthly-summary td{white-space:nowrap}
   .monthly-products tbody td:last-child{font-weight:normal}
-  .forecast-legend{margin:8px 0 12px}
-  .forecast-chart{margin-bottom:12px}
-  .forecast-chart svg{min-width:520px;max-height:none;height:auto}
-  .forecast-chart svg text{font-size:10px}
+  .forecast-section>h2{font-size:21px;margin:0 0 8px}
+  .forecast-legend{margin:4px 0 14px;gap:10px 20px}
+  .forecast-legend i{margin-right:5px;border:0;width:17px;vertical-align:middle}
+  .forecast-legend .forecast-key-recorded,.forecast-legend .forecast-key-partial{height:9px;width:12px;border-radius:2px;background:${chartColors.recorded}}
+  .forecast-legend .forecast-key-partial{background:${chartColors.partial};border:1px dashed #7090a8}
+  .forecast-legend .forecast-key-trend{border-top:2px solid ${chartColors.trend}}
+  .forecast-legend .forecast-key-projection{border-top:2px dashed ${chartColors.projection}}
+  .forecast-chart{padding:14px 14px 6px;margin-bottom:12px;border:1px solid #dbe5ed;border-radius:12px;background:#fff}
+  .forecast-chart h3{margin:0 0 6px;display:flex;align-items:center;gap:8px}
+  .forecast-chart h3 span{padding:2px 7px;border-radius:5px;background:#edf3f8;color:#264d69;font-size:10px}
+  .forecast-chart svg{min-width:530px;max-height:none;height:auto}
+  .forecast-chart svg text{font:10px Arial,sans-serif;fill:#526b80}
+  .forecast-chart svg .forecast-zone{font-size:11px;font-weight:700;fill:#2d5b69}
+  .forecast-chart svg .forecast-value{font-size:11px;font-weight:700}
+  .forecast-chart svg .forecast-month{font-size:11px;font-weight:700;fill:#173b57}
+  .forecast-chart svg .forecast-year{font-size:9px}
   .chart-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
   .chart{border:1px solid #dbe5ed;border-radius:8px;padding:10px}
   .bars{display:flex;list-style:none;margin:8px 0 0;padding:0}
@@ -318,7 +356,7 @@ const css = `
   .bar.partial{background:#087e73}
   @media screen and (max-width:740px){main{margin:0;padding:12px}.chart-grid{grid-template-columns:1fr}}
   @media screen and (max-width:420px){.chart{padding:8px 4px}.bars li{font-size:9px}.cards{gap:4px}.cards b{font-size:15px}}
-  @media print{table,.monthly-summary,.monthly-products,.forecast-chart svg{min-width:0}.forecast-chart svg{max-height:49mm}.table-wrap{overflow:visible}.chart-grid{display:block;column-count:2;column-gap:10px}.chart{margin-bottom:10px}}
+  @media print{table,.monthly-summary,.monthly-products,.forecast-chart svg{min-width:0}.forecast-chart{padding:6px 8px 3px;margin-bottom:8px}.forecast-chart svg{max-height:48mm}.table-wrap{overflow:visible}.chart-grid{display:block;column-count:2;column-gap:10px}.chart{margin-bottom:10px}}
 `;
 
 export function renderChemicalPurchaseReport({rows, totals, inventoryDate, period, issuedOn, history, monthly, logo}) {

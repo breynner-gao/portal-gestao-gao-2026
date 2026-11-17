@@ -109,8 +109,17 @@ test('projeção usa a tendência semanal dos meses completos e respeita o calen
   assert.equal(estimate.cost.baseCount, 3);
   assert.deepEqual(estimate.volume.trend.map(point => point.value), [500, 360, 320]);
   const html = renderChemicalPurchaseReport({...reportData, history, monthly: {months, products: []}});
-  assert.match(html, /Consumo mensal \(L\)[\s\S]*Gasto mensal com consumo \(R\$\)/);
+  assert.match(html, /Consumo de químicos <span>L<\/span>[\s\S]*Gasto com consumo <span>R\$<\/span>/);
   assert.match(html, /stroke-dasharray="6 4"/);
+  const chart = html.match(/<svg[\s\S]*?<\/svg>/)[0];
+  assert.match(chart, /class="forecast-zone">Projeção/);
+  assert.match(chart, /class="forecast-value"[^>]*>240<\/text>/);
+  assert.doesNotMatch(chart, /class="forecast-month">jul/);
+  assert.deepEqual([...chart.matchAll(/class="forecast-month">([^<]+)/g)].map(match => match[1]), [
+    'ago', 'set', 'out', 'nov', 'dez', 'jan', 'fev'
+  ]);
+  assert.match(chart, /class="forecast-month">jan<\/text>\s*<text[^>]*class="forecast-year">2027/);
+
   assert.match(html, /jan\. de 2027<\/th>[\s\S]*250,00 L<\/td>[\s\S]*R\$\s2\.500,00/);
 });
 
