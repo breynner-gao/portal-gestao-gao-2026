@@ -18,6 +18,7 @@ const fields={
  auditoria:()=>input('scope','O que foi conferido','text',true)+input('divergence','Divergência encontrada')+input('action','Providência')
 };
 function grams(d){return d.method==='Peça plana retangular aberta'&&[d.length,d.width,d.weight].every(v=>Number(v)>0)?Number(d.weight)*10000/(Number(d.length)*Number(d.width)):null}
+const operatorKey=row=>row.operator_id||'planilha:'+row.responsible;
 const number=n=>Number(n).toLocaleString('pt-BR');
 const dateNow=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Sao_Paulo'}).format(new Date());
 async function pages(api,table,sort,filter=''){
@@ -51,7 +52,7 @@ function productionCards(rows,teamRows=rows){
  const teamTotal=[...teamTotals.values()].reduce((sum,points)=>sum+points,0);
  const people=new Map();
  for(const row of rows){
-  const key=row.operator_id||row.responsible;
+  const key=operatorKey(row);
   if(!people.has(key))people.set(key,{name:row.responsible,activities:new Map(),total:0,quantity:0,measured:false});
   const person=people.get(key);
   if(row.quantity!=null)person.quantity+=Number(row.quantity);
@@ -167,7 +168,7 @@ function professionalCharts(rows,scale,today){
  const periods=productionPeriods(today,scale);
  const people=new Map();
  for(const row of rows){
-  const key=row.operator_id||row.responsible;
+  const key=operatorKey(row);
   if(!people.has(key))people.set(key,[]);
   people.get(key).push(row);
  }
@@ -186,7 +187,9 @@ function professionalCharts(rows,scale,today){
  return '<section><h3>Produção por funcionária · '+escape(scale)+'</h3><p class="sew-chart-legend"><span>■ Registrado</span><span style="color:#77dfbf">━ Tendência</span><span style="color:#ffc078">╌ Projeção</span></p><p><small>* Período atual parcial. Projeção linear baseada nos oito períodos anteriores, usando os períodos encerrados com registros. Dias sem lançamento ficam sem valor. A previsão não considera escala ou feriados.</small></p>'+(charts.join('')||'<p>Sem produção registrada nas datas exibidas.</p>')+'</section>';
 }
 function renderPanel(root,rows,manage){
- root.innerHTML='<h2>'+(manage?'Painel da Costura':'Meus lançamentos')+'</h2><form class="sew-grid">'+input('from','De','date')+input('to','Até','date')+select('person','Profissional',[...new Set(rows.map(r=>r.responsible))].sort(),false)+select('activity','Atividade',Object.values(activities),false)+select('piece','Tipo de peça',[...new Set(rows.map(r=>r.piece_type).filter(Boolean))].sort(),false)+input('customer','Cliente')+input('lot','Lote')+select('period','Agrupar por',['Dia','Mês'],false)+(manage?select('forecast','Visão por funcionária',['Dia','Semana ISO','Mês'],false):'')+'</form><div data-results></div>';
+ const people=[...new Map(rows.map(row=>[operatorKey(row),row.responsible]))].sort((a,b)=>a[1].localeCompare(b[1],'pt-BR'));
+ const personFilter='<label>Profissional<select name="person"><option value="">Selecione</option>'+people.map(([key,name])=>'<option value="'+escape(key)+'">'+escape(name)+'</option>').join('')+'</select></label>';
+ root.innerHTML='<h2>'+(manage?'Painel da Costura':'Meus lançamentos')+'</h2><form class="sew-grid">'+input('from','De','date')+input('to','Até','date')+personFilter+select('activity','Atividade',Object.values(activities),false)+select('piece','Tipo de peça',[...new Set(rows.map(r=>r.piece_type).filter(Boolean))].sort(),false)+input('customer','Cliente')+input('lot','Lote')+select('period','Agrupar por',['Dia','Mês'],false)+(manage?select('forecast','Visão por funcionária',['Dia','Semana ISO','Mês'],false):'')+'</form><div data-results></div>';
  const form=root.querySelector('form'), result=root.querySelector('[data-results]');
  if(manage)form.elements.forecast.value='Dia';
  let month='',week='',day='';
@@ -194,23 +197,23 @@ function renderPanel(root,rows,manage){
  function update(){
   const f=Object.fromEntries(new FormData(form));
   const matching=rows.filter(r=>(!f.from||r.service_date>=f.from)&&(!f.to||r.service_date<=f.to)&&(!f.activity||r.label===f.activity)&&(!f.piece||r.piece_type===f.piece)&&(!f.customer||r.customer?.toLowerCase().includes(f.customer.toLowerCase()))&&(!f.lot||r.lot?.toLowerCase().includes(f.lot.toLowerCase())));
-  const chartRows=matching.filter(r=>!f.person||r.responsible===f.person).filter(r=>(!month||r.service_date.startsWith(month))&&(!week||sewingWeek(r.service_date).key===week));
+  const chartRows=matching.filter(r=>!f.person||operatorKey(r)===f.person).filter(r=>(!month||r.service_date.startsWith(month))&&(!week||sewingWeek(r.service_date).key===week));
   const filtered=day?chartRows.filter(r=>r.service_date===day):chartRows;
   const groups=new Map();
   for(const r of filtered){
    const parts=[f.period==='Dia'?r.service_date:r.service_date.slice(0,7),r.responsible,r.label];
-   const key=JSON.stringify(parts), group=groups.get(key)||[...parts,0,0,0];
+   const key=JSON.stringify([parts[0],operatorKey(r),parts[2]]), group=groups.get(key)||[...parts,0,0,0];
    group[3]++;if(r.quantity!=null)group[4]+=r.quantity;else group[5]++;
    groups.set(key,group);
   }
-  result.innerHTML=(manage?sewingChart(sewingBuckets(chartRows,month,week),month,week,day):'')+(manage&&filtered.length?productionCards(filtered,matching.filter(r=>(!month||r.service_date.startsWith(month))&&(!week||sewingWeek(r.service_date).key===week)&&(!day||r.service_date===day))):'')+(manage?professionalCharts(matching.filter(r=>!f.person||r.responsible===f.person),f.forecast||'Dia',dateNow()):'')+'<p>'+number(filtered.length)+' lançamentos no recorte. Quantidades são comparáveis dentro da mesma atividade. Uma peça pode passar por vários serviços.</p>'+table(['Período','Profissional','Atividade','Lançamentos','Quantidade informada','Sem quantidade em peças'],[...groups.values()].map(g=>[...g.slice(0,4),number(g[4]),g[5]]))+'<h3 data-records-title tabindex="-1">Lançamentos</h3><p>O histórico da planilha conserva as quantidades e descrições originais. O tipo de peça aparece quando foi informado.</p><div data-records></div>';
+  result.innerHTML=(manage?sewingChart(sewingBuckets(chartRows,month,week),month,week,day):'')+(manage&&filtered.length?productionCards(filtered,matching.filter(r=>(!month||r.service_date.startsWith(month))&&(!week||sewingWeek(r.service_date).key===week)&&(!day||r.service_date===day))):'')+(manage?professionalCharts(matching.filter(r=>!f.person||operatorKey(r)===f.person),f.forecast||'Dia',dateNow()):'')+'<p>'+number(filtered.length)+' lançamentos no recorte. Quantidades são comparáveis dentro da mesma atividade. Uma peça pode passar por vários serviços.</p>'+table(['Período','Profissional','Atividade','Lançamentos','Quantidade informada','Sem quantidade em peças'],[...groups.values()].map(g=>[...g.slice(0,4),number(g[4]),g[5]]))+'<h3 data-records-title tabindex="-1">Lançamentos</h3><p>O histórico da planilha conserva as quantidades e descrições originais. O tipo de peça aparece quando foi informado.</p><div data-records></div>';
   result.querySelector('[data-sew-back]')?.addEventListener('click',()=>{if(day)day='';else if(week)week='';else month='';update();result.querySelector('[data-sew-back], [data-sew-bucket]')?.focus();});
   result.querySelectorAll('[data-sew-bucket]').forEach(button=>button.addEventListener('click',()=>{const key=button.dataset.sewBucket;if(!month)month=key;else if(!week)week=key;else day=key;update();if(day){const title=result.querySelector('[data-records-title]');title?.focus();title?.scrollIntoView({block:'start'});}else result.querySelector('[data-sew-bucket], [data-sew-back]')?.focus();}));
   const records=result.querySelector('[data-records]');
   for(const r of filtered){
    const details=document.createElement('details'), title=document.createElement('summary');
    title.textContent=[r.service_date,r.responsible,r.label,r.piece_type,r.quantity??r.source_quantity].filter(v=>v!=null&&v!=='').join(' · ');
-   const metadata=document.createElement('p');metadata.textContent=(r.source_row?'Planilha · linha '+r.source_row+' · carimbo '+r.recorded_local:'Portal · '+r.id+' · lançado em '+new Date(r.created_at).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'}))+[r.customer,r.lot].filter(Boolean).map(v=>' · '+v).join('');
+   const metadata=document.createElement('p');metadata.textContent=(r.source_row?'Planilha · linha '+r.source_row+' · carimbo '+r.recorded_local+' · nome na planilha '+r.imported_name:'Portal · '+r.id+' · lançado em '+new Date(r.created_at).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'}))+[r.customer,r.lot].filter(Boolean).map(v=>' · '+v).join('');
    const body=document.createElement('p');
    const labels={repair_group:'Categoria para pontuação',discard_sent_qty:'Peças enviadas para descarte',condition:'Condição',destination:'Encaminhamento',defect:'Defeito',repair:'Reparo',status:'Situação',previous:'Referência anterior',return_reason:'Motivo do retorno',original_size:'Tamanho original',change:'Alteração',result_piece:'Peça resultante',result_size:'Tamanho resultante',result_qty:'Quantidade resultante',supplier:'Fornecedor',approved:'Aprovadas',pending:'Pendentes',rejected:'Reprovadas',reason:'Motivo',finish:'Costura e acabamento',register:'Cadastro',released:'Liberadas',sample:'Amostra',method:'Método',length:'Comprimento (cm)',width:'Largura (cm)',weight:'Peso (g)',grammage:'Gramatura (g/m²)',reading:'Leitura',piece_ref:'Peça',recommendation:'Recomendação',decision:'Decisão',authorizer:'Autorizador',decision_date:'Data da decisão',scope:'Conferência',divergence:'Divergência',action:'Providência',notes:'Observações'};
    body.textContent=Object.entries(r.details||{}).map(([k,v])=>(labels[k]||k)+': '+v).join(' · ');
@@ -248,10 +251,19 @@ export async function mountSewing(host,api){
   const panel=async()=>{
    const version=++screen;content.textContent='Carregando lançamentos…';
    try{
-    const [current,history]=await Promise.all([pages(api,'quality_sewing_entries','service_date.desc,id.asc'),access.manage?pages(api,'quality_sewing_history','service_date.desc,source_row.asc'):[]]);
+    const [current,history,links]=await Promise.all([
+     pages(api,'quality_sewing_entries','service_date.desc,id.asc'),
+     access.manage?pages(api,'quality_sewing_history','service_date.desc,source_row.asc'):[],
+     access.manage?pages(api,'quality_sewing_history_operator_links','imported_name.asc'):[]
+    ]);
     await refreshNames();
     if(version!==screen)return;
-    renderPanel(content,[...current.map(labelCurrent),...history.map(r=>({...r,label:activities[historicalLabels[r.activity]]||r.activity}))].sort((a,b)=>b.service_date.localeCompare(a.service_date)),access.manage);
+    const importedOperators=new Map(links.map(link=>[link.imported_name,link.operator_id]));
+    const imported=history.map(row=>{
+     const operator_id=importedOperators.get(row.responsible.trim().toLocaleUpperCase('pt-BR'));
+     return {...row,operator_id,imported_name:row.responsible,responsible:names.get(operator_id)||row.responsible,label:activities[historicalLabels[row.activity]]||row.activity};
+    });
+    renderPanel(content,[...current.map(labelCurrent),...imported].sort((a,b)=>b.service_date.localeCompare(a.service_date)),access.manage);
    }catch{if(version===screen)content.textContent='Não foi possível carregar os lançamentos. Clique no painel para tentar novamente.';}
   };
   const entry=()=>{
