@@ -1,4 +1,11 @@
 const activities={entrada:'Avaliação de entrada',reparo:'Pequenos reparos',remodelagem:'Remodelagem',peca_nova:'Avaliação de peças novas',chipagem:'Chipagem',troca_chip:'Troca de chip',condicao:'Avaliação da condição e descarte',retirada_chip:'Retirada de chip',auditoria:'Auditoria'};
+function activityCards(){
+ return '<div class="sew-activities" data-activity-cards aria-label="Atividades da costura">'+Object.entries(activities).map(([key,label],index)=>{
+  const left=(index%3)*50;
+  const top=Math.floor(index/3)*50;
+  return '<button type="button" data-sew-activity="'+key+'"><span class="sew-activity-photo" style="--photo-x:'+left+'%;--photo-y:'+top+'%" aria-hidden="true"></span><span>'+escape(label)+'</span></button>';
+ }).join('')+'</div>';
+}
 const historicalLabels={'REPARO':'reparo','CHIPAGEM':'chipagem','AUDITORIA':'auditoria','AVALIAÇÃO DESCARTE':'condicao','AVALIAÇÃO PARA LIBERAR PEÇAS NOVAS':'peca_nova','AVALIAÇÃO DE ENTRADA NA COSTURA':'entrada','REMODELAGEM':'remodelagem','RETIRADA DE CHIP':'retirada_chip'};
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const options=values=>values.map(v=>'<option>'+escape(v)+'</option>').join('');
@@ -275,7 +282,7 @@ function renderPanel(root,rows,manage){
  form.addEventListener('input',()=>{month='';week='';day='';update();});update();
 }
 export async function mountSewing(host,api){
- host.innerHTML='<style>.sew-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:12px;margin:12px 0}.sew-grid label{display:grid;gap:5px;align-content:start}.sew-grid input,.sew-grid select{min-width:0;width:100%;padding:8px}.sew-table{overflow:auto}.sew-repair-lines{grid-column:1/-1;min-width:0}.sew-repair-lines table{min-width:530px}.sew-repair-lines td:nth-child(3){width:100px}.sew-repair-lines [data-add-repair]{margin-top:10px}.sew-table table{width:100%;border-collapse:collapse}.sew-table th,.sew-table td{text-align:left;padding:8px;border-bottom:1px solid #b8c8d7}#q142 .sew details{padding:8px 0;border-bottom:1px solid #b8c8d7}#q142 .sew output{display:block;padding:8px}.sew-production{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:12px;margin:12px 0}.sew-production article{background:#192632;border:1px solid #40566e;border-radius:12px;padding:14px;color:#eef4ff}.sew-production h3{margin:0 0 10px;color:#eef4ff}.sew-production ul{list-style:none;margin:0;padding:0}.sew-production li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid #304054}.sew-production strong{color:#8ed5fa}.sew-share{display:grid;text-align:right;gap:3px}.sew-share small{color:#c0dbef;white-space:nowrap}.sew-share-note{color:#aec2d8}.sew-total{display:grid;gap:3px;margin:0 0 12px}.sew-total strong{font-size:1.5em}.sew-total small{color:#aec2d8}.sew-tv{width:min(96vw,1500px);max-width:none;max-height:96vh;padding:24px;border:1px solid #40566e;border-radius:14px;background:#111820;color:#eef4ff;font-size:clamp(16px,1.6vw,28px);overflow:auto}.sew-tv:fullscreen{width:100%;height:100%;max-height:none}.sew-tv::backdrop{background:#000b}.sew-tv header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;background:transparent;border:0}.sew-tv h2{color:#eef4ff;margin:0}.sew-tv button{background:#192632;color:#eef4ff}.sew-chart{border:1px solid #40566e;border-radius:12px;padding:14px;margin:12px 0}.sew-chart h3{color:#eef4ff;margin-top:0}.sew-chart-legend{display:flex;gap:16px;flex-wrap:wrap}.sew-chart-legend span:first-child{color:#8ed5fa}.sew-chart-legend span:nth-child(2){color:#ffc078}.sew-chart-scroll{overflow-x:auto}.sew-column-chart{display:grid;grid-template-columns:repeat(var(--periods),minmax(0,1fr));position:relative;--plot-height:clamp(145px,24vh,235px)}.sew-column-chart button{display:grid;grid-template-rows:var(--plot-height) auto auto;align-content:start;gap:4px;padding:0 4px 8px;background:transparent;color:#eef4ff;border:0;border-radius:0;min-width:0;overflow-wrap:anywhere}.sew-column-chart button:hover,.sew-column-chart button:focus-visible,.sew-column-chart button[aria-pressed=true]{background:#253746;outline:1px solid #8ed5fa;outline-offset:-1px}.sew-column-plot{display:flex;align-items:end;justify-content:center;border-bottom:1px solid #40566e}.sew-column{display:block;width:68%;max-width:72px;border-radius:4px 4px 0 0;background:#5bacec}.sew-trend{position:absolute;top:0;left:0;width:100%;height:var(--plot-height);pointer-events:none;z-index:1;overflow:hidden}.sew-professional-chart{--plot-height:140px}.sew-professional-period{display:grid;grid-template-rows:var(--plot-height) auto auto;gap:4px;text-align:center;font-size:.82rem;overflow-wrap:anywhere}.sew-projected{color:#ffc078}.sew-chart h4{color:#eef4ff}</style><div class="q142-card sew"><a href="/#qualidade">← Qualidade</a><h1>Costura</h1><p role="status">Verificando acesso…</p></div>';
+ host.innerHTML='<style>.sew [data-content] [hidden]{display:none}.sew-activities{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:14px 0}.sew .sew-activities button{display:flex;flex-direction:column;gap:0;align-items:stretch;min-width:0;padding:0;overflow:hidden;text-align:left;white-space:normal;color:#f0f7ff;background:#192632;border:1px solid #435970;border-radius:12px;font-size:clamp(.92rem,1.5vw,1.08rem);line-height:1.3;font-weight:750}.sew .sew-activities button:hover{border-color:#8ed5fa;background:#23384a}.sew .sew-activities button:focus-visible{outline:2px solid #8ed5fa;outline-offset:3px}.sew .sew-activities button>span:last-child{padding:11px 12px}.sew-activity-photo{display:block;aspect-ratio:1.9;position:relative;overflow:hidden;background:#213545}.sew-activity-photo::before{content:"";display:block;width:100%;aspect-ratio:1;position:absolute;top:50%;transform:translateY(-50%);background-image:url("/assets/costura/atividades-v1.webp");background-size:300% 300%;background-position:var(--photo-x) var(--photo-y);background-repeat:no-repeat}.sew-activity-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0}.sew-activity-heading h3{margin:0;color:inherit}@media(max-width:600px){.sew-activities{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}}@media(max-width:320px){.sew-activities{grid-template-columns:minmax(0,1fr)}}.sew-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:12px;margin:12px 0}.sew-grid label{display:grid;gap:5px;align-content:start}.sew-grid input,.sew-grid select{min-width:0;width:100%;padding:8px}.sew-table{overflow:auto}.sew-repair-lines{grid-column:1/-1;min-width:0}.sew-repair-lines table{min-width:530px}.sew-repair-lines td:nth-child(3){width:100px}.sew-repair-lines [data-add-repair]{margin-top:10px}.sew-table table{width:100%;border-collapse:collapse}.sew-table th,.sew-table td{text-align:left;padding:8px;border-bottom:1px solid #b8c8d7}#q142 .sew details{padding:8px 0;border-bottom:1px solid #b8c8d7}#q142 .sew output{display:block;padding:8px}.sew-production{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:12px;margin:12px 0}.sew-production article{background:#192632;border:1px solid #40566e;border-radius:12px;padding:14px;color:#eef4ff}.sew-production h3{margin:0 0 10px;color:#eef4ff}.sew-production ul{list-style:none;margin:0;padding:0}.sew-production li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid #304054}.sew-production strong{color:#8ed5fa}.sew-share{display:grid;text-align:right;gap:3px}.sew-share small{color:#c0dbef;white-space:nowrap}.sew-share-note{color:#aec2d8}.sew-total{display:grid;gap:3px;margin:0 0 12px}.sew-total strong{font-size:1.5em}.sew-total small{color:#aec2d8}.sew-tv{width:min(96vw,1500px);max-width:none;max-height:96vh;padding:24px;border:1px solid #40566e;border-radius:14px;background:#111820;color:#eef4ff;font-size:clamp(16px,1.6vw,28px);overflow:auto}.sew-tv:fullscreen{width:100%;height:100%;max-height:none}.sew-tv::backdrop{background:#000b}.sew-tv header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;background:transparent;border:0}.sew-tv h2{color:#eef4ff;margin:0}.sew-tv button{background:#192632;color:#eef4ff}.sew-chart{border:1px solid #40566e;border-radius:12px;padding:14px;margin:12px 0}.sew-chart h3{color:#eef4ff;margin-top:0}.sew-chart-legend{display:flex;gap:16px;flex-wrap:wrap}.sew-chart-legend span:first-child{color:#8ed5fa}.sew-chart-legend span:nth-child(2){color:#ffc078}.sew-chart-scroll{overflow-x:auto}.sew-column-chart{display:grid;grid-template-columns:repeat(var(--periods),minmax(0,1fr));position:relative;--plot-height:clamp(145px,24vh,235px)}.sew-column-chart button{display:grid;grid-template-rows:var(--plot-height) auto auto;align-content:start;gap:4px;padding:0 4px 8px;background:transparent;color:#eef4ff;border:0;border-radius:0;min-width:0;overflow-wrap:anywhere}.sew-column-chart button:hover,.sew-column-chart button:focus-visible,.sew-column-chart button[aria-pressed=true]{background:#253746;outline:1px solid #8ed5fa;outline-offset:-1px}.sew-column-plot{display:flex;align-items:end;justify-content:center;border-bottom:1px solid #40566e}.sew-column{display:block;width:68%;max-width:72px;border-radius:4px 4px 0 0;background:#5bacec}.sew-trend{position:absolute;top:0;left:0;width:100%;height:var(--plot-height);pointer-events:none;z-index:1;overflow:hidden}.sew-professional-chart{--plot-height:140px}.sew-professional-period{display:grid;grid-template-rows:var(--plot-height) auto auto;gap:4px;text-align:center;font-size:.82rem;overflow-wrap:anywhere}.sew-projected{color:#ffc078}.sew-chart h4{color:#eef4ff}</style><div class="q142-card sew"><a href="/#qualidade">← Qualidade</a><h1>Costura</h1><p role="status">Verificando acesso…</p></div>';
  const root=host.querySelector('.sew'), message=root.querySelector('[role=status]');
  try{
   await window.GAO_AUTH_READY;
@@ -320,9 +327,13 @@ export async function mountSewing(host,api){
   };
   const entry=()=>{
    ++screen;
-   content.innerHTML='<h2>Lançar serviço</h2><p>Responsável: '+escape(identity)+'</p><form><div class="sew-grid">'+input('service_date','Data do serviço','date',true)+'<label>Atividade<select name="activity" required><option value="">Selecione</option>'+Object.entries(activities).map(([k,v])=>'<option value="'+k+'">'+v+'</option>').join('')+'</select></label>'+input('piece_type','Tipo de peça','text',true)+input('quantity','Quantidade de peças','number',true)+input('lot','Lote ou referência da entrada')+input('customer','Cliente ou origem')+'</div><div class="sew-grid" data-fields></div><p class="sew-share-note" data-score aria-live="polite" hidden></p>'+input('notes','Observações')+' <button class="q142-btn q142-primary" type="submit">Salvar lançamento</button><p role="status"></p></form>';
+   content.innerHTML='<h2>Lançar serviço</h2><p>Responsável: '+escape(identity)+'</p>'+activityCards()+'<p role="status" data-entry-feedback></p><form hidden><div class="sew-activity-heading"><h3 data-activity-title tabindex="-1"></h3><button type="button" data-change-activity>Trocar atividade</button></div><input type="hidden" name="activity"><div class="sew-grid">'+input('service_date','Data do serviço','date',true)+input('piece_type','Tipo de peça','text',true)+input('quantity','Quantidade de peças','number',true)+input('lot','Lote ou referência da entrada')+input('customer','Cliente ou origem')+'</div><div class="sew-grid" data-fields></div><p class="sew-share-note" data-score aria-live="polite" hidden></p>'+input('notes','Observações')+' <button class="q142-btn q142-primary" type="submit">Salvar lançamento</button><p role="status"></p></form>';
    const form=content.querySelector('form'), feedback=form.querySelector('[role=status]'), detail=form.querySelector('[data-fields]');
    form.elements.service_date.value=dateNow();form.elements.quantity.min=1;
+   const cards=content.querySelector('[data-activity-cards]');
+   const activityField=form.elements.activity;
+   const heading=form.querySelector('[data-activity-title]');
+   const entryFeedback=content.querySelector('[data-entry-feedback]');
    const score=form.querySelector('[data-score]');
    const quantityField=form.elements.quantity;
    const updatePreview=()=>{
@@ -351,13 +362,31 @@ export async function mountSewing(host,api){
     const result=canPreview&&activity!=='troca_chip'?' Pontuação do lançamento: '+number(total)+' '+(total===1?'ponto':'pontos')+'.':'';
     score.textContent=rule+result;
    };
-   form.elements.activity.onchange=()=>{
-    const activity=form.elements.activity.value;
-    if(quantityField.readOnly||activity==='reparo')quantityField.value='';
-    quantityField.readOnly=activity==='reparo';
-    detail.innerHTML=fields[activity]?.()||'';
+   function showActivities(){
+    const selected=cards.querySelector('[data-sew-activity="'+activityField.value+'"]');
+    form.hidden=true;
+    cards.hidden=false;
+    (selected||cards.querySelector('button')).focus();
+   }
+   cards.addEventListener('click',event=>{
+    const card=event.target.closest('[data-sew-activity]');
+    if(!card)return;
+    const activity=card.dataset.sewActivity;
+    if(activityField.value!==activity){
+     if(quantityField.readOnly||activity==='reparo')quantityField.value='';
+     quantityField.readOnly=activity==='reparo';
+     activityField.value=activity;
+     detail.innerHTML=fields[activity]();
+    }
+    heading.textContent=activities[activity];
+    entryFeedback.textContent='';
+    feedback.textContent='';
+    cards.hidden=true;
+    form.hidden=false;
     updatePreview();
-   };
+    heading.focus();
+   });
+   form.querySelector('[data-change-activity]').addEventListener('click',showActivities);
    detail.addEventListener('click',event=>{
     if(event.target.closest('[data-add-repair]')){
      const rows=detail.querySelector('[data-repair-rows]');
@@ -402,16 +431,20 @@ export async function mountSewing(host,api){
     if(activity==='condicao'&&d.decision!=='Aguardando decisão'&&(!d.authorizer.trim()||!d.decision_date))error='Informe o responsável e a data da decisão.';
     if(activity==='condicao'&&Number(d.discard_sent_qty)>qty)error='O envio para descarte não pode exceder a quantidade avaliada neste lançamento.';
     if(error){feedback.textContent=error;return;}
-    const submit=e.submitter;submit.disabled=true;feedback.textContent='Salvando…';
+    const submit=e.submitter;
+    const changeActivity=form.querySelector('[data-change-activity]');
+    submit.disabled=true;
+    changeActivity.disabled=true;
+    feedback.textContent='Salvando…';
     try{
      const body={service_date,activity,piece_type:piece_type.trim(),quantity:qty,lot:lot.trim()||null,customer:customer.trim()||null,details:Object.fromEntries(Object.entries(d).filter(([,v])=>v!==''))};
      const payload=JSON.stringify(body);
      if(previousPayload&&previousPayload!==payload)id=crypto.randomUUID();
      previousPayload=payload;
      await api('quality_sewing_entries','on_conflict=id',{method:'POST',prefer:'resolution=ignore-duplicates,return=minimal',body:{id,...body}});
-     id=crypto.randomUUID();previousPayload=undefined;form.reset();quantityField.readOnly=false;form.elements.service_date.value=dateNow();detail.replaceChildren();updatePreview();feedback.textContent='Lançamento salvo.';
+     id=crypto.randomUUID();previousPayload=undefined;form.reset();activityField.value="";quantityField.readOnly=false;form.elements.service_date.value=dateNow();detail.replaceChildren();updatePreview();feedback.textContent='';showActivities();entryFeedback.textContent='Lançamento salvo.';
     }catch{feedback.textContent='Não foi possível confirmar o lançamento. Tente salvar novamente.';}
-    finally{submit.disabled=false;}
+    finally{submit.disabled=false;changeActivity.disabled=false;}
    };
   };
   root.querySelector('[data-entry]')?.addEventListener('click',entry);
