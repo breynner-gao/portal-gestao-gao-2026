@@ -257,6 +257,7 @@ export function createBuyingController(env) {
         "afterbegin",
         '<p><button type="button" data-fw-buy-tool="supplier">+ Cadastrar fornecedor</button></p>',
       );
+    if (kind === "purchases") d.querySelector('[data-fw-purchase-stage="ordered"]')?.click();
     return d;
   }
   function quantity(key) {
@@ -566,11 +567,11 @@ export function createBuyingController(env) {
             const selected = el.dataset.fwDetailKey === "oc-" + b.dataset.fwBuyOpenPo;
             el.toggleAttribute("data-fw-purchase-excluded", !selected);
             if (selected) {
-              el.open = true;
               if (el.dataset.pending !== "true") stage = "history";
             }
           }
           d.querySelector('[data-fw-purchase-stage="'+stage+'"]')?.click();
+          env.openPurchaseOrder(b.dataset.fwBuyOpenPo,d.querySelector(".fw-purchase-orders"));
           return;
         }
         if (b.dataset.fwBuyTool) {

@@ -3,6 +3,7 @@ import {createFactionDesk} from '../fabric-faction-portal-v1.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import {purchaseReportStatuses} from '../fabric-purchase-report-v1.mjs';
 import {readFile} from 'node:fs/promises';
 import * as linenRules from '../linen-risk-rules-v150.mjs';
 import * as rules from '../fabric-workflow-rules-v1.mjs';
@@ -10,8 +11,8 @@ import * as standards from '../fabric-standard-rules-v1.mjs';
 import {createFabricWorkbookImport} from '../fabric-workbook-import-v1.mjs';
 const source=await readFile(new URL('../fabric-workflow-ui-v1.js',import.meta.url),'utf8');
 function harness(){
- const calls=[];const context={...linenRules,...rules,...standards,createFactionWorkflow,createFactionDesk,createFabricWorkbookImport,createBuyingController:()=>({view:()=>'',restore(){}}),console,Event:class{},crypto:{randomUUID:()=> 'test-key'},window:{GAO_LINEN_NEED_SNAPSHOT:[],dispatchEvent(){}},document:{createElement:()=>({textContent:''}),head:{appendChild(){}},addEventListener(){},querySelector:()=>null,documentElement:{}},MutationObserver:class{observe(){}},setInterval(){},FormData:class{constructor(form){this.form=form}entries(){return Object.entries(this.form.values)}},fetch:async(url,options)=>{calls.push({url,body:options.body?JSON.parse(options.body):null});return{ok:true,text:async()=> '[]'}}};
- vm.createContext(context);vm.runInContext(source.replace(/^(?:import[^\n]+\n)+/,'').replace(/\}\)\(\);\s*$/,'window.test={state,submit,orderStats,trackingView,createOrder,catalogModelValues,catalogAction,catalogManagementView,stockPanelGroup,stockLotsView,purchaseOrderView,qualityView,demandDrafts,demandQuantity,demandRequestedPieces,materialPurchasePlan,materialCoverageView,materialLinkInfo,trackingReconciled,reconciliationLine,reconciliationStockPlan,recipeSourceChoices,recipeCostValues,applyRecipeCost,internalFabricOptions,planningFabrics,standardsManagementView,recipeView};})();'),context);
+ const calls=[];const context={purchaseReportStatuses,...linenRules,...rules,...standards,createFactionWorkflow,createFactionDesk,createFabricWorkbookImport,createBuyingController:()=>({view:()=>'',restore(){}}),console,Event:class{},crypto:{randomUUID:()=> 'test-key'},window:{GAO_LINEN_NEED_SNAPSHOT:[],dispatchEvent(){}},document:{createElement:()=>({textContent:''}),head:{appendChild(){}},addEventListener(){},querySelector:()=>null,documentElement:{}},MutationObserver:class{observe(){}},setInterval(){},FormData:class{constructor(form){this.form=form}entries(){return Object.entries(this.form.values)}},fetch:async(url,options)=>{calls.push({url,body:options.body?JSON.parse(options.body):null});return{ok:true,text:async()=> '[]'}}};
+ vm.createContext(context);vm.runInContext(source.replace(/^(?:import[^\n]+\n)+/,'').replace(/\}\)\(\);\s*$/,'window.test={state,submit,orderStats,trackingView,createOrder,catalogModelValues,catalogAction,catalogManagementView,stockPanelGroup,stockLotsView,purchaseOrderView,purchaseOrderBody,purchaseSupplierBody,qualityView,demandDrafts,demandQuantity,demandRequestedPieces,materialPurchasePlan,materialCoverageView,materialLinkInfo,trackingReconciled,reconciliationLine,reconciliationStockPlan,recipeSourceChoices,recipeCostValues,applyRecipeCost,internalFabricOptions,planningFabrics,standardsManagementView,recipeView};})();'),context);
  context.window.test.state.org='org';context.window.test.state.session={access_token:'session',user:{id:'user'}};return{...context.window.test,calls,document:context.document,window:context.window};
 }
 test('envio de lote calcula prazo de 21 dias e envia dados para persistência',async()=>{const h=harness();await h.submit({dataset:{fwForm:'dispatch'},values:{id:'cut',sent_date:'2026-11-09',expected_date:'',supplier_id:'supplier',notes:''}});assert.equal(h.calls[0].body.expected_date,'2026-11-30');assert.equal(h.calls[0].body.sent_date,'2026-11-09');assert.equal(h.calls[0].body.supplier_id,'supplier');});
@@ -28,7 +29,14 @@ test('lista mostra editar, duplicar, inativar e excluir sem abrir formulário',(
 
 test('estoque, pedidos, recebimento e lotes pertencem a telas distintas',()=>{const h=harness();for(const [heading,mode] of [['Saldo e valor por tecido','stock'],['Acompanhamento geral dos pedidos de tecido','purchases'],['Registrar compra recebida / lote','receipt'],['Lotes recebidos e aprovação','lots']])assert.equal(h.stockPanelGroup(heading),mode);});
 test('lotes agrupam por NF e fornecedor sem confundir notas de mesmo número',()=>{const h=harness();h.state.lots=[{id:'l1',invoice_number:'10',supplier_id:'s1',lot_code:'A',quantity_received_m:1,quality_status:'APROVADO'},{id:'l2',invoice_number:'10',supplier_id:'s1',lot_code:'B',quantity_received_m:2,quality_status:'PENDENTE'},{id:'l3',invoice_number:'10',supplier_id:'s2',lot_code:'C',quantity_received_m:3,quality_status:'APROVADO'}];const html=h.stockLotsView();assert.equal((html.match(/data-fw-lots-row/g)||[]).length,2);assert.match(html,/2 lote\(s\)/);assert.match(html,/data-fw-open-lot-quality="l2"/);});
-test('pedido inicia recolhido e novo pedido fica antes da lista',()=>{const h=harness();h.state.purchaseOrders=[{id:'p1',order_number:'TESTE',status:'ABERTA'}];const html=h.purchaseOrderView();assert.match(html,/<details class="fw-po-order"/);assert.doesNotMatch(html,/<details class="fw-po-order"[^>]* open/);assert.ok(html.indexOf('+ Novo pedido de compra')<html.indexOf('OC TESTE'));});
+test('novo pedido fica antes dos cards e não exibe a OC em lista expansível',()=>{
+ const h=harness();h.state.purchaseOrders=[{id:'p1',supplier_id:'s1',order_number:'TESTE',status:'ABERTA'}];
+ const html=h.purchaseOrderView();
+ assert.match(html,/data-fw-purchase-meta hidden/);
+ assert.match(html,/data-order-id="p1" data-supplier-id="s1"/);
+ assert.ok(html.indexOf('+ Novo pedido de compra')<html.indexOf('data-fw-purchase-cards'));
+ assert.doesNotMatch(html,/<details class="fw-po-order"/);
+});
 test('abrir avaliação de lote aprovado mostra somente seu histórico',()=>{const h=harness();h.state.lots=[{id:'l1',lot_code:'A',quality_status:'APROVADO',quantity_received_m:1}];h.state.qualityLot='l1';h.state.inspections=[{lot_id:'l1',inspection_status:'APROVADO',notes:'Parecer do lote A'},{lot_id:'l2',notes:'Outro lote'}];const html=h.qualityView();assert.match(html,/Parecer do lote A/);assert.doesNotMatch(html,/Outro lote/);});
 
 test('ajuste da quantidade permite aumentar e diminuir sem descontar OS duas vezes',()=>{const h=harness(),row={produtoId:'P1',pedidoReal:37,needWithoutTracking:57,pendingServiceOrders:20};h.demandDrafts.set('P1','40');assert.equal(h.demandQuantity(row),40);assert.equal(h.demandRequestedPieces(row),60);h.demandDrafts.set('P1','30');assert.equal(h.demandRequestedPieces(row),50);h.demandDrafts.delete('P1');assert.equal(h.demandRequestedPieces(row),57);});
@@ -71,9 +79,15 @@ test('plano abate consumo conciliado, preserva reservas e não cria OS duplicada
  h.state.reconciliations=[{tracking_id:'t',reserved_m:20,consumed_m:30,returned_m:0,tracking_snapshot:{quantity:80,delivered:0,cut_status:'PENDENTE',product_reference:'P'}}];
  const plan=h.materialPurchasePlan();assert.equal(plan.reconciliationPending,false);assert.equal(plan.fabrics[0].needed,50);assert.equal(plan.fabrics[0].recorded,70);assert.equal(plan.fabrics[0].free,50);assert.equal(plan.fabrics[0].reserved,20);assert.equal(h.state.items.length,0);
 });
-test('OC contém produtos expansíveis e notas dos recebimentos sem navegação',()=>{
+test('consulta da OC mostra produtos, notas, lotes, recebimento e edição sem listas expansíveis',()=>{
  const h=harness();h.state.fabric=[{id:'f',code:'TEC',name:'Tecido'}];h.state.purchaseOrders=[{id:'p',order_number:'TESTE',status:'ABERTA'}];h.state.purchaseItems=[{id:'i',purchase_order_id:'p',fabric_id:'f',ordered_m:10,received_m:5}];h.state.purchaseReceipts=[{purchase_order_item_id:'i',lot_id:'l'}];h.state.lots=[{id:'l',invoice_number:'NF-TESTE',lot_code:'LOTE',quantity_received_m:5,quality_status:'APROVADO'}];
- const html=h.purchaseOrderView();assert.match(html,/data-fw-purchase-product/);assert.match(html,/NF NF-TESTE/);assert.match(html,/Receber este produto/);assert.doesNotMatch(html,/<details[^>]+ open/);
+ h.state.canManagePurchases=true;
+ const html=h.purchaseOrderBody(h.state.purchaseOrders[0]);
+ assert.match(html,/NF-TESTE/);assert.match(html,/LOTE/);assert.match(html,/Receber este produto/);assert.match(html,/Editar pedido/);assert.doesNotMatch(html,/<details/);
+ const group={orders:[{id:'p'}]};
+ assert.match(h.purchaseSupplierBody(group),/Editar pedido/);
+ h.state.canManagePurchases=false;
+ assert.doesNotMatch(h.purchaseSupplierBody(group),/Editar pedido/);
 });
 
 test('conciliação usa saldo único do padrão GAO sem exigir escolha de lote',()=>{

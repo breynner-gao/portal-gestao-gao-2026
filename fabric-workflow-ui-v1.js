@@ -1,10 +1,11 @@
+import {groupPurchaseCards,supplierCards} from '/fabric-purchase-cards-v1.mjs?v=1';
 import { purchaseReportStatuses, renderPurchaseReport } from '/fabric-purchase-report-v1.mjs?v=4';
 import { openReport as openPurchaseReportWindow } from '/relave-report-export-v1.mjs?v=1';
 import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=5';
 import {createFactionDesk} from '/fabric-faction-portal-v1.mjs?v=2';
 import {createFabricWorkbookImport} from '/fabric-workbook-import-v1.mjs?v=1';
 import {buildPendingProductionCoverage,applyPendingProductionCoverage,compactDimensionKey} from '/linen-risk-rules-v150.mjs?v=227';
-import {createBuyingController} from '/linen-buying-controller-v1.mjs?v=9';
+import {createBuyingController} from '/linen-buying-controller-v1.mjs?v=10';
 import { fabricCatalogVariantKey, fabricInvoiceAliasKey, summarizeFabricPurchaseOrder, groupPendingFabricLotsByInvoice, latestFabricConsumptionByVariant, fabricCostReferenceLabel, normalizeFabricNumber, serviceOrderDueDate } from '/fabric-workflow-rules-v1.mjs?v=3'; import {sameFabricStandard,groupFabricStandards,purchaseReferenceChoices} from '/fabric-standard-rules-v1.mjs?v=2';
 (() => {
 'use strict';
@@ -19,6 +20,42 @@ const directFactionRoute=globalThis.location?.pathname.replace(/\/+$/,'')==='/en
 const state={budgetMonth:new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit'}).format(new Date()),budgets:[],budgetError:false,factionCounts:[],factionCountsError:false,org:null,session:null,tab:directFactionRoute?'faction-desk':'overview',qualityInvoice:'',fabric:[],standards:[],suppliers:[],recipes:[],lots:[],orders:[],items:[],moves:[],returns:[],purchaseOrders:[],purchaseItems:[],purchaseReceipts:[],aliases:[],inspections:[],tracking:[],cuts:[],consumptionReferences:[],materialLinks:[],reconciliations:[],costReferences:[],pieceOrders:[],pieceReceipts:[],enfestos:[],loaded:false,busy:false,error:'',snapshot:[],mode:!directMovements};
 const style=document.createElement('style');style.textContent='.fw-shell{margin:14px 0;color:#082d52}.fw-head,.fw-panel{background:#fff;border:1px solid #d5e2ef;border-radius:12px;padding:16px;margin:10px 0}.fw-head{display:flex;justify-content:space-between;align-items:center;background:#eef7ff}.fw-head small{font-weight:900;letter-spacing:.12em;color:#0879c9}.fw-head h2{margin:5px 0}.fw-head p,.fw-panel p{color:#54708e;margin:6px 0 12px}.fw-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.fw-tabs button,.fw-panel button{border:0;border-radius:8px;background:#3188cc;color:white;padding:9px 12px;font-weight:800}.fw-tabs button{background:#fff;color:#174a78;border:1px solid #b9d1e8}.fw-tabs button.active{background:#3188cc;color:white}.fw-panel h3{margin:0 0 10px}.fw-panel table{width:100%;border-collapse:collapse;min-width:780px;font-size:13px}.fw-panel th,.fw-panel td{text-align:left;padding:9px;border-bottom:1px solid #e7eef5;vertical-align:top}.fw-panel th{background:#f3f8fd;color:#54708e}.fw-panel td small{display:block;color:#7890a8;margin-top:4px}.fw-po-line{display:flex;flex-wrap:wrap;gap:8px;align-items:center;width:100%}.fw-po-order{border-top:1px solid #e7eef5;padding-top:8px;margin-top:12px}.fw-status{display:inline-block;background:#eef5fb;border-radius:999px;padding:4px 9px;color:#174a78;font-size:12px;font-weight:800}.fw-po-summary{grid-template-columns:repeat(5,1fr);margin:12px 0}.fw-po-order h4{margin:8px 0}.fw-purchase-orders>form{margin:10px 0 14px}.fw-panel form{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.fw-panel input,.fw-panel select{padding:9px;border:1px solid #b9d1e8;border-radius:8px;min-width:150px}.fw-panel form button{min-height:38px}.fw-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.fw-cards article{background:#fff;border:1px solid #d5e2ef;border-radius:10px;padding:14px}.fw-cards small,.fw-cards b{display:block}.fw-cards small{color:#54708e}.fw-cards b{font-size:22px;margin-top:7px}.fw-error{background:#fff0f0;border:1px solid #f4bcbc;color:#9b1c1c;padding:10px;border-radius:8px}.fw-note{padding:10px;color:#54708e}.fw-table-scroll{overflow:auto}.fw-catalog-edit{border:1px solid #e1eaf3;border-radius:9px;padding:10px;margin:8px 0}.fw-catalog-edit summary{cursor:pointer}.fw-catalog-edit form{margin-top:10px}.fw-catalog-edit label,.fw-panel form label{display:flex;gap:6px;align-items:center}.fw-alias-row{border-bottom:1px solid #e7eef5;padding:8px}#gao-linen-risk-shell.fw-mode>.lr150-shell{display:none!important}#gao-linen-risk-shell>#gao-fabric-flow:not([hidden]){display:block!important}@media(max-width:760px){.fw-cards{grid-template-columns:1fr}.fw-po-summary{grid-template-columns:1fr}.fw-panel form input,.fw-panel form select{width:100%}.fw-head{align-items:start;gap:8px;flex-direction:column}}';document.head.appendChild(style);
 style.textContent+='.fw-source-picker{display:grid!important;gap:6px;width:100%;font-weight:800;color:#54708e}.fw-source-picker select{width:100%;max-width:100%}[data-fw-consumption-note]{display:block;width:100%;padding:2px 0;font-size:12px;line-height:1.5}';
+style.textContent+=`
+.fw-po-supplier-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,17rem),1fr));gap:14px;margin-top:14px}
+.fw-panel .fw-po-supplier{display:grid;gap:8px;justify-items:start;text-align:left;min-width:0;padding:16px;border:1px solid #b9d6ec;border-radius:12px;background:#f2f8fe;color:#123b60;font-weight:500;cursor:pointer;overflow-wrap:anywhere}
+.fw-panel .fw-po-supplier:hover{background:#e5f1fc;border-color:#3188cc}
+.fw-panel .fw-po-supplier:focus-visible,.fw-po-popup button:focus-visible{outline:2px solid #0879c9;outline-offset:3px}
+.fw-po-supplier strong{font-size:1.15rem;color:#082d52}
+.fw-po-supplier span:nth-child(2){font-weight:800}
+.fw-po-supplier span:last-child{color:#174a78;font-weight:750}
+.fw-recipe-dialog.fw-po-popup{box-sizing:border-box;width:min(1040px,calc(100% - 24px));max-height:90dvh;background:#f3f8fd;color:#082d52;border:1px solid #b9d6ec;overflow:auto}
+.fw-po-popup .fw-modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#f3f8fd;color:#082d52}
+.fw-po-popup .fw-modal-head h2{min-width:0;overflow-wrap:anywhere;font-size:clamp(1.15rem,3vw,1.6rem)}
+.fw-po-popup .fw-modal-head button{width:auto;min-width:0;height:auto}
+.fw-po-popup .fw-panel{color:#082d52}
+.fw-po-popup .fw-panel th{color:#123b60}
+.fw-po-popup .fw-panel table{min-width:36rem}
+.fw-po-popup .fw-po-actions{display:flex;flex-wrap:wrap;gap:8px}
+.fw-po-popup .fw-po-actions button{min-height:42px;cursor:pointer}
+.fw-po-popup .fw-po-actions button[data-fw-view-purchase],.fw-po-popup .fw-po-actions button[data-fw-po-close]{background:#e8f3fd;color:#123b60}
+.fw-po-popup .fw-po-actions button.fw-exclude-po{background:#fff1f1;color:#9b1c1c;border:1px solid #efb8b8}
+.fw-po-popup .fw-po-facts,.fw-po-popup .fw-po-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,13rem),1fr));gap:10px;margin:0 0 12px}
+.fw-po-popup .fw-po-facts div{border-radius:8px;background:#eef5fb;padding:10px 12px;overflow-wrap:anywhere}
+.fw-po-popup .fw-po-facts dt{font-size:.8rem;font-weight:750;color:#40698b}
+.fw-po-popup .fw-po-facts dd{margin:3px 0 0}
+.fw-po-popup .fw-panel form.fw-po-edit-form{display:block}
+.fw-po-popup .fw-panel .fw-field{display:grid;min-width:0;color:#123b60;font-weight:750}
+.fw-po-popup .fw-field input,.fw-po-popup .fw-field select,.fw-po-popup .fw-field textarea{box-sizing:border-box;min-width:0;width:100%;background:#fff;color:#082d52}
+.fw-po-popup .fw-field textarea{border:1px solid #b9d1e8;border-radius:8px;padding:9px;resize:vertical}
+.fw-po-popup .fw-field input[readonly]{background:#eef3f8;color:#40698b}
+.fw-po-popup .fw-po-notes{grid-column:1/-1}
+.fw-po-popup .fw-po-product{margin:16px 0;padding:12px 0;border-top:1px solid #d5e2ef}
+.fw-po-order-list{display:grid;gap:10px}
+.fw-po-order-entry{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;padding:12px;border:1px solid #d5e2ef;border-radius:9px}
+.fw-po-order-entry h3{margin:0 0 4px}
+.fw-po-order-entry p{margin:6px 0 0}
+@media(max-width:620px){.fw-po-order-entry{grid-template-columns:1fr}.fw-po-popup .fw-panel{padding:12px}.fw-po-popup .fw-panel th,.fw-po-popup .fw-panel td{padding:7px}}
+`;
 const headers=()=>({apikey:KEY,Authorization:'Bearer '+state.session.access_token,'Content-Type':'application/json',Prefer:'return=representation'});
 async function api(path,opts={}){const r=await fetch(SB+path,{...opts,headers:{...headers(),...(opts.headers||{})}});const t=await r.text();let d;try{d=t?JSON.parse(t):null}catch{d=t}if(!r.ok)throw Error(d?.message||d?.details||d?.hint||String(d||'Falha no Supabase'));return d}
 async function rpc(name,args){return api('/rest/v1/rpc/'+name,{method:'POST',body:JSON.stringify(args)})}
@@ -32,6 +69,7 @@ async function init(){
  const org=(m||[]).find(x=>x.organizations?.active&&x.organizations?.kind==='gao');
  if(!org)throw Error('Sua conta não possui vínculo ativo com a organização GAO.');
  state.org=org.organization_id;
+ state.canManagePurchases=await rpc('fabric_user_has_permission',{p_organization_id:state.org,p_permission_code:'textiles.inventory.manage'}).catch(()=>false);
  await reload();
 }
 async function reload(){
@@ -130,7 +168,9 @@ function overviewView(){
 }
 function render(){
  const host=document.querySelector('#gao-fabric-flow');if(!host)return;host.hidden=!state.mode;
- const previousPurchaseStage=host.querySelector('.fw-purchase-orders')?.dataset.purchaseStage;
+ const formerPurchases=host.querySelector('.fw-purchase-orders');
+ const previousPurchaseStage=formerPurchases?.dataset.purchaseStage;
+ const purchaseSearch=formerPurchases?.querySelector('[data-fw-purchase-search]')?.value;
  const expanded=[...host.querySelectorAll('details[data-fw-detail-key][open]')].map(d=>d.dataset.fwDetailKey);
  const shortcuts={
   buying:[['material-need','Necessidade de compra de tecido']],
@@ -143,7 +183,13 @@ function render(){
  host.innerHTML='<section class="fw-shell"><header class="fw-head"><div><small>ENXOVAL • PRODUÇÃO TÊXTIL</small><h2>'+esc(({overview:'Gestão de Tecidos e Produção de Enxoval',buying:'Necessidades','material-need':'Necessidade de compra de tecido',stock:'Estoque de tecidos',purchases:'Pedidos de compra',receipt:'Receber nota fiscal',lots:'Lotes recebidos',catalog:'Padronização de produtos',suppliers:'Fornecedores',quality:'Qualidade de tecidos',production:'Produção e facção',cost:'Custos e perdas',workbook:'Gestão de Tecidos e Produção de Enxoval','faction-desk':'Portal da facção'})[state.tab]||'Produção têxtil')+'</h2><p>'+esc(({overview:'Planejamento, compras, estoque e ordens da facção.',buying:'Necessidade, estoque, corte/facção e compras no mesmo lugar.','material-need':'Quanto tecido falta comprar, em metros, descontando estoque e compras a receber.',stock:'Saldo disponível e reservado de cada tecido.',purchases:'Pedidos em andamento, entregas previstas e histórico.',receipt:'Importe o XML ou registre o material recebido.',lots:'Consulte os lotes e a avaliação por nota fiscal.'})[state.tab]||'Demanda ligada a estoque, produção e custo real.')+'</p></div><div class="fw-tabs">'+(state.tab==='overview'?'':'<button type="button" data-fw-back>← Voltar</button>')+'<button type="button" data-fw-refresh>Atualizar dados</button></div></header>'+(state.error?'<div class="fw-error">'+esc(state.error)+'</div>':'')+(state.busy?'<div class="fw-note">Salvando no banco…</div>':'')+(state.notice?'<div class="fw-note" role="status">'+esc(state.notice)+'</div>':'')+(quickLinks?'<div class="fw-tabs" aria-label="Atalhos do módulo">'+quickLinks+'</div>':'')+body+'</section>';
  for(const d of host.querySelectorAll('details[data-fw-detail-key]'))if(expanded.includes(d.dataset.fwDetailKey))d.open=true;
  const purchasePanel=host.querySelector('.fw-purchase-orders');
- if(previousPurchaseStage&&purchasePanel)purchaseStage(purchasePanel,previousPurchaseStage);
+ if(purchasePanel){
+  purchasePanel.querySelector('[data-fw-purchase-search]').value=purchaseSearch||'';
+  purchaseStage(purchasePanel,previousPurchaseStage||'ordered');
+ }
+ for(const dialog of document.querySelectorAll('[data-fw-po-dialog][open]')){
+  if(formerPurchases&&dialog.purchaseRoot===formerPurchases)dialog.purchaseRoot=purchasePanel;
+ }
  buying.restore(host);
  if(state.tab==='workbook')workbookImport.bind(host);
  if(state.tab==='faction-desk')factionWorkflow.bind(host);
@@ -283,12 +329,17 @@ function purchaseStage(root,stage){
 function filterPurchaseRows(root){
  const stage=root.dataset.purchaseStage;
  const query=root.querySelector('[data-fw-purchase-search]').value.trim().toLocaleLowerCase('pt-BR');
- let visible=0;
  root.querySelectorAll('[data-fw-purchase-row]').forEach(row=>{
   row.hidden=row.hasAttribute('data-fw-purchase-excluded')||((stage==='incoming'||stage==='ordered')&&row.dataset.pending!=='true')||(stage==='history'&&row.dataset.pending==='true')||!row.dataset.search.includes(query);
-  if(!row.hidden)visible++;
  });
- root.querySelector('[data-fw-purchase-empty]').hidden=visible>0;
+ const groups=purchaseGroups(root);
+ root.querySelector('[data-fw-purchase-cards]').innerHTML=supplierCards(groups);
+ root.querySelector('[data-fw-purchase-empty]').hidden=groups.length>0;
+}
+function purchaseGroups(root){
+ return groupPurchaseCards([...root.querySelectorAll('[data-fw-purchase-row]:not([hidden])')].map(({dataset:d})=>({
+  id:d.orderId,supplierId:d.supplierId,supplier:d.supplier,ordered:n(d.ordered),received:n(d.received),cancelled:d.cancelled==='true'
+ })));
 }
 function canExcludePurchase(order,lines){
  return order.status==='ABERTA'&&lines.every(item=>n(item.received_m)===0&&!state.purchaseReceipts.some(receipt=>receipt.purchase_order_item_id===item.id));
@@ -298,29 +349,22 @@ async function excludePurchase(button){
  if(!order||state.busy||!canExcludePurchase(order,state.purchaseItems.filter(item=>item.purchase_order_id===order.id)))return;
  const supplier=state.suppliers.find(row=>row.id===order.supplier_id);
  if(!window.confirm('Excluir a OC '+order.order_number+' de '+(supplier?.trade_name||supplier?.legal_name||'Fornecedor')+'? O pedido será cancelado e ficará no histórico.'))return;
- const modal=button.closest('dialog[data-fw-buy-dialog="purchases"]');
- const stage=button.closest('.fw-purchase-orders')?.dataset.purchaseStage;
+ const root=purchaseRoot(button),dialog=button.closest('[data-fw-po-dialog]');
  state.busy=true;button.disabled=true;
+ if(dialog)dialog.dataset.saving='true';
  try{
   await rpc('fabric_cancel_purchase_order',{p_organization_id:state.org,p_order_id:order.id});
   await reload();
-  state.busy=false;
-  render();
-  if(modal?.isConnected){
-   const key=modal.dataset.productKey||null;
-   modal.close();modal.remove();
-   const updated=buying.tool('purchases',key);
-   if(stage)updated?.querySelector('[data-fw-purchase-stage="'+stage+'"]')?.click();
-  }
+  refreshPurchaseWindows(root);
+  dialog?.close();
  }catch(error){
-  const panel=button.closest('.fw-purchase-orders');
-  const message=panel?.querySelector('[data-fw-exclude-error]');
+  const message=dialog?.querySelector('[data-fw-po-error]')||root?.querySelector('[data-fw-exclude-error]');
   if(message){message.textContent=error.message||String(error);message.hidden=false;}
- }finally{state.busy=false;button.disabled=false;}
+ }finally{state.busy=false;button.disabled=false;if(dialog)dialog.dataset.saving='false';}
 }
 function openPurchaseReport(button){
- const panel=button.closest('.fw-purchase-orders');
- const error=panel.querySelector('[data-fw-purchase-report-error]');
+ const panel=purchaseRoot(button);
+ const error=button.closest('[data-fw-po-dialog]')?.querySelector('[data-fw-po-error]')||panel.querySelector('[data-fw-purchase-report-error]');
  error.hidden=true;
  const orderId=button.dataset.fwPurchaseReportOrder;
  const statusFilter=orderId?'':panel.querySelector('[data-fw-report-status]').value;
@@ -363,32 +407,157 @@ function purchaseOrderView(readyOrders=''){
  const count=status=>summarized.filter(x=>x.summary.status===status).length;
  const inspectionCount=summarized.filter(x=>x.summary.lines.some(line=>line.quality==='PENDENTE')).length;
  const cards='<div class="fw-cards fw-po-summary"><article><small>Aguardando recebimento</small><b>'+count('ABERTA')+'</b></article><article><small>Recebimento parcial</small><b>'+count('PARCIAL')+'</b></article><article><small>Aguardando inspeção</small><b>'+inspectionCount+'</b></article><article><small>Liberado no estoque</small><b>'+count('LIBERADA')+'</b></article><article><small>Cancelado</small><b>'+count('CANCELADA')+'</b></article></div>';
- const rows=summarized.sort((a,b)=>Number(['LIBERADA','CANCELADA'].includes(a.summary.status))-Number(['LIBERADA','CANCELADA'].includes(b.summary.status))).map(({order,summary})=>{
-  const supplier=state.suppliers.find(item=>item.id===order.supplier_id);
-  const lines=state.purchaseItems.filter(item=>item.purchase_order_id===order.id);
-  const lineRows=lines.map(item=>{
-   const fabric=state.fabric.find(x=>x.id===item.fabric_id);
-   const line=summary.lines.find(x=>String(x.id)===String(item.id));
-   const canReceive=order.status!=='CANCELADA'&&n(item.ordered_m)-n(item.received_m)>0.0005;
-   const receipts=state.purchaseReceipts.filter(r=>r.purchase_order_item_id===item.id),lots=receipts.map(r=>state.lots.find(l=>l.id===r.lot_id)).filter(Boolean);
-   return '<details class="fw-catalog-edit" data-fw-detail-key="product-'+esc(item.id)+'" data-fw-purchase-product data-pending="'+(canReceive&&isConfirmedPurchase(order))+'"><summary><b>'+esc(fabric?internalName(fabric):'Tecido')+'</b> • '+br(item.ordered_m,3)+' m • <span class="fw-status">'+esc(line?.label||'Pendente')+'</span></summary><p>Referência do fornecedor: '+esc(fabric?.code||'—')+' • '+esc(fabric?.name||'')+' • '+esc(fabric?.color_reference||'')+' / Q'+esc(fabric?.quality_code||'—')+'</p><p>Recebido: '+br(item.received_m,3)+' m • Falta receber: '+br(Math.max(0,n(item.ordered_m)-n(item.received_m)),3)+' m • Preço previsto: R$ '+br(item.purchase_price_per_m,4)+'/m</p>'+(canReceive?'<button type="button" data-fw-receive-po-item="'+item.id+'">Receber este produto</button>':'')+'<details class="fw-catalog-edit" data-fw-detail-key="receipts-'+esc(item.id)+'"><summary>Notas e lotes recebidos ('+lots.length+')</summary>'+lots.map(l=>'<details class="fw-catalog-edit"><summary>NF '+esc(l.invoice_number||'não informada')+' • '+esc(l.lot_code)+'</summary><p>'+br(l.quantity_received_m,3)+' m • Custo efetivo R$ '+br(l.effective_price_per_m,4)+'/m • Qualidade: '+esc(l.quality_status)+'</p></details>').join('')+(lots.length?'':'<p>Nenhum recebimento vinculado.</p>')+'</details></details>';
-
-  }).join('');
-  return '<details class="fw-po-order" data-fw-detail-key="oc-'+esc(order.id)+'" data-fw-purchase-row data-pending="'+pendingOrders.has(order.id)+'" data-search="'+esc([order.order_number,supplier?.trade_name,supplier?.legal_name,...lines.map(i=>{const f=state.fabric.find(f=>f.id===i.fabric_id);return [f?.code,f?.name,f?.color,f?.color_reference].join(' ')})].join(' ').toLocaleLowerCase('pt-BR'))+'"><summary><b>'+(/^(DANFE|NF)\b/i.test(order.order_number)?'Compra importada • ':'OC ')+esc(order.order_number)+' • '+esc(supplier?.trade_name||supplier?.legal_name||'Fornecedor')+' <span class="fw-status">'+esc(summary.label)+'</span></b><span class="fw-order-meter">'+br(summary.receivedMeters,3)+' / '+br(summary.orderedMeters,3)+' m recebidos</span>'+(canExcludePurchase(order,lines)?'<button type="button" class="fw-exclude-po" data-fw-exclude-po="'+esc(order.id)+'">Excluir pedido</button>':'')+'</summary><p>Pedido em '+esc(order.ordered_date||'—')+' • Previsão '+esc(order.expected_date||'não informada')+' • Total recebido '+br(summary.receivedMeters,3)+' / '+br(summary.orderedMeters,3)+' m</p><p><button type="button" data-fw-purchase-report-order="'+esc(order.id)+'">Relatório desta OC</button></p><div data-fw-purchase-products>'+lineRows+'</div>'+incomingView(order.id)+'</details>';
+ const rows=summarized.map(({order,summary})=>{
+  const supplier=purchaseSupplier(order);
+  const legalName=state.suppliers.find(item=>item.id===order.supplier_id)?.legal_name;
+  const fabrics=purchaseLines(order.id).map(item=>state.fabric.find(fabric=>fabric.id===item.fabric_id));
+  const search=[order.order_number,supplier,legalName,...fabrics.flatMap(fabric=>[fabric?.code,fabric?.name,fabric?.color,fabric?.color_reference])].join(' ').toLocaleLowerCase('pt-BR');
+  return '<span data-fw-purchase-row data-fw-detail-key="oc-'+esc(order.id)+'" data-order-id="'+esc(order.id)+'" data-supplier-id="'+esc(order.supplier_id)+'" data-supplier="'+esc(supplier)+'" data-pending="'+pendingOrders.has(order.id)+'" data-search="'+esc(search)+'" data-ordered="'+summary.orderedMeters+'" data-received="'+summary.receivedMeters+'" data-cancelled="'+(order.status==='CANCELADA')+'"></span>';
  }).join('');
  const suppliersWithOrders=new Set(state.purchaseOrders.map(order=>order.supplier_id));
  const statusOptions=Object.entries(purchaseReportStatuses).map(([key,label])=>'<option value="'+esc(key)+'">'+esc(label)+'</option>').join('');
  const reportControls='<div class="fw-tabs" aria-label="Relatórios de compra"><label class="fw-field">Status do pedido<select data-fw-report-status>'+statusOptions+'</select></label><button type="button" data-fw-purchase-report="general">Resumo geral</button><label class="fw-field">Fornecedor do relatório<select data-fw-report-supplier><option value="">Selecione um fornecedor</option>'+state.suppliers.filter(supplier=>suppliersWithOrders.has(supplier.id)).map(supplier=>'<option value="'+esc(supplier.id)+'">'+esc(supplier.trade_name||supplier.legal_name)+'</option>').join('')+'</select></label><button type="button" data-fw-purchase-report="supplier">Relatório por fornecedor</button></div><p class="fw-error" data-fw-purchase-report-error role="alert" hidden></p>';
- return '<div class="fw-panel fw-purchase-orders"><h3>Ordens de compra de tecido</h3><p class="fw-error" data-fw-exclude-error role="alert" hidden></p>'+reportControls+stages+(readyOrders?'<div data-fw-ready-orders hidden>'+readyOrders+'</div>':'')+'<div data-fw-shortages hidden>'+materialCoverageView(true,plan)+'</div><div data-fw-ordered hidden><details class="fw-catalog-edit" data-fw-order-summary><summary>Resumo dos pedidos</summary>'+cards+'</details><details class="fw-new-order"><summary>+ Novo pedido de compra</summary><form data-fw-form="purchaseOrder"><input name="order_number" placeholder="Número do pedido / OC" required><select name="supplier_id" required><option value="">Fornecedor</option>'+state.suppliers.map(x=>'<option value="'+x.id+'">'+esc(x.trade_name||x.legal_name)+'</option>').join('')+'</select><input name="ordered_date" type="date" value="'+new Date().toISOString().slice(0,10)+'" required><input name="expected_date" type="date" aria-label="Previsão de entrega"><input name="notes" placeholder="Observação (opcional)"><div data-fw-po-lines>'+poLineHtml()+'</div><button type="button" data-fw-add-po-line>Adicionar tecido/cor</button><button type="submit">Registrar pedido de tecido</button></form></details><label>Buscar pedido<input type="search" data-fw-purchase-search placeholder="Pedido, fornecedor, tecido ou cor"></label><p>Abra a OC, depois o produto. As notas, lotes e recebimentos ficam dentro dele.</p>'+rows+'<p data-fw-purchase-empty hidden>Nenhum pedido para esta seleção.</p></div></div>';
+ return '<div class="fw-panel fw-purchase-orders"><h3>Ordens de compra de tecido</h3><p class="fw-error" data-fw-exclude-error role="alert" hidden></p>'+reportControls+stages+(readyOrders?'<div data-fw-ready-orders hidden>'+readyOrders+'</div>':'')+'<div data-fw-shortages hidden>'+materialCoverageView(true,plan)+'</div><div data-fw-ordered hidden><details class="fw-catalog-edit" data-fw-order-summary><summary>Resumo dos pedidos</summary>'+cards+'</details><details class="fw-new-order"><summary>+ Novo pedido de compra</summary><form data-fw-form="purchaseOrder"><input name="order_number" placeholder="Número do pedido / OC" required><select name="supplier_id" required><option value="">Fornecedor</option>'+state.suppliers.map(x=>'<option value="'+x.id+'">'+esc(x.trade_name||x.legal_name)+'</option>').join('')+'</select><input name="ordered_date" type="date" value="'+new Date().toISOString().slice(0,10)+'" required><input name="expected_date" type="date" aria-label="Previsão de entrega"><input name="notes" placeholder="Observação (opcional)"><div data-fw-po-lines>'+poLineHtml()+'</div><button type="button" data-fw-add-po-line>Adicionar tecido/cor</button><button type="submit">Registrar pedido de tecido</button></form></details><label>Buscar pedido<input type="search" data-fw-purchase-search placeholder="Pedido, fornecedor, tecido ou cor"></label><div data-fw-purchase-meta hidden>'+rows+'</div><div class="fw-po-supplier-grid" data-fw-purchase-cards></div><p data-fw-purchase-empty hidden>Nenhum pedido para esta seleção.</p></div></div>';
 }
-function receivePurchaseItem(id){
+const purchaseLogistics={COTACAO:'Cotação',CONFIRMADO:'Confirmado',EM_TRANSPORTE:'Em transporte'};
+const purchaseDate=date=>date?String(date).slice(0,10).split('-').reverse().join('/'):'—';
+const purchaseLabel=order=>(/^(DANFE|NF)\b/i.test(order.order_number)?'Compra importada · ':'OC ')+order.order_number;
+const purchaseSupplier=order=>{
+ const supplier=state.suppliers.find(item=>item.id===order.supplier_id);
+ return supplier?.trade_name||supplier?.legal_name||'Fornecedor não identificado';
+};
+const purchaseLines=id=>state.purchaseItems.filter(item=>item.purchase_order_id===id);
+const purchaseSummary=order=>summarizeFabricPurchaseOrder({orderStatus:order.status,items:purchaseLines(order.id),receipts:state.purchaseReceipts,lots:state.lots});
+const purchaseReceipts=item=>state.purchaseReceipts.filter(receipt=>receipt.purchase_order_item_id===item.id);
+const purchaseLineLocked=item=>n(item.received_m)>0||purchaseReceipts(item).length>0;
+const purchasePopupError='<p class="fw-error" data-fw-po-error role="alert" hidden></p>';
+const purchaseTable=(headers,rows)=>'<div class="fw-table-scroll"><table><thead><tr>'+headers.map(header=>'<th scope="col">'+header+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div>';
+const purchaseButton=(attr,id,label)=>'<button type="button" '+attr+'="'+esc(id)+'">'+label+'</button>';
+
+function purchaseRoot(source){
+ return source?.closest('.fw-purchase-orders')||source?.closest('[data-fw-po-dialog]')?.purchaseRoot;
+}
+function purchasePopup(root,kind,id,title,body){
+ const dialog=document.createElement('dialog');
+ dialog.className='fw-recipe-dialog fw-po-popup';
+ dialog.dataset.fwPoDialog=kind;
+ dialog.dataset.recordId=id;
+ dialog.purchaseRoot=root;
+ const heading='fw-po-title-'+uid();
+ dialog.setAttribute('aria-labelledby',heading);
+ dialog.innerHTML='<header class="fw-modal-head"><h2 id="'+heading+'">'+esc(title)+'</h2><button type="button" data-fw-po-close aria-label="Fechar janela">Fechar</button></header><div class="fw-panel" data-fw-po-body>'+body+'</div>';
+ dialog.addEventListener('cancel',event=>{if(dialog.dataset.saving==='true')event.preventDefault();});
+ dialog.addEventListener('close',()=>dialog.remove());
+ document.body.append(dialog);
+ dialog.showModal();
+ return dialog;
+}
+function purchaseSupplierBody(group){
+ if(!group)return '<p>Nenhum pedido nesta seleção.</p>';
+ const rows=group.orders.map(({id})=>{
+  const order=state.purchaseOrders.find(row=>row.id===id);
+  if(!order)return '';
+  const summary=purchaseSummary(order);
+  const logistics=purchaseLogistics[order.logistics_stage];
+  const status=order.status!=='CANCELADA'&&order.logistics_stage==='COTACAO'?logistics:summary.label;
+  return '<article class="fw-po-order-entry"><div><h3>'+esc(purchaseLabel(order))+'</h3><span class="fw-status">'+esc(status)+'</span><p>'+br(summary.orderedMeters,3)+' m pedidos · '+br(summary.receivedMeters,3)+' m recebidos</p><p>Previsão de entrega '+purchaseDate(order.expected_date)+'</p></div><div class="fw-po-actions">'+purchaseButton('data-fw-view-purchase',id,'Visualizar')+(state.canManagePurchases&&order.status!=='CANCELADA'?purchaseButton('data-fw-edit-purchase',id,'Editar pedido'):'')+'</div></article>';
+ }).join('');
+ return '<div class="fw-po-order-list">'+rows+'</div>';
+}
+function openPurchaseSupplier(button){
+ const root=purchaseRoot(button);
+ const group=purchaseGroups(root).find(item=>item.id===button.dataset.fwPurchaseSupplier);
+ if(group)purchasePopup(root,'supplier',group.id,group.name,purchaseSupplierBody(group));
+}
+function purchaseOrderBody(order){
+ const items=purchaseLines(order.id),summary=purchaseSummary(order);
+ const labels=[['Fornecedor',purchaseSupplier(order)],['Situação',summary.label],['Data do pedido',purchaseDate(order.ordered_date)],['Previsão de entrega',purchaseDate(order.expected_date)],['Acompanhamento',purchaseLogistics[order.logistics_stage]||'—'],['Transportadora',order.carrier||'—'],['Rastreio',order.tracking_code||'—'],['Observação',order.notes||'—']];
+ const products=items.map(item=>{
+  const fabric=state.fabric.find(row=>row.id===item.fabric_id);
+  const line=summary.lines.find(row=>row.id===item.id);
+  const pending=order.status==='CANCELADA'?0:Math.max(0,n(item.ordered_m)-n(item.received_m));
+  const receipts=purchaseReceipts(item).map(receipt=>{
+   const lot=state.lots.find(row=>row.id===receipt.lot_id);
+   return '<tr><td>'+esc(receipt.invoice_number||lot?.invoice_number||'—')+'</td><td>'+esc(lot?.lot_code||'—')+'</td><td>'+purchaseDate(receipt.received_at)+'</td><td>'+br(receipt.quantity_received_m,3)+' m</td><td>'+(lot?'R$ '+br(lot.effective_price_per_m,4):'—')+'</td><td>'+esc(lot?.quality_status||'—')+'</td></tr>';
+  }).join('');
+  return '<section class="fw-po-product"><h3>'+esc(internalName(fabric))+'</h3><p>'+esc([fabric?.code,fabric?.name,fabric?.color_reference,fabric?.quality_code?'Q'+fabric.quality_code:''].filter(Boolean).join(' · '))+'</p><p>'+br(item.ordered_m,3)+' m pedidos · '+br(item.received_m,3)+' m recebidos · '+br(pending,3)+' m a receber · R$ '+br(item.purchase_price_per_m,4)+'/m</p><span class="fw-status">'+esc(line?.label||'Pendente')+'</span> '+(state.canManagePurchases&&pending>0.0005?purchaseButton('data-fw-receive-po-item',item.id,'Receber este produto'):'')+'<h4>Notas e lotes recebidos</h4>'+(receipts?purchaseTable(['Nota fiscal','Lote','Recebimento','Quantidade','Custo por metro','Qualidade'],receipts):'<p>Nenhum recebimento vinculado.</p>')+'</section>';
+ }).join('');
+ return '<dl class="fw-po-facts">'+labels.map(([label,value])=>'<div><dt>'+label+'</dt><dd>'+esc(value)+'</dd></div>').join('')+'</dl><div class="fw-po-actions">'+(state.canManagePurchases&&order.status!=='CANCELADA'?purchaseButton('data-fw-edit-purchase',order.id,'Editar pedido'):'')+purchaseButton('data-fw-purchase-report-order',order.id,'Relatório desta OC')+(state.canManagePurchases&&canExcludePurchase(order,items)?'<button class="fw-exclude-po" type="button" data-fw-exclude-po="'+esc(order.id)+'">Excluir pedido</button>':'')+'</div>'+purchasePopupError+products;
+}
+function openPurchaseOrder(id,root){
+ const order=state.purchaseOrders.find(row=>row.id===id);
+ if(order&&root)purchasePopup(root,'order',id,purchaseLabel(order),purchaseOrderBody(order));
+}
+function refreshPurchaseWindows(root){
+ if(!root?.isConnected){render();return;}
+ const stage=root.dataset.purchaseStage,search=root.querySelector('[data-fw-purchase-search]').value;
+ const metadata=root.querySelector('[data-fw-purchase-meta]');
+ const allowed=metadata.querySelector('[data-fw-purchase-excluded]')
+  ?new Set([...metadata.querySelectorAll('[data-fw-purchase-row]:not([data-fw-purchase-excluded])')].map(row=>row.dataset.orderId)):null;
+ const template=document.createElement('template');
+ template.innerHTML=purchaseOrderView();
+ const fresh=template.content.querySelector('.fw-purchase-orders');
+ for(const selector of ['[data-fw-purchase-meta]','.fw-purchase-stages','[data-fw-order-summary]','[data-fw-shortages]']){
+  root.querySelector(selector).replaceWith(fresh.querySelector(selector));
+ }
+ if(allowed)root.querySelectorAll('[data-fw-purchase-row]').forEach(row=>row.toggleAttribute('data-fw-purchase-excluded',!allowed.has(row.dataset.orderId)));
+ root.querySelector('[data-fw-purchase-search]').value=search;
+ purchaseStage(root,stage||'ordered');
+ for(const dialog of document.querySelectorAll('[data-fw-po-dialog][open]')){
+  if(dialog.purchaseRoot!==root)continue;
+  const id=dialog.dataset.recordId;
+  const body=dialog.querySelector('[data-fw-po-body]');
+  if(dialog.dataset.fwPoDialog==='supplier')body.innerHTML=purchaseSupplierBody(purchaseGroups(root).find(group=>group.id===id));
+  if(dialog.dataset.fwPoDialog==='order'){
+   const order=state.purchaseOrders.find(item=>item.id===id);
+   if(!order)continue;
+   dialog.querySelector('h2').textContent=purchaseLabel(order);
+   body.innerHTML=purchaseOrderBody(order);
+  }
+ }
+ if(root.closest('[data-fw-buy-dialog]'))render();
+}
+function openPurchaseEdit(id,root){
+ const order=state.purchaseOrders.find(row=>row.id===id);
+ if(!state.canManagePurchases||!order||order.status==='CANCELADA'||!root)return;
+ const input=(name,label,type,value,attrs='')=>'<label class="fw-field">'+label+'<input name="'+name+'" type="'+type+'" value="'+esc(value)+'" '+attrs+'></label>';
+ const items=purchaseLines(id);
+ const fields=input('order_number','Número da OC','text',order.order_number,'required maxlength="100"')+input('ordered_date','Data do pedido','date',order.ordered_date,'required')+input('expected_date','Previsão de entrega','date',order.expected_date)+'<label class="fw-field">Acompanhamento<select name="logistics_stage">'+Object.entries(purchaseLogistics).map(([key,label])=>'<option value="'+key+'" '+(order.logistics_stage===key?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+input('carrier','Transportadora','text',order.carrier)+input('tracking_code','Rastreio','text',order.tracking_code)+'<label class="fw-field fw-po-notes">Observação<textarea name="notes" rows="3">'+esc(order.notes)+'</textarea></label>';
+ const lines=items.map(item=>{
+  const lock=purchaseLineLocked(item),suffix=lock?' readonly':' required';
+  return '<section class="fw-po-product" data-fw-edit-line="'+esc(item.id)+'"><h3>'+esc(internalName(state.fabric.find(fabric=>fabric.id===item.fabric_id)))+'</h3><div class="fw-po-fields">'+input('ordered_m','Quantidade (m)','number',item.ordered_m,'min=".001" step=".001"'+suffix)+input('purchase_price_per_m','Preço (R$/m)','number',item.purchase_price_per_m,'min="0" step=".0001"'+suffix)+'</div>'+(lock?'<p>Quantidade e preço bloqueados porque este item já tem recebimento.</p>':'')+'</section>';
+ }).join('');
+ const dialog=purchasePopup(root,'edit',id,'Editar '+purchaseLabel(order),'<p>'+esc(purchaseSupplier(order))+'</p><form class="fw-po-edit-form"><div class="fw-po-fields">'+fields+'</div>'+lines+purchasePopupError+'<div class="fw-po-actions"><button type="submit">Salvar pedido</button><button type="button" data-fw-po-close>Cancelar</button></div></form>');
+ dialog.querySelector('form').addEventListener('submit',async event=>{
+  event.preventDefault();
+  if(dialog.dataset.saving==='true')return;
+  const form=event.currentTarget,data=Object.fromEntries(new FormData(form));
+  const lines=[...form.querySelectorAll('[data-fw-edit-line]')].flatMap(row=>{
+   const meters=row.querySelector('[name="ordered_m"]');
+   return meters.readOnly?[]:[{id:row.dataset.fwEditLine,ordered_m:meters.value,purchase_price_per_m:row.querySelector('[name="purchase_price_per_m"]').value}];
+  });
+  const error=form.querySelector('[data-fw-po-error]'),buttons=[...dialog.querySelectorAll('button')];
+  dialog.dataset.saving='true';
+  buttons.forEach(button=>button.disabled=true);
+  error.hidden=true;
+  try{
+   await rpc('fabric_edit_purchase_order',{p_organization_id:state.org,p_order_id:id,p_version:order.updated_at,p_order_number:data.order_number,p_ordered_date:data.ordered_date,p_expected_date:data.expected_date||null,p_notes:data.notes,p_logistics_stage:data.logistics_stage,p_carrier:data.carrier,p_tracking_code:data.tracking_code,p_lines:lines});
+   await reload();
+   refreshPurchaseWindows(root);
+   dialog.close();
+  }catch(err){error.textContent=err.message||String(err);error.hidden=false;}
+  finally{dialog.dataset.saving='false';buttons.forEach(button=>button.disabled=false);}
+ });
+}
+
+function receivePurchaseItem(id,source){
  const item=state.purchaseItems.find(x=>x.id===id);if(!item)return;
  const dialog=document.createElement('dialog');dialog.className='fw-recipe-dialog';dialog.dataset.request=uid();
  const pending=Math.max(0,n(item.ordered_m)-n(item.received_m));
  dialog.innerHTML='<header class="fw-modal-head"><h2>Receber produto da OC</h2><button type="button" data-fw-receive-close aria-label="Fechar">×</button></header><div class="fw-panel"><p>'+esc(internalName(state.fabric.find(f=>f.id===item.fabric_id)))+' • saldo '+br(pending,3)+' m</p><div data-fw-receive-error class="fw-error" role="alert" hidden></div><form>'+[['quantity_m','Quantidade recebida (m)','number',pending],['lot_code','Lote recebido','text',''],['invoice_number','Número da NF','text',''],['received_date','Data de recebimento','date',new Date().toISOString().slice(0,10)],['freight_cost','Frete desta entrega (R$)','number',0],['other_cost','Outros custos (R$)','number',0]].map(([name,label,type,value])=>'<label class="fw-field">'+label+'<input name="'+name+'" type="'+type+'" value="'+esc(value)+'" '+(type==='number'?'min="'+(name==='quantity_m'?'.001':'0')+'" step=".001"':'')+' '+(name==='quantity_m'?'max="'+pending+'"':'')+' required></label>').join('')+'<button type="submit">Registrar recebimento</button><button type="button" data-fw-receive-close>Cancelar</button></form></div>';
  document.body.appendChild(dialog);dialog.showModal();dialog.addEventListener('cancel',e=>{if(dialog.dataset.saving==='true')e.preventDefault();else dialog.remove();});
  dialog.querySelector('form').addEventListener('submit',async e=>{e.preventDefault();if(dialog.dataset.saving==='true')return;dialog.dataset.saving='true';const buttons=[...dialog.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);const error=dialog.querySelector('[data-fw-receive-error]');error.hidden=true;
- try{const d=Object.fromEntries(new FormData(e.target));await rpc('fabric_receive_purchase_order_item',{p_organization_id:state.org,p_purchase_order_item_id:id,p_quantity_m:n(d.quantity_m),p_lot_code:d.lot_code.trim(),p_invoice_number:d.invoice_number.trim(),p_received_date:d.received_date,p_freight_cost:n(d.freight_cost),p_other_cost:n(d.other_cost),p_idempotency_key:'fabric-po-receipt-'+dialog.dataset.request});await reload();render();dialog.close();dialog.remove();}
+ try{const d=Object.fromEntries(new FormData(e.target));await rpc('fabric_receive_purchase_order_item',{p_organization_id:state.org,p_purchase_order_item_id:id,p_quantity_m:n(d.quantity_m),p_lot_code:d.lot_code.trim(),p_invoice_number:d.invoice_number.trim(),p_received_date:d.received_date,p_freight_cost:n(d.freight_cost),p_other_cost:n(d.other_cost),p_idempotency_key:'fabric-po-receipt-'+dialog.dataset.request});await reload();refreshPurchaseWindows(purchaseRoot(source));dialog.close();dialog.remove();}
  catch(err){error.textContent=err.message||String(err);error.hidden=false;}finally{dialog.dataset.saving='false';buttons.forEach(b=>b.disabled=false);}
  });
 }
@@ -824,7 +993,6 @@ function materialCoverageView(onlyShortages=false,plan=materialPurchasePlan()){
  return reservedNote+stockNoteWarning+reconciliation+warning+'<div class="fw-panel"><h3>Compra de tecido — planejamento automático</h3><p>Peças a pedir + tecido ainda previsto nas OS e programações − estoque físico vinculado e entradas posteriores − compras confirmadas a receber. Clique em Ver origem dos metros no tecido e depois na peça ou ordem para conferir a conta.</p><p><b>Previsão total a comprar: '+(fabrics.some(r=>r.buy===null)?'Não apurado':br(fabrics.reduce((sum,r)=>sum+n(r.buy),0),3)+' m')+(unlinked.length?' (parcial; há vínculos pendentes)':'')+'</b></p><p>Os saldos são projeções com os registros atuais. Corte concluído não é convertido automaticamente em consumo real.</p><div class="fw-table-scroll"><table><thead><tr><th>Tecido GAO</th><th>Uso previsto restante</th><th>Estoque considerado</th><th>Comprado a receber</th><th>Sobra projetada do estoque</th><th>Falta comprar</th></tr></thead><tbody>'+(rows||'<tr><td colspan="6">'+(onlyShortages?'Nenhum tecido com compra adicional apurada.':'Cadastre os tecidos para iniciar o cálculo.')+'</td></tr>')+'</tbody></table></div>'+(onlyShortages?'':'<button type="button" data-fw-tab="purchases">Consultar pedidos de compra</button>')+'</div>'+trackingPanel+'<details class="fw-panel"><summary>Conciliações registradas</summary>'+state.tracking.filter(trackingReconciled).map(r=>'<p>'+esc(r.source_item+' • '+r.product_name)+' <button type="button" data-fw-reconcile="'+esc(r.id)+'">Conferir / corrigir</button></p>').join('')+'</details>'+pending;
 }
 
-function incomingView(orderId){if(!state.purchaseItems.some(i=>i.purchase_order_id===orderId&&n(i.ordered_m)>n(i.received_m)))return '';return '<div class="fw-panel"><h3>Compras e entregas a caminho</h3><p>Saldo a receber considera somente metros ainda não recebidos. Cotações ficam separadas dos pedidos confirmados.</p>'+state.purchaseOrders.filter(o=>o.id===orderId&&o.status!=='CANCELADA').map(o=>{const lines=state.purchaseItems.filter(i=>i.purchase_order_id===o.id);const pending=lines.reduce((sum,i)=>sum+Math.max(0,n(i.ordered_m)-n(i.received_m)),0);if(!pending)return '';return '<details><summary>Pedido '+esc(o.order_number)+' — '+br(pending,3)+' m a receber — '+esc(o.logistics_stage)+'</summary><form data-fw-form="logistics"><input type="hidden" name="id" value="'+o.id+'"><select name="logistics_stage">'+['COTACAO','CONFIRMADO','EM_TRANSPORTE'].map(x=>'<option '+(x===o.logistics_stage?'selected':'')+'>'+x+'</option>').join('')+'</select><input name="carrier" placeholder="Transportadora" value="'+esc(o.carrier||'')+'"><input name="tracking_code" placeholder="Rastreio" value="'+esc(o.tracking_code||'')+'"><input name="expected_date" type="date" value="'+esc(o.expected_date||'')+'"><button>Salvar acompanhamento</button></form></details>'}).join('')+'</div>'}
 function trackingView(onlyTracking=null){return '<div class="fw-panel"><h3>Histórico migrado da facção</h3><p>Registros distintos preservados por linha de origem. Recebimentos históricos confirmados somente pelo Status Concluído.</p>'+state.tracking.filter(r=>!onlyTracking||r.id===onlyTracking).map(r=>'<details class="fw-catalog-edit"><summary>Item '+esc(r.source_item)+' — '+esc(r.product_name)+' / '+esc(r.size)+' — '+br(r.delivered,0)+' de '+br(r.quantity,0)+' entregues — '+esc(r.delivery_status)+' <small>origem: linha '+r.source_row+'</small></summary><form data-fw-form="tracking"><input type="hidden" name="id" value="'+r.id+'"><label>Peça no mapa<select name="product_reference"><option value="">Relacionar automaticamente pela descrição</option>'+ (window.GAO_LINEN_NEED_SNAPSHOT||[]).map(p=>'<option value="'+esc(p.produtoId)+'" '+(r.product_reference===String(p.produtoId)?'selected':'')+'>'+esc(p.produtoId+' • '+p.produtoNome)+'</option>').join('')+'</select></label><label>Corte<select name="cut_status">'+['PENDENTE','CONCLUIDO'].map(x=>'<option '+(r.cut_status===x?'selected':'')+'>'+x+'</option>').join('')+'</select></label><label>Entrega<select name="delivery_status">'+['PENDENTE','PARCIAL','CONCLUIDO'].map(x=>'<option '+(r.delivery_status===x?'selected':'')+'>'+x+'</option>').join('')+'</select></label><label>Recebido acumulado<input type="number" name="delivered" min="0" max="'+r.quantity+'" value="'+r.delivered+'"></label><label>Previsão<input type="date" name="expected_date" value="'+esc(r.expected_date||'')+'"></label><label>Recebido GAO<input type="date" name="received_date" value="'+esc(r.received_date||'')+'"></label><button>Salvar no sistema</button></form></details>').join('')+'</div>'}
 function productionView(onlyItem=null,stage='all'){return '<div class="fw-panel"><h3>'+({all:'Reserva, corte e envio por OS',provision:'Reservas por ordem',cut:'Corte e envio por ordem'})[stage]+'</h3>'+state.items.filter(i=>!onlyItem||i.id===onlyItem).map(i=>{const order=state.orders.find(o=>o.id===i.order_id);if(!order||order.status==='CANCELADA'||(stage!=='all'&&order.status==='CONCLUIDA'))return '';const lots=liveBalances().filter(l=>fabricMatches(l.fabric_id,i.fabric_id)&&l.quality_status==='APROVADO');const options=lots.map(l=>'<option value="'+l.id+'">'+esc(l.lot_code)+' • NF '+esc(l.invoice_number||'—')+' • '+br(l.onhand,3)+' m / reservado '+br(l.reserved,3)+'</option>').join('');return '<details id="os-cut-'+i.id+'" class="fw-catalog-edit"><summary>OS '+esc(order?.order_number)+' • '+esc(i.product_name)+'</summary>'+(stage==='cut'?'':'<form data-fw-form="reserve"><input type="hidden" name="order_item_id" value="'+i.id+'"><select name="lot_id" required>'+options+'</select><input name="quantity_m" type="number" min=".001" step=".001" placeholder="Metros a reservar" required><button>Reservar tecido</button></form><form data-fw-form="release"><input type="hidden" name="order_item_id" value="'+i.id+'"><select name="lot_id" required>'+options+'</select><input name="quantity_m" type="number" min=".001" step=".001" placeholder="Metros para liberar" required><button>Liberar reserva não utilizada</button></form>')+(stage==='provision'?'':'<form data-fw-form="cut"><input type="hidden" name="order_item_id" value="'+i.id+'"><select name="lot_id" required>'+options+'</select><input name="consumed_m" type="number" min=".001" step=".001" placeholder="Metros efetivamente consumidos" required><input name="produced_pieces" type="number" min="1" step="1" placeholder="Peças cortadas" required><button>Concluir lote de corte</button></form>'+state.cuts.filter(c=>c.order_item_id===i.id).map(c=>{const l=state.lots.find(l=>l.id===c.lot_id),loss=Math.max(0,n(c.consumed_m)-n(c.produced_pieces)*n(i.consumption_m_per_piece));return '<div class="fw-panel"><b>Lote de corte '+esc(c.id.slice(0,8))+'</b><p>Tecido '+esc(l?.lot_code)+' • NF '+esc(l?.invoice_number)+' • '+br(c.produced_pieces,0)+' peças • '+br(c.consumed_m,3)+' m • perda '+br(loss,3)+' m ('+br(loss/n(c.consumed_m)*100,2)+'%) • R$ '+br(loss*n(l?.effective_price_per_m))+'</p>'+(c.sent_date?'<p>Enviado '+esc(c.sent_date)+' • previsão '+esc(c.expected_date)+'</p>':'<form data-fw-form="dispatch"><input type="hidden" name="id" value="'+c.id+'"><select name="supplier_id" required>'+supplierOptionList()+'</select><label>Envio<input name="sent_date" type="date" value="'+new Date().toISOString().slice(0,10)+'" required></label><label>Previsão (padrão +21 dias)<input name="expected_date" type="date"></label><input name="notes" placeholder="Justificativa se alterar prazo"><button>Enviar peças à facção</button></form>')+'</div>'}).join(''))+'</details>'}).join('')+'</div>'}
 
@@ -891,7 +1059,6 @@ async function submit(form){
  if(table==='release')return rpc('fabric_post_stock_movement',{p_organization_id:state.org,p_lot_id:d.lot_id,p_movement_type:'LIBERA_RESERVA',p_quantity_m:n(d.quantity_m),p_order_item_id:d.order_item_id,p_idempotency_key:'release:'+uid(),p_notes:'Liberação de saldo reservado da OS'});
  if(table==='reserve')return rpc('fabric_post_stock_movement',{p_organization_id:state.org,p_lot_id:d.lot_id,p_movement_type:'RESERVA',p_quantity_m:n(d.quantity_m),p_order_item_id:d.order_item_id,p_idempotency_key:'reserve:'+uid(),p_notes:'Reserva de tecido para OS'});
  if(table==='dispatch'){const date=d.sent_date,expected=d.expected_date||addDays(date,21);if(expected!==addDays(date,21)&&!d.notes.trim())throw Error('Justifique a alteração do prazo de 21 dias');return api('/rest/v1/fabric_cut_batches?id=eq.'+d.id+'&organization_id=eq.'+state.org,{method:'PATCH',body:JSON.stringify({sent_date:date,expected_date:expected,supplier_id:d.supplier_id,notes:d.notes||null})});}
- if(table==='logistics')return api('/rest/v1/fabric_purchase_orders?id=eq.'+d.id+'&organization_id=eq.'+state.org,{method:'PATCH',body:JSON.stringify({logistics_stage:d.logistics_stage,carrier:d.carrier,tracking_code:d.tracking_code,expected_date:d.expected_date||null})});
  if(table==='supplier'){
   const {id,...fields}=d;
   const payload={...fields,legal_name:d.legal_name.trim(),lead_days:val(d,'lead_days')};
@@ -1033,6 +1200,10 @@ document.addEventListener('click',async e=>{
   orders.querySelector('summary').focus({preventScroll:true});
   return;
  }
+ const poClose=e.target.closest('[data-fw-po-close]');if(poClose){const dialog=poClose.closest('dialog');if(dialog.dataset.saving!=='true')dialog.close();return;}
+ const supplierCard=e.target.closest('[data-fw-purchase-supplier]');if(supplierCard){openPurchaseSupplier(supplierCard);return;}
+ const purchaseView=e.target.closest('[data-fw-view-purchase]');if(purchaseView){openPurchaseOrder(purchaseView.dataset.fwViewPurchase,purchaseRoot(purchaseView));return;}
+ const purchaseEdit=e.target.closest('[data-fw-edit-purchase]');if(purchaseEdit){openPurchaseEdit(purchaseEdit.dataset.fwEditPurchase,purchaseRoot(purchaseEdit));return;}
  const exclude=e.target.closest('[data-fw-exclude-po]');if(exclude){e.preventDefault();await excludePurchase(exclude);return;}
  const purchaseReport=e.target.closest('[data-fw-purchase-report],[data-fw-purchase-report-order]');if(purchaseReport){openPurchaseReport(purchaseReport);return;}
  const stage=e.target.closest('[data-fw-purchase-stage]');
@@ -1078,7 +1249,7 @@ document.addEventListener('click',async e=>{
  if(e.target.closest('[data-fw-create-order]')){await run(createOrder);return}
  if(e.target.closest('[data-fw-add-po-line]')){const form=e.target.closest('form');form.querySelector('[data-fw-po-lines]')?.insertAdjacentHTML('beforeend',poLineHtml());refreshPurchaseReferences(form);return}
  const removePoLine=e.target.closest('[data-fw-remove-po-line]');if(removePoLine){if(removePoLine.closest('form').querySelectorAll('[data-fw-po-line]').length>1)removePoLine.closest('[data-fw-po-line]').remove();return}
- const receivePo=e.target.closest('[data-fw-receive-po-item]');if(receivePo){receivePurchaseItem(receivePo.dataset.fwReceivePoItem);return}
+ const receivePo=e.target.closest('[data-fw-receive-po-item]');if(receivePo){receivePurchaseItem(receivePo.dataset.fwReceivePoItem,receivePo);return}
  const report=e.target.closest('[data-fw-report]');if(report){await run(()=>openQualityReport(report.dataset.fwReport));return}
  const shipBtn=e.target.closest('[data-fw-ship]');if(shipBtn){await run(()=>ship(shipBtn.dataset.fwShip));return}
  const ret=e.target.closest('[data-fw-return]');if(ret){await run(()=>returnForm(ret.dataset.fwReturn));return}
@@ -1137,7 +1308,7 @@ function mount(){
  const flowButton=nav.querySelector('[data-fw-open]');flowButton?.classList.toggle('active',state.mode);flowButton?.setAttribute('aria-pressed',String(state.mode));
  if(!shell.querySelector('#gao-fabric-flow')){const host=document.createElement('div');host.id='gao-fabric-flow';host.hidden=!state.mode;shell.appendChild(host);render();if(!state.org){init().then(render).catch(err=>{state.error=err.message;render()})}}
 }
-const buying=createBuyingController({state,buyingSnapshot,esc,n,br,rpc,reload,render,uid,fabricBuyingBalances,liveBalances,fabricMatches,openRecipeDialog,productionView,trackingView,ordersTable,purchaseOrderView,stockPanels,qualityView,costView,standardsManagementView,recipeView,openFabricPurchaseDraft,submit,saveQualityBatch,returnForm,orderStats,syncOrderStatuses,refreshPurchaseReferences});
+const buying=createBuyingController({state,buyingSnapshot,esc,n,br,rpc,reload,render,uid,fabricBuyingBalances,liveBalances,fabricMatches,openRecipeDialog,productionView,trackingView,ordersTable,purchaseOrderView,openPurchaseOrder,stockPanels,qualityView,costView,standardsManagementView,recipeView,openFabricPurchaseDraft,submit,saveQualityBatch,returnForm,orderStats,syncOrderStatuses,refreshPurchaseReferences});
 const factionWorkflow=createFactionWorkflow({state,esc,n,br,liveBalances,fabricMatches,internalName,physicalFactionMeters,orderStats,demandView,factionDesk,render,run,rpc,reload,uid,supplierOptionList,openFabricPurchaseDraft,submit,returnForm,syncOrderStatuses});
 new MutationObserver(mount).observe(document.documentElement,{childList:true,subtree:true});
 setInterval(mount,900);
