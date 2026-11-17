@@ -1,5 +1,5 @@
 import {groupPurchaseCards,supplierCards} from '/fabric-purchase-cards-v1.mjs?v=1';
-import { purchaseReportStatuses, renderPurchaseReport } from '/fabric-purchase-report-v1.mjs?v=4';
+import { purchaseReportStatuses, renderPurchaseReport, formatPurchasePaymentDays } from '/fabric-purchase-report-v1.mjs?v=5';
 import { openReport as openPurchaseReportWindow } from '/relave-report-export-v1.mjs?v=1';
 import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=5';
 import {createFactionDesk} from '/fabric-faction-portal-v1.mjs?v=2';
@@ -382,6 +382,18 @@ function openPurchaseReport(button){
  }catch(err){error.textContent=err.message;error.hidden=false;}
 }
 
+function purchasePaymentFields(order={}){
+ return '<label class="fw-field">Condição de pagamento<input name="payment_terms" maxlength="240" value="'+esc(order.payment_terms||'')+'" placeholder="Ex.: boleto parcelado"></label><label class="fw-field">Prazo de pagamento em dias<input name="payment_days" value="'+esc(order.payment_days?.join(' / ')||'')+'" placeholder="Ex.: 30 ou 30/60/90"></label>';
+}
+function purchasePaymentArgs(data){
+ const value=String(data.payment_days??'').trim();
+ const days=value?value.split(/[\/,]/).map(day=>day.trim()):[];
+ if(days.some(day=>!/^\d+$/.test(day)||Number(day)>2147483647)){
+  throw Error('Informe dias inteiros a partir de zero. Para parcelas, use 30/60/90.');
+ }
+ return {p_payment_terms:String(data.payment_terms??'').trim()||null,p_payment_days:days.length?days.map(Number):null};
+}
+
 function purchaseOrderView(readyOrders=''){
  const plan=materialPurchasePlan();
  const partial=plan.unlinked.length>0;
@@ -417,7 +429,7 @@ function purchaseOrderView(readyOrders=''){
  const suppliersWithOrders=new Set(state.purchaseOrders.map(order=>order.supplier_id));
  const statusOptions=Object.entries(purchaseReportStatuses).map(([key,label])=>'<option value="'+esc(key)+'">'+esc(label)+'</option>').join('');
  const reportControls='<div class="fw-tabs" aria-label="Relatórios de compra"><label class="fw-field">Status do pedido<select data-fw-report-status>'+statusOptions+'</select></label><button type="button" data-fw-purchase-report="general">Resumo geral</button><label class="fw-field">Fornecedor do relatório<select data-fw-report-supplier><option value="">Selecione um fornecedor</option>'+state.suppliers.filter(supplier=>suppliersWithOrders.has(supplier.id)).map(supplier=>'<option value="'+esc(supplier.id)+'">'+esc(supplier.trade_name||supplier.legal_name)+'</option>').join('')+'</select></label><button type="button" data-fw-purchase-report="supplier">Relatório por fornecedor</button></div><p class="fw-error" data-fw-purchase-report-error role="alert" hidden></p>';
- return '<div class="fw-panel fw-purchase-orders"><h3>Ordens de compra de tecido</h3><p class="fw-error" data-fw-exclude-error role="alert" hidden></p>'+reportControls+stages+(readyOrders?'<div data-fw-ready-orders hidden>'+readyOrders+'</div>':'')+'<div data-fw-shortages hidden>'+materialCoverageView(true,plan)+'</div><div data-fw-ordered hidden><details class="fw-catalog-edit" data-fw-order-summary><summary>Resumo dos pedidos</summary>'+cards+'</details><details class="fw-new-order"><summary>+ Novo pedido de compra</summary><form data-fw-form="purchaseOrder"><input name="order_number" placeholder="Número do pedido / OC" required><select name="supplier_id" required><option value="">Fornecedor</option>'+state.suppliers.map(x=>'<option value="'+x.id+'">'+esc(x.trade_name||x.legal_name)+'</option>').join('')+'</select><input name="ordered_date" type="date" value="'+new Date().toISOString().slice(0,10)+'" required><input name="expected_date" type="date" aria-label="Previsão de entrega"><input name="notes" placeholder="Observação (opcional)"><div data-fw-po-lines>'+poLineHtml()+'</div><button type="button" data-fw-add-po-line>Adicionar tecido/cor</button><button type="submit">Registrar pedido de tecido</button></form></details><label>Buscar pedido<input type="search" data-fw-purchase-search placeholder="Pedido, fornecedor, tecido ou cor"></label><div data-fw-purchase-meta hidden>'+rows+'</div><div class="fw-po-supplier-grid" data-fw-purchase-cards></div><p data-fw-purchase-empty hidden>Nenhum pedido para esta seleção.</p></div></div>';
+ return '<div class="fw-panel fw-purchase-orders"><h3>Ordens de compra de tecido</h3><p class="fw-error" data-fw-exclude-error role="alert" hidden></p>'+reportControls+stages+(readyOrders?'<div data-fw-ready-orders hidden>'+readyOrders+'</div>':'')+'<div data-fw-shortages hidden>'+materialCoverageView(true,plan)+'</div><div data-fw-ordered hidden><details class="fw-catalog-edit" data-fw-order-summary><summary>Resumo dos pedidos</summary>'+cards+'</details><details class="fw-new-order"><summary>+ Novo pedido de compra</summary><form data-fw-form="purchaseOrder"><input name="order_number" placeholder="Número do pedido / OC" required><select name="supplier_id" required><option value="">Fornecedor</option>'+state.suppliers.map(x=>'<option value="'+x.id+'">'+esc(x.trade_name||x.legal_name)+'</option>').join('')+'</select><input name="ordered_date" type="date" value="'+new Date().toISOString().slice(0,10)+'" required><input name="expected_date" type="date" aria-label="Previsão de entrega">'+purchasePaymentFields()+'<input name="notes" placeholder="Observação (opcional)"><div data-fw-po-lines>'+poLineHtml()+'</div><button type="button" data-fw-add-po-line>Adicionar tecido/cor</button><button type="submit">Registrar pedido de tecido</button></form></details><label>Buscar pedido<input type="search" data-fw-purchase-search placeholder="Pedido, fornecedor, tecido ou cor"></label><div data-fw-purchase-meta hidden>'+rows+'</div><div class="fw-po-supplier-grid" data-fw-purchase-cards></div><p data-fw-purchase-empty hidden>Nenhum pedido para esta seleção.</p></div></div>';
 }
 const purchaseLogistics={COTACAO:'Cotação',CONFIRMADO:'Confirmado',EM_TRANSPORTE:'Em transporte'};
 const purchaseDate=date=>date?String(date).slice(0,10).split('-').reverse().join('/'):'—';
@@ -471,7 +483,7 @@ function openPurchaseSupplier(button){
 }
 function purchaseOrderBody(order){
  const items=purchaseLines(order.id),summary=purchaseSummary(order);
- const labels=[['Fornecedor',purchaseSupplier(order)],['Situação',summary.label],['Data do pedido',purchaseDate(order.ordered_date)],['Previsão de entrega',purchaseDate(order.expected_date)],['Acompanhamento',purchaseLogistics[order.logistics_stage]||'—'],['Transportadora',order.carrier||'—'],['Rastreio',order.tracking_code||'—'],['Observação',order.notes||'—']];
+ const labels=[['Fornecedor',purchaseSupplier(order)],['Situação',summary.label],['Data do pedido',purchaseDate(order.ordered_date)],['Previsão de entrega',purchaseDate(order.expected_date)],['Condição de pagamento',order.payment_terms||'—'],['Prazo de pagamento',formatPurchasePaymentDays(order.payment_days)],['Acompanhamento',purchaseLogistics[order.logistics_stage]||'—'],['Transportadora',order.carrier||'—'],['Rastreio',order.tracking_code||'—'],['Observação',order.notes||'—']];
  const products=items.map(item=>{
   const fabric=state.fabric.find(row=>row.id===item.fabric_id);
   const line=summary.lines.find(row=>row.id===item.id);
@@ -522,7 +534,7 @@ function openPurchaseEdit(id,root){
  if(!state.canManagePurchases||!order||order.status==='CANCELADA'||!root)return;
  const input=(name,label,type,value,attrs='')=>'<label class="fw-field">'+label+'<input name="'+name+'" type="'+type+'" value="'+esc(value)+'" '+attrs+'></label>';
  const items=purchaseLines(id);
- const fields=input('order_number','Número da OC','text',order.order_number,'required maxlength="100"')+input('ordered_date','Data do pedido','date',order.ordered_date,'required')+input('expected_date','Previsão de entrega','date',order.expected_date)+'<label class="fw-field">Acompanhamento<select name="logistics_stage">'+Object.entries(purchaseLogistics).map(([key,label])=>'<option value="'+key+'" '+(order.logistics_stage===key?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+input('carrier','Transportadora','text',order.carrier)+input('tracking_code','Rastreio','text',order.tracking_code)+'<label class="fw-field fw-po-notes">Observação<textarea name="notes" rows="3">'+esc(order.notes)+'</textarea></label>';
+ const fields=input('order_number','Número da OC','text',order.order_number,'required maxlength="100"')+input('ordered_date','Data do pedido','date',order.ordered_date,'required')+input('expected_date','Previsão de entrega','date',order.expected_date)+'<label class="fw-field">Acompanhamento<select name="logistics_stage">'+Object.entries(purchaseLogistics).map(([key,label])=>'<option value="'+key+'" '+(order.logistics_stage===key?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+input('carrier','Transportadora','text',order.carrier)+input('tracking_code','Rastreio','text',order.tracking_code)+purchasePaymentFields(order)+'<label class="fw-field fw-po-notes">Observação<textarea name="notes" rows="3">'+esc(order.notes)+'</textarea></label>';
  const lines=items.map(item=>{
   const lock=purchaseLineLocked(item),suffix=lock?' readonly':' required';
   return '<section class="fw-po-product" data-fw-edit-line="'+esc(item.id)+'"><h3>'+esc(internalName(state.fabric.find(fabric=>fabric.id===item.fabric_id)))+'</h3><div class="fw-po-fields">'+input('ordered_m','Quantidade (m)','number',item.ordered_m,'min=".001" step=".001"'+suffix)+input('purchase_price_per_m','Preço (R$/m)','number',item.purchase_price_per_m,'min="0" step=".0001"'+suffix)+'</div>'+(lock?'<p>Quantidade e preço bloqueados porque este item já tem recebimento.</p>':'')+'</section>';
@@ -541,7 +553,7 @@ function openPurchaseEdit(id,root){
   buttons.forEach(button=>button.disabled=true);
   error.hidden=true;
   try{
-   await rpc('fabric_edit_purchase_order',{p_organization_id:state.org,p_order_id:id,p_version:order.updated_at,p_order_number:data.order_number,p_ordered_date:data.ordered_date,p_expected_date:data.expected_date||null,p_notes:data.notes,p_logistics_stage:data.logistics_stage,p_carrier:data.carrier,p_tracking_code:data.tracking_code,p_lines:lines});
+   await rpc('fabric_edit_purchase_order_with_payment',{p_organization_id:state.org,p_order_id:id,p_version:order.updated_at,p_order_number:data.order_number,p_ordered_date:data.ordered_date,p_expected_date:data.expected_date||null,p_notes:data.notes,p_logistics_stage:data.logistics_stage,p_carrier:data.carrier,p_tracking_code:data.tracking_code,p_lines:lines,...purchasePaymentArgs(data)});
    await reload();
    refreshPurchaseWindows(root);
    dialog.close();
@@ -1043,7 +1055,7 @@ async function submit(form){
   for(const line of lines){const f=state.fabric.find(f=>f.id===line.fabric_id);if(!f||!purchaseReferenceChoices(state.fabric,f.standard_id,d.supplier_id).some(x=>x.id===line.fabric_id))throw Error('A referência precisa estar homologada para o padrão GAO e para o fornecedor selecionado.');}
 
   const open=state.purchaseItems.filter(i=>lines.some(l=>fabricMatches(l.fabric_id,i.fabric_id))&&n(i.ordered_m)>n(i.received_m)&&state.purchaseOrders.some(o=>o.id===i.purchase_order_id&&o.status!=='CANCELADA'));if(open.length&&!confirm('Já há '+open.length+' item(ns) de compra desse tecido com saldo a receber. Consulte pedidos e transporte para evitar duplicidade. Confirma um pedido adicional?'))throw Error('Novo pedido cancelado para conferir compras existentes.');
-  return rpc('fabric_create_purchase_order',{p_organization_id:state.org,p_supplier_id:d.supplier_id,p_order_number:d.order_number.trim(),p_ordered_date:d.ordered_date||null,p_expected_date:d.expected_date||null,p_lines:lines.map(x=>({fabric_id:x.fabric_id,ordered_m:n(x.ordered_m),purchase_price_per_m:n(x.purchase_price_per_m)})),p_notes:d.notes||null,p_idempotency_key:'fabric-po-'+uid()});
+  return rpc('fabric_create_purchase_order_with_payment',{p_organization_id:state.org,p_supplier_id:d.supplier_id,p_order_number:d.order_number.trim(),p_ordered_date:d.ordered_date||null,p_expected_date:d.expected_date||null,p_lines:lines.map(x=>({fabric_id:x.fabric_id,ordered_m:n(x.ordered_m),purchase_price_per_m:n(x.purchase_price_per_m)})),p_notes:d.notes||null,p_idempotency_key:'fabric-po-'+uid(),...purchasePaymentArgs(d)});
  }
  if(table==='fabric'){
   const payload={...d,organization_id:state.org,code:d.code.trim(),name:d.name.trim(),color_reference:d.color_reference.trim().toUpperCase(),quality_code:d.quality_code.trim().toUpperCase().replace(/^Q/,''),width_m:val(d,'width_m'),homologated:d.homologated==='on',standard_link_approved:table==='fabric'&&d.homologated==='on',homologated_at:d.homologated==='on'?new Date().toISOString():null,homologated_by:d.homologated==='on'?state.session.user.id:null};

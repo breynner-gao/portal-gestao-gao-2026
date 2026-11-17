@@ -3,7 +3,7 @@ import {createFactionDesk} from '../fabric-faction-portal-v1.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import {purchaseReportStatuses} from '../fabric-purchase-report-v1.mjs';
+import {purchaseReportStatuses,formatPurchasePaymentDays,renderPurchaseReport} from '../fabric-purchase-report-v1.mjs';
 import {readFile} from 'node:fs/promises';
 import * as linenRules from '../linen-risk-rules-v150.mjs';
 import * as rules from '../fabric-workflow-rules-v1.mjs';
@@ -11,7 +11,7 @@ import * as standards from '../fabric-standard-rules-v1.mjs';
 import {createFabricWorkbookImport} from '../fabric-workbook-import-v1.mjs';
 const source=await readFile(new URL('../fabric-workflow-ui-v1.js',import.meta.url),'utf8');
 function harness(){
- const calls=[];const context={purchaseReportStatuses,...linenRules,...rules,...standards,createFactionWorkflow,createFactionDesk,createFabricWorkbookImport,createBuyingController:()=>({view:()=>'',restore(){}}),console,Event:class{},crypto:{randomUUID:()=> 'test-key'},window:{GAO_LINEN_NEED_SNAPSHOT:[],dispatchEvent(){}},document:{createElement:()=>({textContent:''}),head:{appendChild(){}},addEventListener(){},querySelector:()=>null,documentElement:{}},MutationObserver:class{observe(){}},setInterval(){},FormData:class{constructor(form){this.form=form}entries(){return Object.entries(this.form.values)}},fetch:async(url,options)=>{calls.push({url,body:options.body?JSON.parse(options.body):null});return{ok:true,text:async()=> '[]'}}};
+ const calls=[];const context={purchaseReportStatuses,formatPurchasePaymentDays,...linenRules,...rules,...standards,createFactionWorkflow,createFactionDesk,createFabricWorkbookImport,createBuyingController:()=>({view:()=>'',restore(){}}),console,Event:class{},crypto:{randomUUID:()=> 'test-key'},window:{GAO_LINEN_NEED_SNAPSHOT:[],dispatchEvent(){}},document:{createElement:()=>({textContent:''}),head:{appendChild(){}},addEventListener(){},querySelector:()=>null,documentElement:{}},MutationObserver:class{observe(){}},setInterval(){},FormData:class{constructor(form){this.form=form}entries(){return Object.entries(this.form.values)}},fetch:async(url,options)=>{calls.push({url,body:options.body?JSON.parse(options.body):null});return{ok:true,text:async()=> '[]'}}};
  vm.createContext(context);vm.runInContext(source.replace(/^(?:import[^\n]+\n)+/,'').replace(/\}\)\(\);\s*$/,'window.test={state,submit,orderStats,trackingView,createOrder,catalogModelValues,catalogAction,catalogManagementView,stockPanelGroup,stockLotsView,purchaseOrderView,purchaseOrderBody,purchaseSupplierBody,qualityView,demandDrafts,demandQuantity,demandRequestedPieces,materialPurchasePlan,materialCoverageView,materialLinkInfo,trackingReconciled,reconciliationLine,reconciliationStockPlan,recipeSourceChoices,recipeCostValues,applyRecipeCost,internalFabricOptions,planningFabrics,standardsManagementView,recipeView};})();'),context);
  context.window.test.state.org='org';context.window.test.state.session={access_token:'session',user:{id:'user'}};return{...context.window.test,calls,document:context.document,window:context.window};
 }
@@ -125,4 +125,43 @@ test('programação em estoque fica coberta; campo em branco gera tecido a compr
  assert.equal(plan.fabrics[0].needed,50);
  assert.equal(plan.fabrics[0].buy,50);
  assert.match(h.materialCoverageView(),/40 peças aguardam corte com tecido já reservado/);
+});
+
+test('pedido novo envia condição e parcelamento sem confundir prazo de entrega',async()=>{
+ const h=harness();
+ h.state.fabric=[{id:'fabric',standard_id:'standard',supplier_id:'supplier',active:true,homologated:true,standard_link_approved:true}];
+ const row={querySelector:selector=>({value:{'[name=fabric_id]':'fabric','[name=ordered_m]':'200','[name=purchase_price_per_m]':'10'}[selector]})};
+ const form={dataset:{fwForm:'purchaseOrder'},values:{supplier_id:'supplier',order_number:'OC-1',ordered_date:'2026-11-17',expected_date:'2026-12-08',payment_terms:' Boleto parcelado ',payment_days:'30 / 60, 90'},querySelectorAll:()=>[row]};
+ assert.match(h.purchaseOrderView(),/name="payment_terms"/);
+ assert.match(h.purchaseOrderView(),/name="payment_days"/);
+ await h.submit(form);
+ assert.match(h.calls[0].url,/fabric_create_purchase_order_with_payment$/);
+ assert.equal(h.calls[0].body.p_payment_terms,'Boleto parcelado');
+ assert.deepEqual(h.calls[0].body.p_payment_days,[30,60,90]);
+ assert.equal(h.calls[0].body.p_expected_date,'2026-12-08');
+ form.values.payment_days='30/-60';
+ await assert.rejects(h.submit(form),/dias inteiros/);
+ assert.equal(h.calls.length,1);
+ form.values.payment_days='0';
+ await h.submit(form);
+ assert.deepEqual(h.calls[1].body.p_payment_days,[0]);
+});
+
+test('relatórios geral, por fornecedor e individual mostram o prazo de pagamento da OC',()=>{
+ const {state}=harness();
+ state.suppliers=[{id:'supplier',trade_name:'Fornecedor A',payment_terms:'Condição padrão',lead_days:12}];
+ state.purchaseOrders=[
+  {id:'first',supplier_id:'supplier',order_number:'OC-1',status:'ABERTA',payment_terms:'Boleto & comprovante',payment_days:[30,60]},
+  {id:'second',supplier_id:'supplier',order_number:'OC-2',status:'ABERTA',payment_terms:'À vista',payment_days:[0]},
+  {id:'legacy',supplier_id:'supplier',order_number:'OC-3',status:'ABERTA'}
+ ];
+ for(const filter of [{},{supplierId:'supplier'},{orderId:'first'}]){
+  const html=renderPurchaseReport(state,filter);
+  assert.match(html,/Boleto &amp; comprovante/);
+  assert.match(html,/30 \/ 60 dias/);
+  if(!filter.orderId)assert.match(html,/À vista · (?:<b>Prazo de pagamento<\/b> )?0 dias/);
+ }
+ const old=renderPurchaseReport(state,{orderId:'legacy'});
+ assert.match(old,/Prazo de entrega \(dias\)/);
+ assert.match(old,/Prazo de pagamento<\/b> —/);
 });
