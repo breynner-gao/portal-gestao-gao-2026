@@ -16,10 +16,10 @@ const reason=['Costura aberta','Rasgo','Desgaste','Medida','Acabamento','Mancha'
 const repairServices=['Bainha','Costura','Remendo','Troca de componente','Outro'];
 const incompleteStatuses=['Em execução','Precisa de ajuste'];
 function repairLine(){
- return '<tr><td><select data-repair-defect aria-label="Defeito" required><option value="">Selecione</option>'+options(reason)+'</select></td><td><select data-repair-service aria-label="Serviço realizado" required><option value="">Selecione</option>'+options(repairServices)+'</select></td><td><input data-repair-quantity aria-label="Quantidade de peças" type="number" min="1" max="2147483647" step="1" inputmode="numeric" required></td><td><button type="button" data-remove-repair aria-label="Remover linha de reparo">Remover</button></td></tr>';
+ return '<tr><td><select data-repair-defect aria-label="Defeito" required><option value="">Selecione</option>'+options(reason)+'</select></td><td><select data-repair-service aria-label="Serviço realizado" required><option value="">Selecione</option>'+options(repairServices)+'</select></td><td><input data-repair-quantity aria-label="Peças neste serviço" type="number" min="1" max="2147483647" step="1" inputmode="numeric" required></td><td><button type="button" data-remove-repair aria-label="Remover linha de reparo">Remover</button></td></tr>';
 }
 function repairTable(){
- return '<section class="sew-repair-lines"><h3>Peças por serviço de reparo</h3><p>Informe a quantidade de cada serviço. Se uma peça recebeu mais de um reparo, conte-a pelo serviço principal.</p><div class="sew-table"><table><thead><tr><th scope="col">Defeito</th><th scope="col">Serviço realizado</th><th scope="col">Peças</th><th scope="col">Ações</th></tr></thead><tbody data-repair-rows>'+repairLine()+'</tbody></table></div><button type="button" data-add-repair>Adicionar linha de reparo</button></section>';
+ return '<section class="sew-repair-lines"><h3>Peças por serviço de reparo</h3><p>Para vários serviços, informe as peças em cada linha. Se uma peça recebeu mais de um reparo, conte-a pelo serviço principal.</p><div class="sew-table"><table><thead><tr><th scope="col">Defeito</th><th scope="col">Serviço realizado</th><th scope="col">Peças no serviço</th><th scope="col">Ações</th></tr></thead><tbody data-repair-rows>'+repairLine()+'</tbody></table></div><button type="button" data-add-repair>Adicionar linha de reparo</button></section>';
 }
 function readRepairLines(container){
  return [...container.querySelectorAll('[data-repair-rows] tr')].map(row=>({
@@ -309,7 +309,7 @@ const activityStyles=`
 @media(prefers-reduced-motion:reduce){.sew .sew-activities button{transition:none}.sew-entry-dialog[open]{animation:none}}
 `;
 export async function mountSewing(host,api){
- host.innerHTML='<style>'+activityStyles+'.sew-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:12px;margin:12px 0}.sew-grid label{display:grid;gap:5px;align-content:start}.sew-grid input,.sew-grid select{min-width:0;width:100%;padding:8px}.sew-table{overflow:auto}.sew-repair-lines{grid-column:1/-1;min-width:0}.sew-repair-lines table{min-width:530px}.sew-repair-lines td:nth-child(3){width:100px}.sew-repair-lines [data-add-repair]{margin-top:10px}.sew-table table{width:100%;border-collapse:collapse}.sew-table th,.sew-table td{text-align:left;padding:8px;border-bottom:1px solid #b8c8d7}#q142 .sew details{padding:8px 0;border-bottom:1px solid #b8c8d7}#q142 .sew output{display:block;padding:8px}.sew-production{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:12px;margin:12px 0}.sew-production article{background:#192632;border:1px solid #40566e;border-radius:12px;padding:14px;color:#eef4ff}.sew-production h3{margin:0 0 10px;color:#eef4ff}.sew-production ul{list-style:none;margin:0;padding:0}.sew-production li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid #304054}.sew-production strong{color:#8ed5fa}.sew-share{display:grid;text-align:right;gap:3px}.sew-share small{color:#c0dbef;white-space:nowrap}.sew-share-note{color:#aec2d8}.sew-total{display:grid;gap:3px;margin:0 0 12px}.sew-total strong{font-size:1.5em}.sew-total small{color:#aec2d8}.sew-tv{width:min(96vw,1500px);max-width:none;max-height:96vh;padding:24px;border:1px solid #40566e;border-radius:14px;background:#111820;color:#eef4ff;font-size:clamp(16px,1.6vw,28px);overflow:auto}.sew-tv:fullscreen{width:100%;height:100%;max-height:none}.sew-tv::backdrop{background:#000b}.sew-tv header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;background:transparent;border:0}.sew-tv h2{color:#eef4ff;margin:0}.sew-tv button{background:#192632;color:#eef4ff}.sew-chart{border:1px solid #40566e;border-radius:12px;padding:14px;margin:12px 0}.sew-chart h3{color:#eef4ff;margin-top:0}.sew-chart-legend{display:flex;gap:16px;flex-wrap:wrap}.sew-chart-legend span:first-child{color:#8ed5fa}.sew-chart-legend span:nth-child(2){color:#ffc078}.sew-chart-scroll{overflow-x:auto}.sew-column-chart{display:grid;grid-template-columns:repeat(var(--periods),minmax(0,1fr));position:relative;--plot-height:clamp(145px,24vh,235px)}.sew-column-chart button{display:grid;grid-template-rows:var(--plot-height) auto auto;align-content:start;gap:4px;padding:0 4px 8px;background:transparent;color:#eef4ff;border:0;border-radius:0;min-width:0;overflow-wrap:anywhere}.sew-column-chart button:hover,.sew-column-chart button:focus-visible,.sew-column-chart button[aria-pressed=true]{background:#253746;outline:1px solid #8ed5fa;outline-offset:-1px}.sew-column-plot{display:flex;align-items:end;justify-content:center;border-bottom:1px solid #40566e}.sew-column{display:block;width:68%;max-width:72px;border-radius:4px 4px 0 0;background:#5bacec}.sew-trend{position:absolute;top:0;left:0;width:100%;height:var(--plot-height);pointer-events:none;z-index:1;overflow:hidden}.sew-professional-chart{--plot-height:140px}.sew-professional-period{display:grid;grid-template-rows:var(--plot-height) auto auto;gap:4px;text-align:center;font-size:.82rem;overflow-wrap:anywhere}.sew-projected{color:#ffc078}.sew-chart h4{color:#eef4ff}</style><div class="q142-card sew"><a href="/#qualidade">← Qualidade</a><h1>Costura</h1><p role="status">Verificando acesso…</p></div>';
+ host.innerHTML='<style>'+activityStyles+'.sew-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:12px;margin:12px 0}.sew-grid label,.sew-grid [data-piece-quantity]{display:grid;gap:5px;align-content:start}#q142 .sew [data-piece-quantity] [hidden]{display:none}.sew-grid input,.sew-grid select{min-width:0;width:100%;padding:8px}.sew-table{overflow:auto}.sew-repair-lines{grid-column:1/-1;min-width:0}.sew-repair-lines table{min-width:530px}.sew-repair-lines td:nth-child(3){width:100px}.sew-repair-lines [data-add-repair]{margin-top:10px}.sew-table table{width:100%;border-collapse:collapse}.sew-table th,.sew-table td{text-align:left;padding:8px;border-bottom:1px solid #b8c8d7}#q142 .sew details{padding:8px 0;border-bottom:1px solid #b8c8d7}#q142 .sew output{display:block;padding:8px}.sew-production{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:12px;margin:12px 0}.sew-production article{background:#192632;border:1px solid #40566e;border-radius:12px;padding:14px;color:#eef4ff}.sew-production h3{margin:0 0 10px;color:#eef4ff}.sew-production ul{list-style:none;margin:0;padding:0}.sew-production li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid #304054}.sew-production strong{color:#8ed5fa}.sew-share{display:grid;text-align:right;gap:3px}.sew-share small{color:#c0dbef;white-space:nowrap}.sew-share-note{color:#aec2d8}.sew-total{display:grid;gap:3px;margin:0 0 12px}.sew-total strong{font-size:1.5em}.sew-total small{color:#aec2d8}.sew-tv{width:min(96vw,1500px);max-width:none;max-height:96vh;padding:24px;border:1px solid #40566e;border-radius:14px;background:#111820;color:#eef4ff;font-size:clamp(16px,1.6vw,28px);overflow:auto}.sew-tv:fullscreen{width:100%;height:100%;max-height:none}.sew-tv::backdrop{background:#000b}.sew-tv header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;background:transparent;border:0}.sew-tv h2{color:#eef4ff;margin:0}.sew-tv button{background:#192632;color:#eef4ff}.sew-chart{border:1px solid #40566e;border-radius:12px;padding:14px;margin:12px 0}.sew-chart h3{color:#eef4ff;margin-top:0}.sew-chart-legend{display:flex;gap:16px;flex-wrap:wrap}.sew-chart-legend span:first-child{color:#8ed5fa}.sew-chart-legend span:nth-child(2){color:#ffc078}.sew-chart-scroll{overflow-x:auto}.sew-column-chart{display:grid;grid-template-columns:repeat(var(--periods),minmax(0,1fr));position:relative;--plot-height:clamp(145px,24vh,235px)}.sew-column-chart button{display:grid;grid-template-rows:var(--plot-height) auto auto;align-content:start;gap:4px;padding:0 4px 8px;background:transparent;color:#eef4ff;border:0;border-radius:0;min-width:0;overflow-wrap:anywhere}.sew-column-chart button:hover,.sew-column-chart button:focus-visible,.sew-column-chart button[aria-pressed=true]{background:#253746;outline:1px solid #8ed5fa;outline-offset:-1px}.sew-column-plot{display:flex;align-items:end;justify-content:center;border-bottom:1px solid #40566e}.sew-column{display:block;width:68%;max-width:72px;border-radius:4px 4px 0 0;background:#5bacec}.sew-trend{position:absolute;top:0;left:0;width:100%;height:var(--plot-height);pointer-events:none;z-index:1;overflow:hidden}.sew-professional-chart{--plot-height:140px}.sew-professional-period{display:grid;grid-template-rows:var(--plot-height) auto auto;gap:4px;text-align:center;font-size:.82rem;overflow-wrap:anywhere}.sew-projected{color:#ffc078}.sew-chart h4{color:#eef4ff}</style><div class="q142-card sew"><a href="/#qualidade">← Qualidade</a><h1>Costura</h1><p role="status">Verificando acesso…</p></div>';
  const root=host.querySelector('.sew'), message=root.querySelector('[role=status]');
  try{
   await window.GAO_AUTH_READY;
@@ -354,27 +354,39 @@ export async function mountSewing(host,api){
   };
   const entry=()=>{
    ++screen;
-   content.innerHTML='<h2>Lançar serviço</h2><p>Responsável: '+escape(identity)+'</p>'+activityCards()+'<p role="status" data-entry-feedback></p><dialog class="sew-entry-dialog" aria-labelledby="sew-activity-title"><form><header class="sew-activity-heading"><h3 id="sew-activity-title" data-activity-title tabindex="-1"></h3><button type="button" class="q142-btn" data-close-entry>Fechar</button></header><input type="hidden" name="activity"><div class="sew-grid">'+input('service_date','Data do serviço','date',true)+input('piece_type','Tipo de peça','text',true)+input('quantity','Quantidade de peças','number',true)+input('lot','Lote ou referência da entrada')+input('customer','Cliente ou origem')+'</div><div class="sew-grid" data-fields></div><p class="sew-share-note" data-score aria-live="polite" hidden></p><div class="sew-entry-notes">'+input('notes','Observações')+'</div><div class="sew-entry-actions"><button class="q142-btn q142-primary" type="submit">Salvar lançamento</button><p role="status"></p></div></form></dialog>';
+   content.innerHTML='<h2>Lançar serviço</h2><p>Responsável: '+escape(identity)+'</p>'+activityCards()+'<p role="status" data-entry-feedback></p><dialog class="sew-entry-dialog" aria-labelledby="sew-activity-title"><form><header class="sew-activity-heading"><h3 id="sew-activity-title" data-activity-title tabindex="-1"></h3><button type="button" class="q142-btn" data-close-entry>Fechar</button></header><input type="hidden" name="activity"><div class="sew-grid">'+input('service_date','Data do serviço','date',true)+input('piece_type','Tipo de peça','text',true)+'<div data-piece-quantity><label for="sew-piece-quantity">Quantidade de peças</label><input id="sew-piece-quantity" name="quantity" type="number" min="1" max="2147483647" step="1" inputmode="numeric" required><output id="sew-piece-total" aria-live="polite" hidden></output></div>'+input('lot','Lote ou referência da entrada')+input('customer','Cliente ou origem')+'</div><div class="sew-grid" data-fields></div><p class="sew-share-note" data-score aria-live="polite" hidden></p><div class="sew-entry-notes">'+input('notes','Observações')+'</div><div class="sew-entry-actions"><button class="q142-btn q142-primary" type="submit">Salvar lançamento</button><p role="status"></p></div></form></dialog>';
    const dialog=content.querySelector('.sew-entry-dialog');
    const form=dialog.querySelector('form'), feedback=form.querySelector('[role=status]'), detail=form.querySelector('[data-fields]');
    const closeEntry=form.querySelector('[data-close-entry]');
    const submit=form.querySelector('[type="submit"]');
-   form.elements.service_date.value=dateNow();form.elements.quantity.min=1;
+   form.elements.service_date.value=dateNow();
    const cards=content.querySelector('[data-activity-cards]');
    const activityField=form.elements.activity;
    const heading=form.querySelector('[data-activity-title]');
    const entryFeedback=content.querySelector('[data-entry-feedback]');
    const score=form.querySelector('[data-score]');
    const quantityField=form.elements.quantity;
-   const updatePreview=()=>{
-    const {activity,piece_type,...details}=Object.fromEntries(new FormData(form));
+   const quantityLabel=quantityField.previousElementSibling;
+   const quantityTotal=quantityField.nextElementSibling;
+   const updatePreview=(event)=>{
+    const activity=activityField.value;
+    const isRepair=activity==='reparo';
+    const firstRepairQuantity=detail.querySelector('[data-repair-quantity]');
+    if(isRepair&&event?.target===quantityField)firstRepairQuantity.value=quantityField.value;
     const lines=readRepairLines(detail);
-    if(activity==='reparo'){
-     const totalPieces=lines.reduce((sum,line)=>sum+line.quantity,0);
-     quantityField.value=totalPieces||'';
-     detail.querySelector('[data-remove-repair]').disabled=lines.length===1;
+    const multipleRepairs=isRepair&&lines.length>1;
+    const quantity=isRepair?lines.reduce((sum,line)=>sum+line.quantity,0):quantityField.value;
+    if(isRepair){
+     const firstQuantity=firstRepairQuantity.value;
+     if(!multipleRepairs&&quantityField.value!==firstQuantity)quantityField.value=firstQuantity;
+     detail.querySelector('[data-remove-repair]').disabled=!multipleRepairs;
     }
-    const quantity=quantityField.value;
+    quantityField.hidden=quantityField.disabled=multipleRepairs;
+    quantityTotal.hidden=!multipleRepairs;
+    quantityLabel.htmlFor=multipleRepairs?quantityTotal.id:quantityField.id;
+    quantityLabel.textContent=multipleRepairs?'Total de peças (soma dos serviços)':'Quantidade de peças';
+    if(multipleRepairs)quantityTotal.value=number(quantity);
+    const {piece_type,...details}=Object.fromEntries(new FormData(form));
     const gramsOutput=detail.querySelector('[name="grammage"]');
     if(gramsOutput){
      const g=grams(details);
@@ -401,8 +413,7 @@ export async function mountSewing(host,api){
     if(!card)return;
     const activity=card.dataset.sewActivity;
     if(activityField.value!==activity){
-     if(quantityField.readOnly||activity==='reparo')quantityField.value='';
-     quantityField.readOnly=activity==='reparo';
+     if(activityField.value==='reparo'||activity==='reparo')quantityField.value='';
      activityField.value=activity;
      detail.innerHTML=fields[activity]();
     }
@@ -469,7 +480,7 @@ export async function mountSewing(host,api){
      if(previousPayload&&previousPayload!==payload)id=crypto.randomUUID();
      previousPayload=payload;
      await api('quality_sewing_entries','on_conflict=id',{method:'POST',prefer:'resolution=ignore-duplicates,return=minimal',body:{id,...body}});
-     id=crypto.randomUUID();previousPayload=undefined;form.reset();activityField.value="";quantityField.readOnly=false;form.elements.service_date.value=dateNow();detail.replaceChildren();updatePreview();feedback.textContent='';dialog.close();entryFeedback.textContent='Lançamento salvo.';
+     id=crypto.randomUUID();previousPayload=undefined;form.reset();activityField.value="";form.elements.service_date.value=dateNow();detail.replaceChildren();updatePreview();feedback.textContent='';dialog.close();entryFeedback.textContent='Lançamento salvo.';
     }catch{feedback.textContent='Não foi possível confirmar o lançamento. Tente salvar novamente.';}
     finally{submit.disabled=false;closeEntry.disabled=false;}
    };
