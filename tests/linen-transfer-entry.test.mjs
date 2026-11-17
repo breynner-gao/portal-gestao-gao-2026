@@ -15,20 +15,37 @@ function render(eligible,canManage=true,decision='yes'){
   });
 }
 
-test('item a conferir aceita quantidade e oferece conferência na linha ao gestor', () => {
-  const html=render(null);
+test('movimentação usa o saldo da origem sem solicitar conferência manual', () => {
+  const html=render(300);
   assert.match(html,/<option value="yes" selected\s*>Sim/);
+  assert.match(html,/<input data-leo-quantity[^>]*max="300"/);
   assert.doesNotMatch(html,/<input data-leo-quantity[^>]*disabled/);
-  assert.match(html,/<input data-leo-quantity[^>]*max="733"/);
-  assert.match(html,/<form data-leo-stock>/);
-  assert.match(html,/<button[^>]*data-leo-save[^>]*disabled/);
+  assert.doesNotMatch(html,/<button[^>]*data-leo-save[^>]*disabled/);
+  assert.doesNotMatch(html,/Conferir saldo|data-leo-stock/);
 });
 
-test('saldo conferido limita o lançamento e quem só movimenta não ganha acesso à conferência', () => {
-  assert.match(render(300),/<input data-leo-quantity[^>]*max="300"/);
-  assert.doesNotMatch(render(300),/<button[^>]*data-leo-save[^>]*disabled/);
-  assert.doesNotMatch(render(null,false),/<form data-leo-stock>/);
-  assert.doesNotMatch(render(null,false,'no'),/<button[^>]*data-leo-save[^>]*disabled/);
+test('saldo zero ou produto sem posição bloqueia confirmar saída e permite registrar pendência', () => {
+  for(const available of [null,0]){
+    assert.match(render(available),/<button[^>]*data-leo-save[^>]*disabled/);
+    assert.doesNotMatch(render(available,false,'no'),/<button[^>]*data-leo-save[^>]*disabled/);
+  }
+});
+
+test('posição semanal deduz saídas e credita entradas confirmadas na mesma versão',async () => {
+  const {movementRows}=await import('../linen-management-views-v1.mjs');
+  const sku='ID:2593',version='2026-11-16T12:00:00Z';
+  const proposal={product_key:sku,direction:'return',planned:375};
+  const requests=[{...proposal,id:'req',snapshot_version:version}];
+  const events=[
+    {request_id:'req',stock_version:version,quantity:184,remaining:191},
+    {request_id:'req',stock_version:'2026-11-09T12:00:00Z',quantity:4,remaining:187}
+  ];
+  const weeklyStock=new Map([[sku,{market:400,depot:10}]]);
+  const [row]=movementRows([proposal],requests,events,[],version,weeklyStock);
+  assert.equal(row.eligible,216);
+  assert.equal(row.remaining,187);
+  const [checked]=movementRows([proposal],requests,events,[{product_key:sku,snapshot_version:version,market:40}],version,weeklyStock);
+  assert.equal(checked.eligible,40);
 });
 
 test('navegação da Gestão de Enxoval fica junto de Atualizar e respeita a visualização de Costura', async () => {

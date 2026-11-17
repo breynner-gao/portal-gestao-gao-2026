@@ -1,7 +1,7 @@
 import {applyIdealReferences, idealReferenceKey, listMovementItems} from './linen-risk-rules-v150.mjs?v=227';
 import {directionLabel, filterTransferHistory, localTimestamp, transferWorkbook} from './linen-operations-history-v1.mjs?v=1';
 
-import {views,newFilters,movementRows,invoiceFromXml} from './linen-management-views-v1.mjs?v=3';
+import {views,newFilters,movementRows,invoiceFromXml} from './linen-management-views-v1.mjs?v=4';
 import {productivityView, productivityRecords, shiftDate} from './linen-productivity-v1.mjs?v=1';
 import {workflowView,bindEvaluationProductPickers} from './linen-management-workflow-v1.mjs?v=4';
 
@@ -10,6 +10,7 @@ const SB='https://fquzuxdqvhecijjuxbmg.supabase.co';
 const API='sb_publishable_icrk6TaZexgiSIq63zX_ng_40JGaYlJ';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
 const qty=value=>Number(value).toLocaleString('pt-BR');
+const stockQty=value=>Math.max(0,Math.floor(Number(value)||0));
 const nativeHost='gao-linen-management';
 const tabFromUrl=()=>new URL(location.href).searchParams.get('tela');
 
@@ -17,7 +18,7 @@ function mount(host) {
   const native=host.id===nativeHost;
   let page=views.some(([key])=>key===tabFromUrl())?tabFromUrl():'painel';
   let session, organization, canWrite=false, canManage=false, canSew=false;
-  let snapshot, proposals=[], requests=[], events=[], balances=[], workflow={}, draft;
+  let snapshot, proposals=[], requests=[], events=[], balances=[], weeklyStock=new Map(), workflow={}, draft;
   const choices=new Map(), outstanding=new Map(), workflowIds=new Map();
   let loading=true, saving=false, message='', failed=false, sewingOnly=false;
   let filters=newFilters();
@@ -73,6 +74,9 @@ function mount(host) {
       requests=saved;
       balances=stock;
       events=history;
+      weeklyStock=new Map((snapshot?.rows||[]).filter(row=>String(row.produtoId??'').trim()!=='0').map(row=>[
+        idealReferenceKey(row),{depot:stockQty(row.estoqueGao??row.deposito),market:stockQty(row.mercado)}
+      ]).filter(([key])=>key.startsWith('ID:')));
       const source=applyIdealReferences(snapshot?.rows||[],new Map(ideals.map(row=>[row.product_key,Number(row.ideal)])));
       proposals=listMovementItems(source).map(row=>({
         product_key:idealReferenceKey(row), product_code:row.produtoId, product_name:row.produtoNome,
@@ -126,7 +130,7 @@ function mount(host) {
       payload=rows.map(row=>{
         const entry=choices.get(transferKey(row));
         const amount=entry?.decision==='yes'?Number(entry.quantity):0;
-        if(entry?.decision==='yes'&&row.eligible===null)throw Error('Confira o saldo elegível de '+row.product_name+' antes de confirmar.');
+        if(entry?.decision==='yes'&&row.eligible===null)throw Error('Produto ausente da posição semanal. Atualize a lista.');
         if(!Number.isSafeInteger(amount)||amount<0||(entry?.decision==='yes'&&(amount===0||amount>Math.min(row.remaining,row.eligible??0))))
           throw Error('Confira a quantidade de '+row.product_name+'.');
         const data={requestId:row.id||null,productKey:row.product_key,direction:row.direction,quantity:amount,expectedRemaining:row.remaining};
@@ -145,20 +149,17 @@ function mount(host) {
 
   function table(rows){
     if(!rows.length)return '<p>Nenhum produto neste recorte.</p>';
-    return '<div class="leo-scroll"><table><thead><tr><th>Produto</th><th>Solicitação e sentido</th><th>Previsto</th><th>Disponível elegível</th><th>Movimentado</th><th>Restante</th><th>Confirmação</th></tr></thead><tbody>'+
+    return '<div class="leo-scroll"><table><thead><tr><th>Produto</th><th>Solicitação e sentido</th><th>Previsto</th><th>Saldo na origem</th><th>Movimentado</th><th>Restante</th><th>Confirmação</th></tr></thead><tbody>'+
       rows.map((row,i)=>{
         const edit=canWrite&&row.remaining>0&&((row.id)||row.product_key.startsWith('ID:'));
         const draft=choices.get(transferKey(row));
         const limit=Math.min(row.remaining,row.eligible??row.remaining);
-        const needsStock=row.eligible===null;
+        const missingStock=row.eligible===null;
         const decision=draft?.decision||'';
         const status=row.remaining?(row.id?'Pendente':'Em aberto'):'Concluído';
-        return '<tr><td><strong>'+esc(row.product_name)+'</strong><small>'+esc(row.product_code||'')+'</small></td><td>'+directionLabel(row.direction)+'<small>'+esc(row.id||'Sugestão da posição semanal')+'</small></td><td>'+qty(row.planned)+'</td><td>'+(row.eligible===null?'A conferir':qty(row.eligible))+'</td><td>'+qty(row.done)+'</td><td>'+qty(row.remaining)+'</td><td><small>'+status+'</small>'+
-          (edit?'<div class="leo-confirm"><select data-leo-decision="'+i+'" aria-label="Movimentou '+esc(row.product_name)+'" '+(saving?'disabled':'')+'><option value="">Movimentou?</option><option value="yes" '+(decision==='yes'?'selected ':'')+'>Sim</option><option value="no" '+(decision==='no'?'selected':'')+'>Não</option></select><input data-leo-quantity="'+i+'" aria-label="Quantidade movimentada de '+esc(row.product_name)+'" type="number" min="1" max="'+limit+'" step="1" value="'+esc(draft?.quantity||'')+'" '+(decision!=='yes'||saving?'disabled':'')+'><button type="button" data-leo-save="'+i+'" '+(!decision||saving||(decision==='yes'&&(needsStock||!limit))?'disabled':'')+'>'+ (page==='pendencias'?'Confirmar quantidade':'Confirmar')+'</button></div>':'')+
-          (edit&&needsStock?canManage&&snapshot&&row.product_key.startsWith('ID:')?
-            '<details '+(decision==='yes'?'open':'')+'><summary>Conferir saldo deste produto</summary><form data-leo-stock><input type="hidden" name="product" value="'+esc(row.product_key)+'">'+stockFields()+'</form></details>':
-            '<small>A confirmação depende da conferência do estoque.</small>':'')+
-          (edit&&row.eligible===0?'<small>Sem saldo elegível na origem.</small>':'')+
+        return '<tr><td><strong>'+esc(row.product_name)+'</strong><small>'+esc(row.product_code||'')+'</small></td><td>'+directionLabel(row.direction)+'<small>'+esc(row.id||'Sugestão da posição semanal')+'</small></td><td>'+qty(row.planned)+'</td><td>'+(row.eligible===null?'Sem posição':qty(row.eligible))+'</td><td>'+qty(row.done)+'</td><td>'+qty(row.remaining)+'</td><td><small>'+status+'</small>'+
+          (edit?'<div class="leo-confirm"><select data-leo-decision="'+i+'" aria-label="Movimentou '+esc(row.product_name)+'" '+(saving?'disabled':'')+'><option value="">Movimentou?</option><option value="yes" '+(decision==='yes'?'selected ':'')+'>Sim</option><option value="no" '+(decision==='no'?'selected':'')+'>Não</option></select><input data-leo-quantity="'+i+'" aria-label="Quantidade movimentada de '+esc(row.product_name)+'" type="number" min="1" max="'+limit+'" step="1" value="'+esc(draft?.quantity||'')+'" '+(decision!=='yes'||saving?'disabled':'')+'><button type="button" data-leo-save="'+i+'" '+(!decision||saving||(decision==='yes'&&(missingStock||!limit))?'disabled':'')+'>'+ (page==='pendencias'?'Confirmar quantidade':'Confirmar')+'</button></div>':'')+
+          (edit&&row.eligible===0?'<small>Sem saldo registrado na origem.</small>':'')+
           (row.id?'<button type="button" data-leo-history="'+i+'">Ver histórico</button>':'')+'</td></tr>';
       }).join('')+'</tbody></table></div>';
   }
@@ -187,20 +188,6 @@ function mount(host) {
 
   function historyReplace(url){window.history.replaceState(window.history.state,'',url);}
 
-  function stockFields(){
-    return '<label>Depósito elegível<input name="depot" type="number" min="0" step="1" required></label>'+
-      '<label>Mercado elegível<input name="market" type="number" min="0" step="1" required></label>'+
-      '<button '+(saving?'disabled':'')+'>Salvar conferência</button>';
-  }
-
-  function stockSetup(){
-    const registered=new Set(balances.filter(row=>Date.parse(row.snapshot_version)===Date.parse(snapshot?.updated_at)).map(row=>row.product_key));
-    const items=(snapshot?.rows||[]).filter(row=>idealReferenceKey(row).startsWith('ID:')&&!registered.has(idealReferenceKey(row)));
-    return '<section class="leo-card"><h2>Saldo elegível para movimentações</h2><p>Confira as quantidades por local após descontar peças bloqueadas, reservadas, em quarentena, costura ou descarte. A conferência vale para a posição semanal atual. Desconte também as separações em aberto das semanas anteriores.</p>'+
-      (canManage&&items.length?'<form data-leo-stock><label>Produto<select name="product" required><option value="">Selecione</option>'+items.map(row=>'<option value="'+esc(idealReferenceKey(row))+'">'+esc(row.produtoNome)+'</option>').join('')+'</select></label>' + stockFields() + '</form>':'')+
-      '<p>'+qty(registered.size)+' produto(s) conferido(s) nesta posição.</p></section>';
-  }
-
   async function workflowSubmit(action,data){
     if(saving)return;
     const key=action+'|'+JSON.stringify(data);
@@ -226,7 +213,7 @@ function mount(host) {
     let rows=[],content='',report;
     if(loading)content='<p role="status">Carregando registros do SGQ…</p>';
     else if(!failed){
-      const allRows=movementRows(proposals,requests,events,balances,snapshot?.updated_at);
+      const allRows=movementRows(proposals,requests,events,balances,snapshot?.updated_at,weeklyStock);
       if(native&&page==='painel'){
         const groups=[['return','Mercado para Depósito',allRows.filter(x=>x.direction==='return'&&x.remaining).reduce((a,b)=>a+b.remaining,0)],
           ['supply','Depósito para Mercado',allRows.filter(x=>x.direction==='supply'&&x.remaining).reduce((a,b)=>a+b.remaining,0)],
@@ -237,14 +224,14 @@ function mount(host) {
       }else if(!native||['return','supply','pendencias'].includes(page)){
         rows=allRows.filter(row=>!native||page==='pendencias'?row.remaining>0:row.direction===page);
         const chosen=rows.filter(row=>choices.get(transferKey(row))?.decision);
-        content='<section class="leo-card"><p>As quantidades previstas vêm da posição semanal e das trocas ideais. Confirme após a movimentação física nos dois locais. Para produtos a conferir, registre apenas peças disponíveis, descontando reservas e bloqueios. <a href="/producao/gestao-enxoval?tela=configuracoes">Conferir saldo elegível</a>.</p>'+
+        content='<section class="leo-card"><p>Informe a quantidade efetivamente movimentada. O saldo na origem é atualizado a cada confirmação.</p>'+
           '<button type="button" data-leo-list '+(!chosen.length||saving?'disabled':'')+'>Salvar lista</button>'+table(rows)+'</section>';
         if(!native||page==='pendencias'){report=history();content+=report.html;}
       }else if(page==='produtividade'){
         content=productivityView({records:productivityRecords(events,workflow.activityLog||[]),targets:workflow.targets||[],
           date:reportDate,today:localTimestamp(new Date()).slice(0,10),canManage,saving});
       }else if(page==='configuracoes'){
-        report=history();content=stockSetup()+workflowView(page,workflow,{canManage,canSew,saving,draft})+report.html;
+        report=history();content=workflowView(page,workflow,{canManage,canSew,saving,draft})+report.html;
       }else content=workflowView(page,workflow,{canManage,canSew,saving,draft});
     }
     const headerControls=(saving||loading?'disabled':'');
@@ -316,17 +303,6 @@ function mount(host) {
         window.XLSX.writeFile(file,'historico-movimentacoes-enxoval.xlsx');
       }catch(error){message=error.message;render();}
     });
-    host.querySelectorAll('[data-leo-stock]').forEach(form=>form.addEventListener('submit',async event=>{
-      event.preventDefault();
-      if(saving||!canManage||!snapshot)return;
-      const data=new FormData(event.currentTarget);
-      saving=true;message='';render();
-      try{
-        await api('/rest/v1/rpc/linen_set_eligible_stock',{p_org:organization,p_version:snapshot.updated_at,
-          p_key:data.get('product'),p_depot:Number(data.get('depot')),p_market:Number(data.get('market'))});
-        message='Saldo elegível conferido.';await load();
-      }catch(error){message=error.message;}finally{saving=false;render();}
-    }));
     host.querySelector('[data-leo-xml]')?.addEventListener('change',async event=>{
       try{
         const file=event.target.files[0];

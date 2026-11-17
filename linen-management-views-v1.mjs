@@ -19,13 +19,21 @@ export const views=[
 
 export const newFilters=()=>({product:'',direction:'',start:'',end:'',responsible:''});
 
-export function movementRows(proposals, requests, events, balances, version) {
+export function movementRows(proposals, requests, events, balances, version, weeklyStock=new Map()) {
   const key=row=>row.direction+'|'+row.product_key;
   const moved=new Map();
   const fulfilled=new Set();
+  const netSupply=new Map();
+  const requestsById=new Map(requests.map(row=>[row.id,row]));
   for(const event of events){
     moved.set(event.request_id,(moved.get(event.request_id)||0)+event.quantity);
-    if(event.remaining===0&&Date.parse(event.stock_version)===Date.parse(version))fulfilled.add(event.request_id);
+    if(Date.parse(event.stock_version)!==Date.parse(version))continue;
+    if(event.remaining===0)fulfilled.add(event.request_id);
+    const request=requestsById.get(event.request_id);
+    if(request){
+      const delta=request.direction==='supply'?event.quantity:-event.quantity;
+      netSupply.set(request.product_key,(netSupply.get(request.product_key)||0)+delta);
+    }
   }
   const saved=new Map();
   for(const row of requests) {
@@ -40,8 +48,13 @@ export function movementRows(proposals, requests, events, balances, version) {
   merged.push(...requests.filter(row=>!shown.has(row.id)));
   return merged.map(row=>{
     const done=moved.get(row.id)||0;
-    return {...row,done,remaining:row.planned-done,
-      eligible:eligible.get(row.product_key)?.[row.direction==='supply'?'depot':'market']??null};
+    const fromDepot=row.direction==='supply';
+    const source=fromDepot?'depot':'market';
+    const counted=eligible.get(row.product_key);
+    const weekly=weeklyStock.get(row.product_key);
+    const delta=netSupply.get(row.product_key)||0;
+    const available=weekly?Math.max(0,weekly[source]+(fromDepot?-delta:delta)):null;
+    return {...row,done,remaining:row.planned-done,eligible:counted?.[source]??available};
   });
 }
 
