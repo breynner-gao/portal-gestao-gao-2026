@@ -6,9 +6,28 @@ const input=(name,label,type='text',required=false)=>'<label>'+label+'<input nam
 const select=(name,label,values,required=true)=>'<label>'+label+'<select name="'+name+'" '+(required?'required':'')+'><option value="">Selecione</option>'+options(values)+'</select></label>';
 const status=['Em execução','Aguardando conferência','Liberada','Precisa de ajuste'];
 const reason=['Costura aberta','Rasgo','Desgaste','Medida','Acabamento','Mancha','Outro'];
+const repairCategories={
+ Capote:{label:'Reparo de capote',points:3},
+ Privativos:{label:'Reparo de privativos',points:2},
+ Lençol:{label:'Reparo de lençol',points:2},
+ 'Campo cirúrgico':{label:'Reparo de campo cirúrgico',points:2},
+ Geral:{label:'Reparo geral',points:2}
+};
+const activityPoints={entrada:.5,remodelagem:3,peca_nova:.5,chipagem:1,condicao:.5,retirada_chip:1,auditoria:.5};
+const discardPoints=.5;
+const unitPoints=points=>number(points)+' '+(points===1?'ponto':'pontos')+' por peça';
+function repairCategorySelect(){
+ return '<label>Categoria para pontuação<select name="repair_group" required><option value="">Selecione</option>'+Object.entries(repairCategories).map(([value,{label,points}])=>'<option value="'+escape(value)+'">'+escape(label+' · '+unitPoints(points))+'</option>').join('')+'</select></label>';
+}
+function scoringRules(activity){
+ if(activity==='reparo')return 'Selecione a categoria para ver a pontuação do reparo.';
+ const points=activityPoints[activity];
+ const rule=points==null?'Atividade sem pontuação definida.':unitPoints(points)+'.';
+ return activity==='condicao'?rule+' Envio para descarte soma '+unitPoints(discardPoints)+' efetivamente enviada.':rule;
+}
 const fields={
  entrada:()=>select('condition','Condição observada',reason)+select('destination','Encaminhamento',['Reparo','Remodelagem','Avaliar descarte','Outro']),
- reparo:()=>select('repair_group','Categoria para pontuação',['Capote','Geral'])+select('defect','Defeito',reason)+select('repair','Reparo realizado',['Bainha','Costura','Remendo','Troca de componente','Outro'])+select('status','Situação',status)+input('previous','Referência do serviço anterior')+input('return_reason','Motivo do retorno'),
+ reparo:()=>repairCategorySelect()+select('defect','Defeito',reason)+select('repair','Reparo realizado',['Bainha','Costura','Remendo','Troca de componente','Outro'])+select('status','Situação',status)+input('previous','Referência do serviço anterior')+input('return_reason','Motivo do retorno'),
  remodelagem:()=>input('original_size','Tamanho original','text',true)+input('change','Alteração realizada','text',true)+input('result_piece','Tipo resultante','text',true)+input('result_size','Tamanho resultante','text',true)+input('result_qty','Quantidade resultante','number',true)+select('status','Situação',status),
  peca_nova:()=>input('supplier','Fornecedor')+input('approved','Aprovadas','number',true)+input('pending','Pendentes','number',true)+input('rejected','Reprovadas','number',true)+select('reason','Motivo da pendência ou reprovação',reason,false)+select('finish','Costuras e acabamento',['Conformes','Com defeitos','Não verificados'])+select('register','Chipagem e cadastro',['Pendentes','Concluídos','Não se aplica'])+input('released','Liberadas para uso','number',true)+input('sample','Identificação da peça ou amostra')+select('method','Método da medição',['Peça plana retangular aberta','Outro formato ou método'],false)+['length','width','weight'].map((k,i)=>'<label>'+['Comprimento (cm)','Largura (cm)','Peso unitário sem embalagem (g)'][i]+'<input type="number" min="0.01" step="any" name="'+k+'"></label>').join('')+'<label>Gramatura (g/m²)<output name="grammage">—</output></label>',
  chipagem:()=>select('reading','Teste de leitura',['Aprovado','Falhou','Não realizado'])+select('register','Cadastro',['Pendente','Concluído']),
@@ -35,13 +54,13 @@ function sewingScore(row){
  if(qty==null||!Number.isFinite(Number(qty)))return [];
  const activity=row.source_row?historicalLabels[row.activity]:row.activity;
  if((activity==='reparo'||activity==='remodelagem')&&['Em execução','Precisa de ajuste'].includes(row.details?.status))return [];
- const weights={reparo:2,chipagem:1,retirada_chip:1,entrada:.5,peca_nova:.5,condicao:.5,remodelagem:3,auditoria:.5};
- const capote=activity==='reparo'&&(row.details?.repair_group==='Capote'||(!row.details?.repair_group&&/\bcapotes?\b/i.test(row.piece_type||'')));
- const label=activity==='reparo'?(capote?'Reparo de capote':'Reparo geral'):row.label;
- const weight=capote?3:weights[activity];
- const scored=weight==null?[]:[[label,Number(qty)*weight]];
+ const repairGroup=row.details?.repair_group;
+ const legacyCategory=/\bcapotes?\b/i.test(row.piece_type||'')?'Capote':'Geral';
+ const repair=activity==='reparo'?(Object.hasOwn(repairCategories,repairGroup)?repairCategories[repairGroup]:repairCategories[repairGroup?'Geral':legacyCategory]):null;
+ const weight=repair?.points??activityPoints[activity];
+ const scored=weight==null?[]:[[repair?.label??row.label,Number(qty)*weight]];
  const sent=Number(row.details?.discard_sent_qty);
- if(activity==='condicao'&&Number.isInteger(sent)&&sent>0&&sent<=Number(qty))scored.push(['Envio para descarte',sent*.5]);
+ if(activity==='condicao'&&Number.isInteger(sent)&&sent>0&&sent<=Number(qty))scored.push(['Envio para descarte',sent*discardPoints]);
  return scored;
 }
 function productionCards(rows,teamRows=rows){
@@ -268,15 +287,33 @@ export async function mountSewing(host,api){
   };
   const entry=()=>{
    ++screen;
-   content.innerHTML='<h2>Lançar serviço</h2><p>Responsável: '+escape(identity)+'</p><form><div class="sew-grid">'+input('service_date','Data do serviço','date',true)+'<label>Atividade<select name="activity" required><option value="">Selecione</option>'+Object.entries(activities).map(([k,v])=>'<option value="'+k+'">'+v+'</option>').join('')+'</select></label>'+input('piece_type','Tipo de peça','text',true)+input('quantity','Quantidade de peças','number',true)+input('lot','Lote ou referência da entrada')+input('customer','Cliente ou origem')+'</div><div class="sew-grid" data-fields></div>'+input('notes','Observações')+' <button class="q142-btn q142-primary" type="submit">Salvar lançamento</button><p role="status"></p></form>';
+   content.innerHTML='<h2>Lançar serviço</h2><p>Responsável: '+escape(identity)+'</p><form><div class="sew-grid">'+input('service_date','Data do serviço','date',true)+'<label>Atividade<select name="activity" required><option value="">Selecione</option>'+Object.entries(activities).map(([k,v])=>'<option value="'+k+'">'+v+'</option>').join('')+'</select></label>'+input('piece_type','Tipo de peça','text',true)+input('quantity','Quantidade de peças','number',true)+input('lot','Lote ou referência da entrada')+input('customer','Cliente ou origem')+'</div><div class="sew-grid" data-fields></div><p class="sew-share-note" data-score aria-live="polite" hidden></p>'+input('notes','Observações')+' <button class="q142-btn q142-primary" type="submit">Salvar lançamento</button><p role="status"></p></form>';
    const form=content.querySelector('form'), feedback=form.querySelector('[role=status]'), detail=form.querySelector('[data-fields]');
    form.elements.service_date.value=dateNow();form.elements.quantity.min=1;
-   form.elements.activity.onchange=()=>{detail.innerHTML=fields[form.elements.activity.value]?.()||'';};
-   form.addEventListener('input',()=>{
-    const output=detail.querySelector('output');if(!output)return;
-    const d=Object.fromEntries(new FormData(form)), g=grams(d);
-    output.value=g===null?'—':g.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1});
-   });
+   const score=form.querySelector('[data-score]');
+   const updatePreview=()=>{
+    const {activity,piece_type,quantity,...details}=Object.fromEntries(new FormData(form));
+    const gramsOutput=detail.querySelector('[name="grammage"]');
+    if(gramsOutput){
+     const g=grams(details);
+     gramsOutput.value=g===null?'—':g.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1});
+    }
+    score.hidden=!activity;
+    if(!activity){score.textContent='';return;}
+    const selectedRepair=activity==='reparo'&&Object.hasOwn(repairCategories,details.repair_group)?repairCategories[details.repair_group]:null;
+    const rule=selectedRepair?unitPoints(selectedRepair.points)+'.':scoringRules(activity);
+    const awaitingStatus=['reparo','remodelagem'].includes(activity)&&!details.status;
+    const canPreview=Number(quantity)>0&&!awaitingStatus&&(activity!=='reparo'||selectedRepair);
+    const preview=canPreview?sewingScore({activity,piece_type,quantity,details}):[];
+    const total=preview.reduce((sum,[,points])=>sum+points,0);
+    const result=canPreview&&activity!=='troca_chip'?' Pontuação do lançamento: '+number(total)+' '+(total===1?'ponto':'pontos')+'.':'';
+    score.textContent=rule+result;
+   };
+   form.elements.activity.onchange=()=>{
+    detail.innerHTML=fields[form.elements.activity.value]?.()||'';
+    updatePreview();
+   };
+   form.addEventListener('input',updatePreview);
    let id=crypto.randomUUID();
    let previousPayload;
    form.onsubmit=async e=>{
@@ -301,7 +338,7 @@ export async function mountSewing(host,api){
      if(previousPayload&&previousPayload!==payload)id=crypto.randomUUID();
      previousPayload=payload;
      await api('quality_sewing_entries','on_conflict=id',{method:'POST',prefer:'resolution=ignore-duplicates,return=minimal',body:{id,...body}});
-     id=crypto.randomUUID();previousPayload=undefined;form.reset();form.elements.service_date.value=dateNow();detail.replaceChildren();feedback.textContent='Lançamento salvo.';
+     id=crypto.randomUUID();previousPayload=undefined;form.reset();form.elements.service_date.value=dateNow();detail.replaceChildren();updatePreview();feedback.textContent='Lançamento salvo.';
     }catch{feedback.textContent='Não foi possível confirmar o lançamento. Tente salvar novamente.';}
     finally{submit.disabled=false;}
    };
