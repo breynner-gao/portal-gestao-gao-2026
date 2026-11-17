@@ -14,8 +14,7 @@ function loadPdfLibrary(page) {
   });
 }
 
-export function openReport(report, filename) {
-  const page = window.open('', '_blank');
+export function openReport(report, filename, {page = window.open('', '_blank'), orientation = 'portrait'} = {}) {
   if (!page) throw new Error('Permita pop-ups para abrir o relatório.');
   page.opener = null;
   const doc = page.document;
@@ -60,7 +59,7 @@ export function openReport(report, filename) {
       margin: 11,
       image: {type: 'jpeg', quality: 0.94},
       html2canvas: {scale: 1.5, backgroundColor: '#fff', logging: false},
-      jsPDF: {unit: 'mm', format: 'a4', orientation: 'portrait'},
+      jsPDF: {unit: 'mm', format: 'a4', orientation},
       pagebreak: {mode: ['css'], avoid: ['tr', 'article', 'header']}
     }).from(content).toContainer();
     const container = await worker.get('container');
