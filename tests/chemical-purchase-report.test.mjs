@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderChemicalPurchaseReport, weeklyConsumption } from '../chemical-purchase-report-v1.mjs';
+import { monthlyConsumption, renderChemicalPurchaseReport, weeklyConsumption } from '../chemical-purchase-report-v1.mjs';
 
 const consumption = (name, code, liters) => ({
   product_id: code,
@@ -51,4 +51,39 @@ test('relatório preserva a solicitação e exibe um gráfico por produto regist
   assert.match(html, /<h3>Soda<\/h3>/);
   assert.match(html, /class="print"/);
   assert.match(renderChemicalPurchaseReport({...reportData, history: null}), /Não foi possível carregar o histórico/);
+});
+
+test('consumo mensal soma os custos originais por produto e usa o mês do encerramento', () => {
+  const monthly = monthlyConsumption([
+    entry(44, '2026-10-26', '2026-11-01', [
+      {...soda(12), calculated_cost: '57.20', price_per_liter: '5.00'},
+      {...soda(3), calculated_cost: null, price_per_liter: '4.00'},
+      {...cloro(2), calculated_cost: '6.20'}
+    ]),
+    entry(44, '2026-10-25', '2026-10-31', [{...soda(999), calculated_cost: '9990'}], 'LEGACY'),
+    entry(45, '2026-11-02', '2026-11-08', [{...soda(5), calculated_cost: '20'}]),
+    entry(46, '2026-11-09', '2026-11-15', [soda(7), cloro(0)]),
+    entry(47, '2026-11-16', '2026-11-22', [{...soda(999), calculated_cost: '9990'}])
+  ], reportData.issuedOn, code => code === 'MSC' ? 'Soda' : null);
+
+  assert.deepEqual(monthly.months.map(month => month.key), [
+    '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'
+  ]);
+  assert.equal(monthly.months.at(-2).weeks, 0);
+  const november = monthly.months.at(-1);
+  assert.equal(november.weeks, 3);
+  assert.equal(november.volume, 29);
+  assert.equal(november.cost.toFixed(2), '95.40');
+  assert.equal(november.unpriced, 1);
+  const sodaTotal = monthly.products.find(p => p.name === 'Soda').byMonth.get('2026-11');
+  assert.equal(sodaTotal.cost.toFixed(2), '89.20');
+  assert.equal(sodaTotal.unpriced, 1);
+
+  const html = renderChemicalPurchaseReport({...reportData, history, monthly});
+  assert.match(html, /Consumo mensal de químicos[\s\S]*Gasto mensal por produto[\s\S]*Consumo semanal por produto/);
+  assert.match(html, /nov\. de 2026 \(parcial\)/);
+  assert.match(html, /R\$\s95,40/);
+  assert.match(html, /R\$\s89,20 \*/);
+  assert.match(html, /há consumo sem custo registrado/);
+  assert.match(html, /<tfoot><tr><th scope="row">Total por mês/);
 });
