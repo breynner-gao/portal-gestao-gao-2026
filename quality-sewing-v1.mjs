@@ -6,6 +6,38 @@ const input=(name,label,type='text',required=false)=>'<label>'+label+'<input nam
 const select=(name,label,values,required=true)=>'<label>'+label+'<select name="'+name+'" '+(required?'required':'')+'><option value="">Selecione</option>'+options(values)+'</select></label>';
 const status=['Em execução','Aguardando conferência','Liberada','Precisa de ajuste'];
 const reason=['Costura aberta','Rasgo','Desgaste','Medida','Acabamento','Mancha','Outro'];
+const repairServices=['Bainha','Costura','Remendo','Troca de componente','Outro'];
+const incompleteStatuses=['Em execução','Precisa de ajuste'];
+function repairLine(){
+ return '<tr><td><select data-repair-defect aria-label="Defeito" required><option value="">Selecione</option>'+options(reason)+'</select></td><td><select data-repair-service aria-label="Serviço realizado" required><option value="">Selecione</option>'+options(repairServices)+'</select></td><td><input data-repair-quantity aria-label="Quantidade de peças" type="number" min="1" max="2147483647" step="1" inputmode="numeric" required></td><td><button type="button" data-remove-repair aria-label="Remover linha de reparo">Remover</button></td></tr>';
+}
+function repairTable(){
+ return '<section class="sew-repair-lines"><h3>Peças por serviço de reparo</h3><p>Informe a quantidade de cada serviço. Se uma peça recebeu mais de um reparo, conte-a pelo serviço principal.</p><div class="sew-table"><table><thead><tr><th scope="col">Defeito</th><th scope="col">Serviço realizado</th><th scope="col">Peças</th><th scope="col">Ações</th></tr></thead><tbody data-repair-rows>'+repairLine()+'</tbody></table></div><button type="button" data-add-repair>Adicionar linha de reparo</button></section>';
+}
+function readRepairLines(container){
+ return [...container.querySelectorAll('[data-repair-rows] tr')].map(row=>({
+  defect:row.querySelector('[data-repair-defect]').value,
+  service:row.querySelector('[data-repair-service]').value,
+  quantity:Number(row.querySelector('[data-repair-quantity]').value)
+ }));
+}
+function repairDetails(row){
+ if(row.activity!=='reparo')return [];
+ if(Array.isArray(row.details?.repairs))return row.details.repairs.filter(line=>repairServices.includes(line?.service)&&Number.isInteger(line.quantity)&&line.quantity>0);
+ if(row.details?.repair&&row.quantity>0)return [{defect:row.details.defect,service:row.details.repair,quantity:row.quantity}];
+ return [];
+}
+const table=(heads,body)=>'<div class="sew-table"><table><thead><tr>'+heads.map(x=>'<th scope="col">'+x+'</th>').join('')+'</tr></thead><tbody>'+body.map(row=>'<tr>'+row.map(x=>'<td>'+escape(x)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>';
+function repairServiceTotals(rows){
+ const totals=new Map();
+ for(const row of rows){
+  if(incompleteStatuses.includes(row.details?.status))continue;
+  for(const {service,quantity} of repairDetails(row))totals.set(service,(totals.get(service)||0)+Number(quantity));
+ }
+ if(!totals.size)return '';
+ const lines=[...totals].sort(([a],[b])=>a.localeCompare(b,'pt-BR')).map(([service,qty])=>[service,number(qty)]);
+ return '<section><h3>Peças por serviço de reparo</h3>'+table(['Serviço','Peças'],lines)+'</section>';
+}
 const repairCategories={
  Capote:{label:'Reparo de capote',points:3},
  Privativos:{label:'Reparo de privativos',points:2},
@@ -27,7 +59,7 @@ function scoringRules(activity){
 }
 const fields={
  entrada:()=>select('condition','Condição observada',reason)+select('destination','Encaminhamento',['Reparo','Remodelagem','Avaliar descarte','Outro']),
- reparo:()=>repairCategorySelect()+select('defect','Defeito',reason)+select('repair','Reparo realizado',['Bainha','Costura','Remendo','Troca de componente','Outro'])+select('status','Situação',status)+input('previous','Referência do serviço anterior')+input('return_reason','Motivo do retorno'),
+ reparo:()=>repairCategorySelect()+select('status','Situação',status)+input('previous','Referência do serviço anterior')+input('return_reason','Motivo do retorno')+repairTable(),
  remodelagem:()=>input('original_size','Tamanho original','text',true)+input('change','Alteração realizada','text',true)+input('result_piece','Tipo resultante','text',true)+input('result_size','Tamanho resultante','text',true)+input('result_qty','Quantidade resultante','number',true)+select('status','Situação',status),
  peca_nova:()=>input('supplier','Fornecedor')+input('approved','Aprovadas','number',true)+input('pending','Pendentes','number',true)+input('rejected','Reprovadas','number',true)+select('reason','Motivo da pendência ou reprovação',reason,false)+select('finish','Costuras e acabamento',['Conformes','Com defeitos','Não verificados'])+select('register','Chipagem e cadastro',['Pendentes','Concluídos','Não se aplica'])+input('released','Liberadas para uso','number',true)+input('sample','Identificação da peça ou amostra')+select('method','Método da medição',['Peça plana retangular aberta','Outro formato ou método'],false)+['length','width','weight'].map((k,i)=>'<label>'+['Comprimento (cm)','Largura (cm)','Peso unitário sem embalagem (g)'][i]+'<input type="number" min="0.01" step="any" name="'+k+'"></label>').join('')+'<label>Gramatura (g/m²)<output name="grammage">—</output></label>',
  chipagem:()=>select('reading','Teste de leitura',['Aprovado','Falhou','Não realizado'])+select('register','Cadastro',['Pendente','Concluído']),
@@ -53,7 +85,7 @@ function sewingScore(row){
  const qty=row.quantity;
  if(qty==null||!Number.isFinite(Number(qty)))return [];
  const activity=row.source_row?historicalLabels[row.activity]:row.activity;
- if((activity==='reparo'||activity==='remodelagem')&&['Em execução','Precisa de ajuste'].includes(row.details?.status))return [];
+ if((activity==='reparo'||activity==='remodelagem')&&incompleteStatuses.includes(row.details?.status))return [];
  const repairGroup=row.details?.repair_group;
  const legacyCategory=/\bcapotes?\b/i.test(row.piece_type||'')?'Capote':'Geral';
  const repair=activity==='reparo'?(Object.hasOwn(repairCategories,repairGroup)?repairCategories[repairGroup]:repairCategories[repairGroup?'Geral':legacyCategory]):null;
@@ -212,7 +244,6 @@ function renderPanel(root,rows,manage){
  const form=root.querySelector('form'), result=root.querySelector('[data-results]');
  if(manage)form.elements.forecast.value='Dia';
  let month='',week='',day='';
- const table=(heads,body)=>'<div class="sew-table"><table><thead><tr>'+heads.map(x=>'<th>'+x+'</th>').join('')+'</tr></thead><tbody>'+body.map(row=>'<tr>'+row.map(x=>'<td>'+escape(x)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>';
  function update(){
   const f=Object.fromEntries(new FormData(form));
   const matching=rows.filter(r=>(!f.from||r.service_date>=f.from)&&(!f.to||r.service_date<=f.to)&&(!f.activity||r.label===f.activity)&&(!f.piece||r.piece_type===f.piece)&&(!f.customer||r.customer?.toLowerCase().includes(f.customer.toLowerCase()))&&(!f.lot||r.lot?.toLowerCase().includes(f.lot.toLowerCase())));
@@ -225,7 +256,7 @@ function renderPanel(root,rows,manage){
    group[3]++;if(r.quantity!=null)group[4]+=r.quantity;else group[5]++;
    groups.set(key,group);
   }
-  result.innerHTML=(manage?sewingChart(sewingBuckets(chartRows,month,week),month,week,day):'')+(manage&&filtered.length?productionCards(filtered,matching.filter(r=>(!month||r.service_date.startsWith(month))&&(!week||sewingWeek(r.service_date).key===week)&&(!day||r.service_date===day))):'')+(manage?professionalCharts(matching.filter(r=>!f.person||operatorKey(r)===f.person),f.forecast||'Dia',dateNow()):'')+'<p>'+number(filtered.length)+' lançamentos no recorte. Quantidades são comparáveis dentro da mesma atividade. Uma peça pode passar por vários serviços.</p>'+table(['Período','Profissional','Atividade','Lançamentos','Quantidade informada','Sem quantidade em peças'],[...groups.values()].map(g=>[...g.slice(0,4),number(g[4]),g[5]]))+'<h3 data-records-title tabindex="-1">Lançamentos</h3><p>O histórico da planilha conserva as quantidades e descrições originais. O tipo de peça aparece quando foi informado.</p><div data-records></div>';
+  result.innerHTML=(manage?sewingChart(sewingBuckets(chartRows,month,week),month,week,day):'')+(manage&&filtered.length?productionCards(filtered,matching.filter(r=>(!month||r.service_date.startsWith(month))&&(!week||sewingWeek(r.service_date).key===week)&&(!day||r.service_date===day))):'')+(manage?professionalCharts(matching.filter(r=>!f.person||operatorKey(r)===f.person),f.forecast||'Dia',dateNow()):'')+'<p>'+number(filtered.length)+' lançamentos no recorte. Quantidades são comparáveis dentro da mesma atividade. Uma peça pode passar por vários serviços.</p>'+table(['Período','Profissional','Atividade','Lançamentos','Quantidade informada','Sem quantidade em peças'],[...groups.values()].map(g=>[...g.slice(0,4),number(g[4]),g[5]]))+repairServiceTotals(filtered)+'<h3 data-records-title tabindex="-1">Lançamentos</h3><p>O histórico da planilha conserva as quantidades e descrições originais. O tipo de peça aparece quando foi informado.</p><div data-records></div>';
   result.querySelector('[data-sew-back]')?.addEventListener('click',()=>{if(day)day='';else if(week)week='';else month='';update();result.querySelector('[data-sew-back], [data-sew-bucket]')?.focus();});
   result.querySelectorAll('[data-sew-bucket]').forEach(button=>button.addEventListener('click',()=>{const key=button.dataset.sewBucket;if(!month)month=key;else if(!week)week=key;else day=key;update();if(day){const title=result.querySelector('[data-records-title]');title?.focus();title?.scrollIntoView({block:'start'});}else result.querySelector('[data-sew-bucket], [data-sew-back]')?.focus();}));
   const records=result.querySelector('[data-records]');
@@ -235,14 +266,16 @@ function renderPanel(root,rows,manage){
    const metadata=document.createElement('p');metadata.textContent=(r.source_row?'Planilha · linha '+r.source_row+' · carimbo '+r.recorded_local+' · nome na planilha '+r.imported_name:'Portal · '+r.id+' · lançado em '+new Date(r.created_at).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'}))+[r.customer,r.lot].filter(Boolean).map(v=>' · '+v).join('');
    const body=document.createElement('p');
    const labels={repair_group:'Categoria para pontuação',discard_sent_qty:'Peças enviadas para descarte',condition:'Condição',destination:'Encaminhamento',defect:'Defeito',repair:'Reparo',status:'Situação',previous:'Referência anterior',return_reason:'Motivo do retorno',original_size:'Tamanho original',change:'Alteração',result_piece:'Peça resultante',result_size:'Tamanho resultante',result_qty:'Quantidade resultante',supplier:'Fornecedor',approved:'Aprovadas',pending:'Pendentes',rejected:'Reprovadas',reason:'Motivo',finish:'Costura e acabamento',register:'Cadastro',released:'Liberadas',sample:'Amostra',method:'Método',length:'Comprimento (cm)',width:'Largura (cm)',weight:'Peso (g)',grammage:'Gramatura (g/m²)',reading:'Leitura',piece_ref:'Peça',recommendation:'Recomendação',decision:'Decisão',authorizer:'Autorizador',decision_date:'Data da decisão',scope:'Conferência',divergence:'Divergência',action:'Providência',notes:'Observações'};
-   body.textContent=Object.entries(r.details||{}).map(([k,v])=>(labels[k]||k)+': '+v).join(' · ');
-   details.append(title,metadata,body);records.append(details);
+   body.textContent=Object.entries(r.details||{}).filter(([key])=>key!=='repairs').map(([k,v])=>(labels[k]||k)+': '+v).join(' · ');
+   details.append(title,metadata,body);
+   if(Array.isArray(r.details?.repairs))details.insertAdjacentHTML('beforeend',table(['Defeito','Serviço realizado','Peças'],repairDetails(r).map(({defect,service,quantity})=>[defect,service,number(quantity)])));
+   records.append(details);
   }
  }
  form.addEventListener('input',()=>{month='';week='';day='';update();});update();
 }
 export async function mountSewing(host,api){
- host.innerHTML='<style>.sew-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:12px;margin:12px 0}.sew-grid label{display:grid;gap:5px;align-content:start}.sew-grid input,.sew-grid select{min-width:0;width:100%;padding:8px}.sew-table{overflow:auto}.sew-table table{width:100%;border-collapse:collapse}.sew-table th,.sew-table td{text-align:left;padding:8px;border-bottom:1px solid #b8c8d7}#q142 .sew details{padding:8px 0;border-bottom:1px solid #b8c8d7}#q142 .sew output{display:block;padding:8px}.sew-production{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:12px;margin:12px 0}.sew-production article{background:#192632;border:1px solid #40566e;border-radius:12px;padding:14px;color:#eef4ff}.sew-production h3{margin:0 0 10px;color:#eef4ff}.sew-production ul{list-style:none;margin:0;padding:0}.sew-production li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid #304054}.sew-production strong{color:#8ed5fa}.sew-share{display:grid;text-align:right;gap:3px}.sew-share small{color:#c0dbef;white-space:nowrap}.sew-share-note{color:#aec2d8}.sew-total{display:grid;gap:3px;margin:0 0 12px}.sew-total strong{font-size:1.5em}.sew-total small{color:#aec2d8}.sew-tv{width:min(96vw,1500px);max-width:none;max-height:96vh;padding:24px;border:1px solid #40566e;border-radius:14px;background:#111820;color:#eef4ff;font-size:clamp(16px,1.6vw,28px);overflow:auto}.sew-tv:fullscreen{width:100%;height:100%;max-height:none}.sew-tv::backdrop{background:#000b}.sew-tv header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;background:transparent;border:0}.sew-tv h2{color:#eef4ff;margin:0}.sew-tv button{background:#192632;color:#eef4ff}.sew-chart{border:1px solid #40566e;border-radius:12px;padding:14px;margin:12px 0}.sew-chart h3{color:#eef4ff;margin-top:0}.sew-chart-legend{display:flex;gap:16px;flex-wrap:wrap}.sew-chart-legend span:first-child{color:#8ed5fa}.sew-chart-legend span:nth-child(2){color:#ffc078}.sew-chart-scroll{overflow-x:auto}.sew-column-chart{display:grid;grid-template-columns:repeat(var(--periods),minmax(0,1fr));position:relative;--plot-height:clamp(145px,24vh,235px)}.sew-column-chart button{display:grid;grid-template-rows:var(--plot-height) auto auto;align-content:start;gap:4px;padding:0 4px 8px;background:transparent;color:#eef4ff;border:0;border-radius:0;min-width:0;overflow-wrap:anywhere}.sew-column-chart button:hover,.sew-column-chart button:focus-visible,.sew-column-chart button[aria-pressed=true]{background:#253746;outline:1px solid #8ed5fa;outline-offset:-1px}.sew-column-plot{display:flex;align-items:end;justify-content:center;border-bottom:1px solid #40566e}.sew-column{display:block;width:68%;max-width:72px;border-radius:4px 4px 0 0;background:#5bacec}.sew-trend{position:absolute;top:0;left:0;width:100%;height:var(--plot-height);pointer-events:none;z-index:1;overflow:hidden}.sew-professional-chart{--plot-height:140px}.sew-professional-period{display:grid;grid-template-rows:var(--plot-height) auto auto;gap:4px;text-align:center;font-size:.82rem;overflow-wrap:anywhere}.sew-projected{color:#ffc078}.sew-chart h4{color:#eef4ff}</style><div class="q142-card sew"><a href="/#qualidade">← Qualidade</a><h1>Costura</h1><p role="status">Verificando acesso…</p></div>';
+ host.innerHTML='<style>.sew-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:12px;margin:12px 0}.sew-grid label{display:grid;gap:5px;align-content:start}.sew-grid input,.sew-grid select{min-width:0;width:100%;padding:8px}.sew-table{overflow:auto}.sew-repair-lines{grid-column:1/-1;min-width:0}.sew-repair-lines table{min-width:530px}.sew-repair-lines td:nth-child(3){width:100px}.sew-repair-lines [data-add-repair]{margin-top:10px}.sew-table table{width:100%;border-collapse:collapse}.sew-table th,.sew-table td{text-align:left;padding:8px;border-bottom:1px solid #b8c8d7}#q142 .sew details{padding:8px 0;border-bottom:1px solid #b8c8d7}#q142 .sew output{display:block;padding:8px}.sew-production{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:12px;margin:12px 0}.sew-production article{background:#192632;border:1px solid #40566e;border-radius:12px;padding:14px;color:#eef4ff}.sew-production h3{margin:0 0 10px;color:#eef4ff}.sew-production ul{list-style:none;margin:0;padding:0}.sew-production li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid #304054}.sew-production strong{color:#8ed5fa}.sew-share{display:grid;text-align:right;gap:3px}.sew-share small{color:#c0dbef;white-space:nowrap}.sew-share-note{color:#aec2d8}.sew-total{display:grid;gap:3px;margin:0 0 12px}.sew-total strong{font-size:1.5em}.sew-total small{color:#aec2d8}.sew-tv{width:min(96vw,1500px);max-width:none;max-height:96vh;padding:24px;border:1px solid #40566e;border-radius:14px;background:#111820;color:#eef4ff;font-size:clamp(16px,1.6vw,28px);overflow:auto}.sew-tv:fullscreen{width:100%;height:100%;max-height:none}.sew-tv::backdrop{background:#000b}.sew-tv header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;background:transparent;border:0}.sew-tv h2{color:#eef4ff;margin:0}.sew-tv button{background:#192632;color:#eef4ff}.sew-chart{border:1px solid #40566e;border-radius:12px;padding:14px;margin:12px 0}.sew-chart h3{color:#eef4ff;margin-top:0}.sew-chart-legend{display:flex;gap:16px;flex-wrap:wrap}.sew-chart-legend span:first-child{color:#8ed5fa}.sew-chart-legend span:nth-child(2){color:#ffc078}.sew-chart-scroll{overflow-x:auto}.sew-column-chart{display:grid;grid-template-columns:repeat(var(--periods),minmax(0,1fr));position:relative;--plot-height:clamp(145px,24vh,235px)}.sew-column-chart button{display:grid;grid-template-rows:var(--plot-height) auto auto;align-content:start;gap:4px;padding:0 4px 8px;background:transparent;color:#eef4ff;border:0;border-radius:0;min-width:0;overflow-wrap:anywhere}.sew-column-chart button:hover,.sew-column-chart button:focus-visible,.sew-column-chart button[aria-pressed=true]{background:#253746;outline:1px solid #8ed5fa;outline-offset:-1px}.sew-column-plot{display:flex;align-items:end;justify-content:center;border-bottom:1px solid #40566e}.sew-column{display:block;width:68%;max-width:72px;border-radius:4px 4px 0 0;background:#5bacec}.sew-trend{position:absolute;top:0;left:0;width:100%;height:var(--plot-height);pointer-events:none;z-index:1;overflow:hidden}.sew-professional-chart{--plot-height:140px}.sew-professional-period{display:grid;grid-template-rows:var(--plot-height) auto auto;gap:4px;text-align:center;font-size:.82rem;overflow-wrap:anywhere}.sew-projected{color:#ffc078}.sew-chart h4{color:#eef4ff}</style><div class="q142-card sew"><a href="/#qualidade">← Qualidade</a><h1>Costura</h1><p role="status">Verificando acesso…</p></div>';
  const root=host.querySelector('.sew'), message=root.querySelector('[role=status]');
  try{
   await window.GAO_AUTH_READY;
@@ -291,8 +324,16 @@ export async function mountSewing(host,api){
    const form=content.querySelector('form'), feedback=form.querySelector('[role=status]'), detail=form.querySelector('[data-fields]');
    form.elements.service_date.value=dateNow();form.elements.quantity.min=1;
    const score=form.querySelector('[data-score]');
+   const quantityField=form.elements.quantity;
    const updatePreview=()=>{
-    const {activity,piece_type,quantity,...details}=Object.fromEntries(new FormData(form));
+    const {activity,piece_type,...details}=Object.fromEntries(new FormData(form));
+    const lines=readRepairLines(detail);
+    if(activity==='reparo'){
+     const totalPieces=lines.reduce((sum,line)=>sum+line.quantity,0);
+     quantityField.value=totalPieces||'';
+     detail.querySelector('[data-remove-repair]').disabled=lines.length===1;
+    }
+    const quantity=quantityField.value;
     const gramsOutput=detail.querySelector('[name="grammage"]');
     if(gramsOutput){
      const g=grams(details);
@@ -303,23 +344,53 @@ export async function mountSewing(host,api){
     const selectedRepair=activity==='reparo'&&Object.hasOwn(repairCategories,details.repair_group)?repairCategories[details.repair_group]:null;
     const rule=selectedRepair?unitPoints(selectedRepair.points)+'.':scoringRules(activity);
     const awaitingStatus=['reparo','remodelagem'].includes(activity)&&!details.status;
-    const canPreview=Number(quantity)>0&&!awaitingStatus&&(activity!=='reparo'||selectedRepair);
+    const hasRepairDetails=lines.every(({defect,service,quantity})=>defect&&service&&Number.isInteger(quantity)&&quantity>0);
+    const canPreview=Number(quantity)>0&&!awaitingStatus&&(activity!=='reparo'||(selectedRepair&&hasRepairDetails));
     const preview=canPreview?sewingScore({activity,piece_type,quantity,details}):[];
     const total=preview.reduce((sum,[,points])=>sum+points,0);
     const result=canPreview&&activity!=='troca_chip'?' Pontuação do lançamento: '+number(total)+' '+(total===1?'ponto':'pontos')+'.':'';
     score.textContent=rule+result;
    };
    form.elements.activity.onchange=()=>{
-    detail.innerHTML=fields[form.elements.activity.value]?.()||'';
+    const activity=form.elements.activity.value;
+    if(quantityField.readOnly||activity==='reparo')quantityField.value='';
+    quantityField.readOnly=activity==='reparo';
+    detail.innerHTML=fields[activity]?.()||'';
     updatePreview();
    };
+   detail.addEventListener('click',event=>{
+    if(event.target.closest('[data-add-repair]')){
+     const rows=detail.querySelector('[data-repair-rows]');
+     const line=rows.firstElementChild.cloneNode(true);
+     for(const field of line.querySelectorAll('select,input'))field.value='';
+     line.querySelector('[data-remove-repair]').disabled=false;
+     rows.append(line);
+     line.querySelector('select').focus();
+    }
+    const remove=event.target.closest('[data-remove-repair]');
+    if(remove){
+     const row=remove.closest('tr');
+     const neighbor=row.nextElementSibling||row.previousElementSibling;
+     if(!neighbor)return;
+     row.remove();
+     neighbor.querySelector('select').focus();
+    }
+    updatePreview();
+   });
    form.addEventListener('input',updatePreview);
    let id=crypto.randomUUID();
    let previousPayload;
    form.onsubmit=async e=>{
     e.preventDefault();const data=Object.fromEntries(new FormData(form));
     const {service_date,activity,piece_type,quantity,lot,customer,...d}=data;
-    const qty=Number(quantity);let error='';
+    let qty=Number(quantity);let error='';
+    if(activity==='reparo'){
+     const repairs=readRepairLines(detail);
+     qty=repairs.reduce((sum,line)=>sum+line.quantity,0);
+     if(!repairs.length||repairs.some(({defect,service,quantity})=>!reason.includes(defect)||!repairServices.includes(service)||!Number.isInteger(quantity)||quantity<1)||qty>2147483647){
+      error='Informe o defeito, o serviço e uma quantidade inteira válida em cada linha.';
+     }else d.repairs=repairs;
+    }
     if(activity==='peca_nova'){
      if(Number(d.approved)+Number(d.pending)+Number(d.rejected)!==qty)error='Aprovadas, pendentes e reprovadas devem somar a quantidade avaliada.';
      else if((Number(d.pending)||Number(d.rejected))&&!d.reason)error='Selecione o motivo da pendência ou reprovação.';
@@ -338,7 +409,7 @@ export async function mountSewing(host,api){
      if(previousPayload&&previousPayload!==payload)id=crypto.randomUUID();
      previousPayload=payload;
      await api('quality_sewing_entries','on_conflict=id',{method:'POST',prefer:'resolution=ignore-duplicates,return=minimal',body:{id,...body}});
-     id=crypto.randomUUID();previousPayload=undefined;form.reset();form.elements.service_date.value=dateNow();detail.replaceChildren();updatePreview();feedback.textContent='Lançamento salvo.';
+     id=crypto.randomUUID();previousPayload=undefined;form.reset();quantityField.readOnly=false;form.elements.service_date.value=dateNow();detail.replaceChildren();updatePreview();feedback.textContent='Lançamento salvo.';
     }catch{feedback.textContent='Não foi possível confirmar o lançamento. Tente salvar novamente.';}
     finally{submit.disabled=false;}
    };
