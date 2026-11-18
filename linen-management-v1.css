@@ -55,6 +55,18 @@
   line-height:1.35;
   white-space:normal;
 }
+:is(#gao-linen-management,#gao-linen-operations) .leo-history tbody td {
+  background:#fff;
+  color:#0c3352;
+}
+.gao-shell :is(#gao-linen-management,#gao-linen-operations) .leo-history :is(thead th,tbody td) {
+  background:var(--liquid-panel);
+  color:var(--liquid-text);
+  border-color:var(--liquid-line);
+}
+.gao-shell :is(#gao-linen-management,#gao-linen-operations) .leo-history thead th {
+  background:var(--liquid-active);
+}
 :is(#gao-linen-management,#gao-linen-operations) td small {display:block;margin:.3rem 0;overflow-wrap:anywhere}
 .leo-record {padding:.65rem 0;border-top:1px solid var(--leo-border)}
 .leo-record summary {cursor:pointer;font-weight:700}
