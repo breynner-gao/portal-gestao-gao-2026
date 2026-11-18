@@ -398,7 +398,7 @@ function operationRecord(row){
  const legacyWeight=historicalItems.reduce((sum,item)=>sum+item.weight,0);
  const difference=Math.round((row.relaveTotal-legacyWeight)*100)/100;
  if(difference>0)historicalItems.push({type:'Outros',reason:'Saldo do histórico',weight:difference});
- return {key:row.__key,command:String(row.command??''),date:row.date,kind:row.kind||'internal',client:row.client||'',clientId:row.clientId||null,issue:row.issue||'',action:row.action||'',responsible:row.responsible||'',sorted:n(row.totalSorted),trashKg:row.trashKg??null,items:row.relaveItems||(difference<0?[{type:'Outros',reason:'Total registrado no histórico',weight:row.relaveTotal}]:historicalItems),canWeigh:Array.isArray(row.relaveItems),weighing:row.weighing};
+ return {key:row.__key,command:String(row.command??''),date:row.date,kind:row.kind||'internal',client:row.client||'',clientId:row.clientId||null,issue:row.issue||'',action:row.action||'',responsible:row.responsible||'',sorted:n(row.totalSorted),trashKg:row.trashKg??null,items:row.relaveItems||(difference<0?[{type:'Outros',reason:'Total registrado no histórico',weight:row.relaveTotal}]:historicalItems),canWeigh:Array.isArray(row.relaveItems),weighing:row.weighing,expeditionCommand:row.expeditionCommand,receivingCommand:row.receivingCommand,qualityVolume:row.qualityVolume,qualityWeight:row.qualityWeight,returnedWeight:row.returnedWeight};
 }
 async function syncRelaveOperation(){
  try{if(!window.GAO_CHEM_DB_SYNC)throw Error();await window.GAO_CHEM_DB_SYNC(STORE)}
@@ -408,7 +408,7 @@ async function saveOperationRecord(record,key){
  if(key)requireRelaveManager();
  const previous=all().find(row=>row.__key!==key&&(row.kind||'internal')===record.kind&&row.date===record.date&&String(row.command).toLowerCase()===record.command.toLowerCase());
  if(previous){
-  if(JSON.stringify(previous.relaveItems)!==JSON.stringify(record.items)||n(previous.totalSorted)!==record.sorted||(previous.trashKg??null)!==(record.trashKg??null)||previous.client!==record.client||(previous.clientId||null)!==record.clientId||(previous.issue||'')!==record.issue||(previous.action||'')!==record.action||previous.responsible!==record.responsible)throw Error('Já existe um lançamento desse tipo para esta comanda e data.');
+  if(JSON.stringify(previous.relaveItems)!==JSON.stringify(record.items)||n(previous.totalSorted)!==record.sorted||(previous.trashKg??null)!==(record.trashKg??null)||previous.client!==record.client||(previous.clientId||null)!==record.clientId||(previous.issue||'')!==record.issue||(previous.action||'')!==record.action||previous.responsible!==record.responsible||(record.kind==='customer'&&['expeditionCommand','receivingCommand','qualityVolume','qualityWeight','returnedWeight'].some(field=>(previous[field]??null)!==(record[field]??null))))throw Error('Já existe um lançamento desse tipo para esta comanda e data.');
   await syncRelaveOperation();
   return operationRecord(previous);
  }
@@ -420,9 +420,13 @@ async function saveOperationRecord(record,key){
  const payload={...details,id,totalSorted:sorted,relaveItems:items,privateRelave:weightOf('Privativo'),sheetTotal:weightOf('Lençol'),surgicalTotal:weightOf('Cirúrgico'),otherRelave:weightOf('Outros')};
  if(current){
   const weighing=current.weighing;
-  if(weighing&&record.kind!==(current.kind||'internal'))throw Error('O tipo precisa permanecer como Relave interno GAO enquanto houver pesagem vinculada.');
+  if(weighing&&record.kind!==(current.kind||'internal'))throw Error('O tipo precisa permanecer o mesmo enquanto houver pesagem vinculada.');
   const weightChanged=Math.round(n(current.relaveTotal)*100)!==Math.round(items.reduce((sum,i)=>sum+i.weight,0)*100);
-  updateEntry(key,{...current,...payload,week:weekNo(record.date),weighing:weightChanged&&weighing?{...weighing,resolved:false}:weighing});
+  const numberChanged=weighing&&record.kind==='customer'&&record.expeditionCommand!==(weighing.expeditionCommand||current.expeditionCommand||'');
+  if(numberChanged&&!record.expeditionCommand?.trim())throw Error('Informe a comanda da expedição.');
+  const updatedWeighing=weighing&&(weightChanged||numberChanged)
+   ?{...weighing,...(numberChanged?{expeditionCommand:record.expeditionCommand}:{}),resolved:false}:weighing;
+  updateEntry(key,{...current,...payload,week:weekNo(record.date),weighing:updatedWeighing});
  }else saveEntry(payload);
  await syncRelaveOperation();
  return operationRecord(all().find(row=>row.id===id));
@@ -430,9 +434,10 @@ async function saveOperationRecord(record,key){
 async function saveOperationWeighing(record,weighing,expeditionDate){
  const rows=all();
  const row=rows.find(entry=>entry.__key===record.key);
- if(!row||row.kind==='customer'||!Array.isArray(row.relaveItems))throw Error('Comanda indisponível para conferência.');
+ if(!row||!Array.isArray(row.relaveItems))throw Error('Comanda indisponível para conferência.');
+ if(row.kind==='customer'&&!weighing.expeditionCommand?.trim())throw Error('Informe a comanda da expedição.');
  const changedDate=expeditionDate!==undefined&&expeditionDate!==row.date;
- if(row.weighing||changedDate)requireRelaveManager();
+ if(row.kind==='customer'||row.weighing||changedDate)requireRelaveManager();
  const correction={};
  if(changedDate){
   const date=new Date(expeditionDate+'T12:00:00Z');
@@ -478,7 +483,7 @@ async function loadRelaveOperation(root){
  host.textContent='Carregando painel de relave…';
  try{
   const [{mountRelave},{mergeRelaveArchive}]=await Promise.all([
-   import('/relave-operation-v1.mjs?v=22'),import('/relave-archive-v1.mjs?v=3')
+   import('/relave-operation-v1.mjs?v=23'),import('/relave-archive-v1.mjs?v=3')
   ]);
   let archive,archiveError=false;
   try{await window.GAO_CHEM_DB_LOAD?.();archive=await window.GAO_RELAVE_ARCHIVE?.()}

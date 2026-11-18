@@ -6,10 +6,10 @@ import { runInNewContext } from 'node:vm';
 const source = await readFile(new URL('../chemicals-relave-v123.js', import.meta.url), 'utf8');
 const saveSource = source.slice(source.indexOf('async function saveOperationRecord('), source.indexOf('async function excludeOperationRecord('));
 
-function fixture(canEdit, withWeighing = true) {
+function fixture(canEdit, withWeighing = true, kind = 'internal') {
   const key = 'l:existing';
   const weighing = {receivingCommand:'123',received:20,resolved:true};
-  const original = {__key:key,id:'existing',date:'2026-11-15',command:'121',kind:'internal',relaveTotal:21,relaveItems:[],...(withWeighing?{weighing}:{})};
+  const original = {__key:key,id:'existing',date:'2026-11-15',command:'121',kind,relaveTotal:21,relaveItems:[],...(withWeighing?{weighing}:{})};
   let current = original;
   const api = runInNewContext(saveSource + '({saveOperationRecord,saveOperationWeighing})', {
     all: () => [current],
@@ -53,4 +53,25 @@ test('a revisão permite ao gestor alterar a data da expedição junto da pesage
   const operator=fixture(false,false);
   await assert.rejects(operator.api.saveOperationWeighing({key},weighing,'2026-11-14'),/Conta de gestor/);
   assert.equal(operator.current().date,'2026-11-15');
+});
+
+test('gestor vincula as três comandas na conferência da ocorrência', async()=>{
+  const {api,key,current}=fixture(true,false,'customer');
+  await assert.rejects(api.saveOperationWeighing({key},{receivingCommand:'0003'}),/comanda da expedição/);
+  await api.saveOperationWeighing({key},{expeditionCommand:'0002',receivingCommand:'0003',received:20});
+  assert.equal(current().command,'121');
+  assert.equal(current().weighing.expeditionCommand,'0002');
+  assert.equal(current().weighing.receivingCommand,'0003');
+  const operator=fixture(false,false,'customer');
+  await assert.rejects(operator.api.saveOperationWeighing({key},{expeditionCommand:'0004',receivingCommand:'0003',received:21}),/Conta de gestor/);
+});
+
+test('revisar número da expedição na ocorrência reabre o desvio e mantém a comanda da área suja', async()=>{
+  const {api,key,current}=fixture(true,true,'customer');
+  await api.saveOperationRecord({...corrected,kind:'customer',expeditionCommand:'0002',qualityWeight:29,returnedWeight:8},key);
+  assert.equal(current().weighing.expeditionCommand,'0002');
+  assert.equal(current().weighing.receivingCommand,'123');
+  assert.equal(current().weighing.resolved,false);
+  assert.equal(current().qualityWeight,29);
+  assert.equal(current().returnedWeight,8);
 });
