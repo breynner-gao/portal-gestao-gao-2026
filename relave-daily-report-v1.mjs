@@ -11,10 +11,10 @@ const html = value => String(value ?? '').replace(/[&<>"']/g, char => ({
 }[char]));
 
 function summary(rows) {
-  const confirmed = rows.filter(row => Array.isArray(row.items));
+  const confirmed = rows.filter(row => !row.auditOnly && Array.isArray(row.items));
   const sorted = confirmed.reduce((sum, row) => sum + row.sorted, 0);
   const waste = confirmed.reduce((sum, row) => sum + weight(row), 0);
-  return { sorted, waste, rate: sorted ? 100 * waste / sorted : null, pending: rows.length - confirmed.length };
+  return { sorted, waste, rate: sorted ? 100 * waste / sorted : null, pending: rows.filter(row => !row.auditOnly).length - confirmed.length };
 }
 
 function monday(time) {
@@ -105,7 +105,7 @@ function table(headings, rows, widths) {
 export const reportCss = `
     @page{size:A4;margin:11mm}*{box-sizing:border-box}body{margin:0;background:#edf2f6;color:#102d45;font:12px Arial,sans-serif}main{max-width:760px;margin:18px auto;padding:24px;background:#fff}
     header{background:#102d45;color:#fff;border-radius:9px;padding:16px 20px;margin-bottom:13px;break-inside:avoid}.brand{display:flex;align-items:center;gap:14px;color:#a1dfe7;letter-spacing:.06em;font-size:11px}.brand img{background:#fff;border-radius:5px;padding:5px;width:110px}h1{font-size:25px;margin:11px 0 5px}h2{font-size:16px;margin:14px 0 5px}p{margin:4px 0}.note,small{color:#526b80;font-size:10.5px}
-    .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.cards div{background:#eef5f9;border-radius:7px;padding:9px;break-inside:avoid}.cards b,.cards span,.cards small{display:block;margin-top:4px}.cards b{font-size:19px;color:#0e6272}
+    .cards{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}.cards div{background:#eef5f9;border-radius:7px;padding:9px;break-inside:avoid}.cards b,.cards span,.cards small{display:block;margin-top:4px}.cards b{font-size:19px;color:#0e6272}
     table{width:100%;border-collapse:collapse;font-size:11px}th,td{text-align:left;padding:6px;overflow-wrap:break-word;border-bottom:1px solid #dbe5ed}th{background:#e2edf4;overflow-wrap:normal}tr,article{break-inside:avoid}thead{display:table-header-group}h2{break-after:avoid}section.trends{break-before:page}svg{width:100%;display:block;max-height:45mm}svg text{font:9px Arial,sans-serif;fill:#526b80}.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px}.legend i{display:inline-block;width:16px;border-top:2px solid;margin-right:4px;vertical-align:middle}
     @media print{
       body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -130,9 +130,11 @@ function weightChecks(rows) {
 
 function closingCards(g, { checks, divergences }, customer, customerNote, showScope = false) {
   const scope = showScope ? 'Operação GAO · ' : '';
+  const companyRate = g.sorted > 0 ? 100 * customer.waste / g.sorted : null;
   return `<div class="cards">
     ${card('Relave interno GAO',percent(g.rate),kg(g.waste)+' / '+kg(g.sorted)+' triados',scope+(g.rate===null?'Sem base conferida':g.rate<=2.5?'Dentro da meta de 2,50%':'Acima da meta de 2,50%'))}
     ${card('Ocorrência do cliente',percent(customer.rate),kg(customer.waste)+' / '+kg(customer.sorted)+' triados',customerNote)}
+    ${card('Ocorrências de clientes · Empresa',percent(companyRate),kg(customer.waste)+' / '+kg(g.sorted)+' triados na empresa',g.sorted>0?'Base do relave interno GAO no mesmo dia':'Sem base de triagem da empresa no dia')}
     ${card('Conferência de peso',showScope&&!checks.length?'—':divergences.length+' divergência(s)',showScope&&!checks.length?'Sem pesagens para conferir':checks.filter(x=>x.delta===null).length+' aguardando pesagem',scope+(showScope&&!checks.length?'Área suja':divergences.filter(x=>!x.check.resolved).length+' em tratativa'))}
   </div>`;
 }
@@ -154,6 +156,17 @@ export function renderDailyReport(records, date, logo, customer = null) {
   const reasons = new Map();
   gao.forEach(row=>(row.items||[]).forEach(item=>reasons.set(item.reason,(reasons.get(item.reason)||0)+item.weight)));
 
+  const byClient = new Map();
+  for (const row of clients) {
+    const key = row.clientId || row.client || 'Cliente não informado';
+    if (!byClient.has(key)) byClient.set(key, {name: row.client || 'Cliente não informado', rows: []});
+    byClient.get(key).rows.push(row);
+  }
+  const clientSummary = [...byClient.values()].map(group => {
+    const total = summary(group.rows);
+    return [group.name, kg(total.waste), kg(total.sorted), percent(total.rate),
+      percent(g.sorted > 0 ? 100 * total.waste / g.sorted : null)];
+  });
   const title = customer ? 'Relatório de relave por ocorrência' : 'Relatório diário de relave';
   const trends = `<section class="trends">${head('Evolução do relave')}
     ${customer ? '<p>'+html(customer.name)+'</p>' : ''}
@@ -183,6 +196,9 @@ export function renderDailyReport(records, date, logo, customer = null) {
   ${table(['Comanda','Diferença','Responsável','Causa e ação','Prazo','Situação'],divergences.map(({row,check,delta,status})=>[row.command,percent(100*delta/weight(row)),check.owner||'—',check.action||'Em apuração',check.dueDate?displayDate(check.dueDate):'—',status]),[13,13,16,28,15,15])}
   <h2>Motivos do relave interno na expedição</h2>
   ${table(['Motivo','Peso','Participação'],[...reasons].sort((a,b)=>b[1]-a[1]).map(([reason,v])=>[reason,kg(v),percent(g.waste?100*v/g.waste:null)]))}
+  <h2>Ocorrências por cliente · Visão da empresa</h2>
+  ${table(['Cliente','Ocorrências','Triado do cliente','% no cliente','% na empresa'],clientSummary)}
+  <p class="note">% na empresa = kg de ocorrências do cliente ÷ kg triados do relave interno GAO no mesmo dia. A base da empresa é comum a todos os clientes.</p>
   <h2>Ocorrências do cliente</h2>
   ${table(['Comanda','Cliente','Motivo','Triado','Relave'],clients.map(row=>[row.command,row.client,[...new Set((row.items||[]).map(i=>i.reason))].join(', ')||'—',kg(row.sorted),row.items?kg(weight(row)):'—']))}
   <p class="note">Percentuais calculados como kg de relave sobre kg triados nas comandas conferidas de cada tipo.</p>
@@ -228,14 +244,14 @@ export function renderHistoricalCustomerReport(data,client,date,indicator,logo,o
   const covered=dateKey(stop)>coverageStart&&dateKey(start)<=date;
   return {label,future:false,partial:dateKey(start)<coverageStart||stop>time+dayMs,values:[null,covered&&base(start,stop)>0?100*sum(start,stop,type)/base(start,stop):null]};
  }),false,true);
- const totalRows=periods.map(([label,start,stop])=>{const sorted=base(start,stop),weight=sum(start,stop);return [label,kg(weight),kg(sorted),percent(sorted>0?100*weight/sorted:null)];});
+ const totalRows=periods.map(([label,start,stop])=>{const sorted=base(start,stop),weight=sum(start,stop);const company=summary(operationalRecords.filter(row=>internal(row)&&row.date>=dateKey(start)&&row.date<dateKey(stop)&&row.date<=date)).sorted;return [label,kg(weight),kg(sorted),percent(sorted>0?100*weight/sorted:null),kg(company),percent(company>0?100*weight/company:null)];});
  const detailRows=types.map(type=>[type,...periods.map(([,start,stop])=>kg(sum(start,stop,type)))]);
  return `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GAO · Ocorrências do cliente · ${date}</title><style>${reportCss}</style>
  <div class="print"></div><main>
  ${head('Relatório diário de ocorrências do cliente')}
  ${closingCards(summary(gao),weightChecks(gao),customerSummary,sortedCommands+' comanda(s) triada(s)',true)}
  <p>${indicator==='relave'?'Ocorrências com relave na descrição':'Todas as ocorrências'} · Histórico a partir de 01/08/2026, até o fechamento selecionado.</p>
- <h2>Resumo do dia, da semana, do mês e do ano</h2>${table(['Período','Ocorrências','Peso triado','Percentual'],totalRows)}
+ <h2>Resumo do dia, da semana, do mês e do ano</h2>${table(['Período','Ocorrências','Triado do cliente','% no cliente','Triado empresa','% na empresa'],totalRows)}
  <h2>Tipos de peça retornada</h2>${table(['Tipo de peça','Dia','Semana','Mês','Ano'],detailRows)}
  <h2>Ocorrências do dia</h2>${table(['Comanda','Tipo de peça','Descrição','Peso'],selected.map(row=>[row.order,historicalPiece(row.type),row.type,kg(row.kg)]))}
  <section class="trends">${head('Evolução por tipo de peça retornada')}
