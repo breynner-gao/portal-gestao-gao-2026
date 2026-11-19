@@ -21,16 +21,16 @@
   };
   const clear=()=>localStorage.removeItem(STORAGE);
   const request=async(path,body)=>{
-    const response=await fetch(SB+path,{method:'POST',headers:{apikey:KEY,'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const response=await fetch(SB+path,{method:'POST',headers:{apikey:KEY,'Content-Type':'application/json'},signal:AbortSignal.timeout(15000),body:JSON.stringify(body)});
     const data=await response.json().catch(()=>({}));
-    if(!response.ok)throw Error(data.error_description||data.msg||data.message||'Não foi possível autenticar.');
+    if(!response.ok)throw Object.assign(Error(data.error_description||data.msg||data.message||'Não foi possível autenticar.'),{status:response.status});
     return data;
   };
   window.GAO_REFRESH_SESSION=async()=>{
     if(refreshPromise)return refreshPromise;
     refreshPromise=(async()=>{
       const current=read()||window.GAO_AUTH_SESSION;
-      if(!current?.refresh_token)throw Error('A sessão expirou. Entre novamente no Portal.');
+      if(!current?.refresh_token)throw Object.assign(Error('A sessão expirou. Entre novamente no Portal.'),{status:401});
       const refreshed=await request('/auth/v1/token?grant_type=refresh_token',{refresh_token:current.refresh_token});
       if(signingOut||!read())throw Error('A sessão foi encerrada.');
       return save(refreshed);
