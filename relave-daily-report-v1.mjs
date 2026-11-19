@@ -8,6 +8,14 @@ const dayMs = 86400000;
 const formatNumber = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const kg = value => formatNumber.format(value) + ' kg';
 const percent = value => value == null ? '—' : formatNumber.format(value) + '%';
+export function weightDifferenceLabel(sent, received) {
+  if (!Number.isFinite(sent) || !Number.isFinite(received)) return '—';
+  const difference = (Math.round(received * 100) - Math.round(sent * 100)) / 100;
+  const sign = difference > 0 ? '+' : '';
+  const rate = sent > 0 ? sign + percent(100 * difference / sent) : '—';
+  return sign + kg(difference) + ' (' + rate + ')';
+}
+
 const dateKey = time => new Date(time).toISOString().slice(0, 10);
 const displayDate = date => date.split('-').reverse().join('/');
 const weight = row => (row.items || []).reduce((sum, item) => sum + item.weight, 0);
@@ -198,8 +206,8 @@ export function renderDailyReport(records, date, logo, customer = null) {
   ${customer ? customerBody() : `${closingCards(g,{checks,divergences},c,customerNote)}
   <p class="note">${g.pending+c.pending} comanda(s) aguardando conferência do relave.</p>
   <h2>Conferência de peso na área suja</h2>
-  <p class="note">Pesos líquidos. Diferença = área suja menos expedição. Situação atual das comandas do dia.</p>
-  ${table(['Comanda da expedição','Peso da expedição','Comanda da área suja','Peso na área suja','Diferença','Situação'],checks.map(({row,check,delta,status})=>[row.command,kg(weight(row)),check?.receivingCommand||'—',check?kg(check.received):'—',delta===null?'—':(delta>0?'+':'')+kg(delta),status]),[18,16,18,16,14,18])}
+  <p class="note">Pesos líquidos. Diferença = área suja menos expedição. Percentual = diferença ÷ peso da expedição × 100. Situação atual das comandas do dia.</p>
+  ${table(['Comanda da expedição','Peso da expedição','Comanda da área suja','Peso na área suja','Diferença (kg e %)','Situação'],checks.map(({row,check,delta,status})=>[row.command,kg(weight(row)),check?.receivingCommand||'—',check?kg(check.received):'—',check?weightDifferenceLabel(weight(row),check.received):'—',status]),[18,16,18,16,14,18])}
   <h2>Tratativas da Qualidade</h2>
   ${table(['Comanda','Diferença','Responsável','Causa e ação','Prazo','Situação'],divergences.map(({row,check,delta,status})=>[row.command,percent(100*delta/weight(row)),check.owner||'—',check.action||'Em apuração',check.dueDate?displayDate(check.dueDate):'—',status]),[13,13,16,28,15,15])}
   <h2>Motivos do relave interno na expedição</h2>

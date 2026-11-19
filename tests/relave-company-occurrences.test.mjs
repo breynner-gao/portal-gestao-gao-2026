@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {renderDailyReport, customerOccurrenceTarget, customerOccurrenceStatus} from '../relave-daily-report-v1.mjs';
+import {renderDailyReport, customerOccurrenceTarget, customerOccurrenceStatus, weightDifferenceLabel} from '../relave-daily-report-v1.mjs';
 
 const date = '2026-11-18';
 const rows = [
@@ -70,4 +70,23 @@ test('meta de ocorrência do cliente aceita até 2% nas duas visões e informa a
   assert.match(report, /Meta de ocorrência do cliente até 2%/);
   assert.match(report, /stroke="#a64450" stroke-dasharray="6 3"/);
   assert.match(report, /Meta interna 2,50%/);
+});
+
+
+test('diferença de pesagem informa kg e percentual sobre a expedição, inclusive zero e redução', () => {
+  assert.equal(weightDifferenceLabel(216.66,247), '+30,34 kg (+14,00%)');
+  assert.equal(weightDifferenceLabel(296.1,334.6), '+38,50 kg (+13,00%)');
+  assert.equal(weightDifferenceLabel(343.1,389.8), '+46,70 kg (+13,61%)');
+  assert.equal(weightDifferenceLabel(100,90), '-10,00 kg (-10,00%)');
+  assert.equal(weightDifferenceLabel(100,100), '0,00 kg (0,00%)');
+  assert.equal(weightDifferenceLabel(0,10), '+10,00 kg (—)');
+  assert.equal(weightDifferenceLabel(100,null), '—');
+  const report = renderDailyReport([{
+    date, kind:'internal', command:'42423', sorted:17570.24, canWeigh:true,
+    items:[{weight:343.1, reason:'Mancha'}],
+    weighing:{received:389.8, receivingCommand:'42465', resolved:true}
+  }],date);
+  assert.match(report, /Diferença \(kg e %\)/);
+  assert.match(report, /\+46,70 kg \(\+13,61%\)/);
+  assert.match(report, /peso da expedição × 100/);
 });
