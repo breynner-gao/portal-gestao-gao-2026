@@ -1,3 +1,9 @@
+export const customerOccurrenceTarget = 2;
+export function customerOccurrenceStatus(rate) {
+  return rate == null ? 'Meta de até 2% · Sem base conferida' :
+    rate <= customerOccurrenceTarget ? 'Dentro da meta de até 2%' : 'Acima da meta de até 2%';
+}
+
 const dayMs = 86400000;
 const formatNumber = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const kg = value => formatNumber.format(value) + ' kg';
@@ -93,6 +99,7 @@ function chart(buckets, projection = false, customerOnly = false) {
   }).join('');
   return `<svg viewBox="0 0 570 149" role="img" aria-label="Evolução percentual do relave">${grid}
     ${customerOnly ? "" : `<line x1="47" x2="557" y1="${y(2.5)}" y2="${y(2.5)}" stroke="#99611a" stroke-dasharray="2 3"/>`}
+    <line x1="47" x2="557" y1="${y(customerOccurrenceTarget)}" y2="${y(customerOccurrenceTarget)}" stroke="#a64450" stroke-dasharray="6 3"/>
     ${marks}${buckets.map((b,i)=>`<text x="${x(i)}" y="140" text-anchor="middle">${html(b.label)}${b.partial?'*':''}</text>`).join('')}</svg>`;
 }
 
@@ -133,8 +140,8 @@ function closingCards(g, { checks, divergences }, customer, customerNote, showSc
   const companyRate = g.sorted > 0 ? 100 * customer.waste / g.sorted : null;
   return `<div class="cards">
     ${card('Relave interno GAO',percent(g.rate),kg(g.waste)+' / '+kg(g.sorted)+' triados',scope+(g.rate===null?'Sem base conferida':g.rate<=2.5?'Dentro da meta de 2,50%':'Acima da meta de 2,50%'))}
-    ${card('Ocorrência do cliente',percent(customer.rate),kg(customer.waste)+' / '+kg(customer.sorted)+' triados',customerNote)}
-    ${card('Ocorrências de clientes · Empresa',percent(companyRate),kg(customer.waste)+' / '+kg(g.sorted)+' triados na empresa',g.sorted>0?'Base do relave interno GAO no mesmo dia':'Sem base de triagem da empresa no dia')}
+    ${card('Relave por ocorrência do cliente',percent(customer.rate),kg(customer.waste)+' de relave do cliente / '+kg(customer.sorted)+' triados do cliente',customerNote+' · '+customerOccurrenceStatus(customer.rate))}
+    ${card('Relave por ocorrência do cliente · Visão da empresa',percent(companyRate),kg(customer.waste)+' de relave do cliente / '+kg(g.sorted)+' triados na empresa',customerOccurrenceStatus(companyRate)+' · Base do relave interno GAO no mesmo dia')}
     ${card('Conferência de peso',showScope&&!checks.length?'—':divergences.length+' divergência(s)',showScope&&!checks.length?'Sem pesagens para conferir':checks.filter(x=>x.delta===null).length+' aguardando pesagem',scope+(showScope&&!checks.length?'Área suja':divergences.filter(x=>!x.check.resolved).length+' em tratativa'))}
   </div>`;
 }
@@ -165,12 +172,13 @@ export function renderDailyReport(records, date, logo, customer = null) {
   const clientSummary = [...byClient.values()].map(group => {
     const total = summary(group.rows);
     return [group.name, kg(total.waste), kg(total.sorted), percent(total.rate),
-      percent(g.sorted > 0 ? 100 * total.waste / g.sorted : null)];
+      percent(g.sorted > 0 ? 100 * total.waste / g.sorted : null),
+      'Cliente: '+customerOccurrenceStatus(total.rate)+' · Empresa: '+customerOccurrenceStatus(g.sorted > 0 ? 100 * total.waste / g.sorted : null)];
   });
-  const title = customer ? 'Relatório de relave por ocorrência' : 'Relatório diário de relave';
+  const title = customer ? 'Relatório de relave por ocorrência do cliente' : 'Relatório diário de relave';
   const trends = `<section class="trends">${head('Evolução do relave')}
     ${customer ? '<p>'+html(customer.name)+'</p>' : ''}
-    <div class="legend">${customer ? '' : '<span><i style="color:#2269a4"></i>Interno GAO</span>'}<span><i style="color:#087e73"></i>Ocorrência do cliente</span>${customer ? '' : '<span><i style="border-top-style:dotted;color:#99611a"></i>Meta interna 2,50%</span>'}</div>
+    <div class="legend">${customer ? '' : '<span><i style="color:#2269a4"></i>Interno GAO</span>'}<span><i style="color:#087e73"></i>Ocorrência do cliente</span>${customer ? '' : '<span><i style="border-top-style:dotted;color:#99611a"></i>Meta interna 2,50%</span>'}<span><i style="border-top-style:dashed;color:#a64450"></i>Meta de ocorrência do cliente até 2%</span></div>
     <article><h2>Dias da semana ${data.iso}</h2><p class="note">Projeção tracejada até domingo quando há pelo menos dois dias com dados.</p>${chart(data.weekdays,true,!!customer)}</article>
     <article><h2>Semanas do mês</h2><p class="note">Tendência das semanas ISO encerradas com dados.</p>${chart(data.weeks,false,!!customer)}</article>
     <article><h2>Meses do ano</h2><p class="note">Tendência dos meses encerrados com dados.</p>${chart(data.months,false,!!customer)}</article>
@@ -196,9 +204,9 @@ export function renderDailyReport(records, date, logo, customer = null) {
   ${table(['Comanda','Diferença','Responsável','Causa e ação','Prazo','Situação'],divergences.map(({row,check,delta,status})=>[row.command,percent(100*delta/weight(row)),check.owner||'—',check.action||'Em apuração',check.dueDate?displayDate(check.dueDate):'—',status]),[13,13,16,28,15,15])}
   <h2>Motivos do relave interno na expedição</h2>
   ${table(['Motivo','Peso','Participação'],[...reasons].sort((a,b)=>b[1]-a[1]).map(([reason,v])=>[reason,kg(v),percent(g.waste?100*v/g.waste:null)]))}
-  <h2>Ocorrências por cliente · Visão da empresa</h2>
-  ${table(['Cliente','Ocorrências','Triado do cliente','% no cliente','% na empresa'],clientSummary)}
-  <p class="note">% na empresa = kg de ocorrências do cliente ÷ kg triados do relave interno GAO no mesmo dia. A base da empresa é comum a todos os clientes.</p>
+  <h2>Relave por ocorrência do cliente · Visão da empresa</h2>
+  ${table(['Cliente','Relave do cliente','Triado do cliente','% no cliente','% na empresa','Meta até 2%'],clientSummary)}
+  <p class="note">Meta de até 2% nas duas visões. % na empresa = kg de relave por ocorrência do cliente ÷ kg triados do relave interno GAO no mesmo dia. A base da empresa é comum a todos os clientes.</p>
   <h2>Ocorrências do cliente</h2>
   ${table(['Comanda','Cliente','Motivo','Triado','Relave'],clients.map(row=>[row.command,row.client,[...new Set((row.items||[]).map(i=>i.reason))].join(', ')||'—',kg(row.sorted),row.items?kg(weight(row)):'—']))}
   <p class="note">Percentuais calculados como kg de relave sobre kg triados nas comandas conferidas de cada tipo.</p>
@@ -251,6 +259,7 @@ export function renderHistoricalCustomerReport(data,client,date,indicator,logo,o
  ${head('Relatório diário de ocorrências do cliente')}
  ${closingCards(summary(gao),weightChecks(gao),customerSummary,sortedCommands+' comanda(s) triada(s)',true)}
  <p>${indicator==='relave'?'Ocorrências com relave na descrição':'Todas as ocorrências'} · Histórico a partir de 01/08/2026, até o fechamento selecionado.</p>
+ <p>Relave por ocorrência do cliente · Meta de até 2% no cliente e na visão da empresa.</p>
  <h2>Resumo do dia, da semana, do mês e do ano</h2>${table(['Período','Ocorrências','Triado do cliente','% no cliente','Triado empresa','% na empresa'],totalRows)}
  <h2>Tipos de peça retornada</h2>${table(['Tipo de peça','Dia','Semana','Mês','Ano'],detailRows)}
  <h2>Ocorrências do dia</h2>${table(['Comanda','Tipo de peça','Descrição','Peso'],selected.map(row=>[row.order,historicalPiece(row.type),row.type,kg(row.kg)]))}
