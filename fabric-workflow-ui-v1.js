@@ -69,6 +69,8 @@ async function init(){
  const org=(m||[]).find(x=>x.organizations?.active&&x.organizations?.kind==='gao');
  if(!org)throw Error('Sua conta não possui vínculo ativo com a organização GAO.');
  state.org=org.organization_id;
+ state.canViewInventory=await rpc('fabric_user_has_permission',{p_organization_id:state.org,p_permission_code:'textiles.inventory.view'});
+ state.canOperateFaction=await rpc('fabric_user_has_permission',{p_organization_id:state.org,p_permission_code:'textiles.production.manage'});
  state.canManagePurchases=await rpc('fabric_user_has_permission',{p_organization_id:state.org,p_permission_code:'textiles.inventory.manage'}).catch(()=>false);
  await reload();
 }
@@ -168,6 +170,7 @@ function overviewView(){
 }
 function render(){
  const host=document.querySelector('#gao-fabric-flow');if(!host)return;host.hidden=!state.mode;
+ if(state.canViewInventory===false&&state.canOperateFaction){state.tab='faction-desk';state.mode=true;host.hidden=false;}
  const formerPurchases=host.querySelector('.fw-purchase-orders');
  const previousPurchaseStage=formerPurchases?.dataset.purchaseStage;
  const purchaseSearch=formerPurchases?.querySelector('[data-fw-purchase-search]')?.value;
@@ -180,7 +183,7 @@ function render(){
  };
  const quickLinks=(shortcuts[state.tab]||[]).map(([id,label])=>'<button type="button" data-fw-tab="'+id+'">'+label+'</button>').join('');
  const body=state.tab==='overview'?overviewView():state.tab==='faction-desk'?factionWorkflow.view():state.tab==='workbook'?workbookImport.view():state.tab==='buying'?buying.view():state.tab==='material-need'?materialCoverageView():state.tab==='production'||state.tab==='demand'?demandView()+productionView()+trackingView():['stock','purchases','receipt','lots'].includes(state.tab)?(state.tab==='stock'?factionStockPosition():'')+stockPanels(state.tab):state.tab==='suppliers'?stockPanels('suppliers'):state.tab==='catalog'?standardsManagementView()+'<details class="fw-panel"><summary>Referências comerciais e códigos de NF</summary>'+stockPanels('catalog')+'</details>'+recipeView():state.tab==='quality'?qualityView():state.tab==='recipes'?recipeView():costView();
- host.innerHTML='<section class="fw-shell"><header class="fw-head"><div><small>ENXOVAL • PRODUÇÃO TÊXTIL</small><h2>'+esc(({overview:'Gestão de Tecidos e Produção de Enxoval',buying:'Necessidades','material-need':'Necessidade de compra de tecido',stock:'Estoque de tecidos',purchases:'Pedidos de compra',receipt:'Receber nota fiscal',lots:'Lotes recebidos',catalog:'Padronização de produtos',suppliers:'Fornecedores',quality:'Qualidade de tecidos',production:'Produção e facção',cost:'Custos e perdas',workbook:'Gestão de Tecidos e Produção de Enxoval','faction-desk':'Portal da facção'})[state.tab]||'Produção têxtil')+'</h2><p>'+esc(({overview:'Planejamento, compras, estoque e ordens da facção.',buying:'Necessidade, estoque, corte/facção e compras no mesmo lugar.','material-need':'Quanto tecido falta comprar, em metros, descontando estoque e compras a receber.',stock:'Saldo disponível e reservado de cada tecido.',purchases:'Pedidos em andamento, entregas previstas e histórico.',receipt:'Importe o XML ou registre o material recebido.',lots:'Consulte os lotes e a avaliação por nota fiscal.'})[state.tab]||'Demanda ligada a estoque, produção e custo real.')+'</p></div><div class="fw-tabs">'+(state.tab==='overview'?'':'<button type="button" data-fw-back>← Voltar</button>')+'<button type="button" data-fw-refresh>Atualizar dados</button></div></header>'+(state.error?'<div class="fw-error">'+esc(state.error)+'</div>':'')+(state.busy?'<div class="fw-note">Salvando no banco…</div>':'')+(state.notice?'<div class="fw-note" role="status">'+esc(state.notice)+'</div>':'')+(quickLinks?'<div class="fw-tabs" aria-label="Atalhos do módulo">'+quickLinks+'</div>':'')+body+'</section>';
+ host.innerHTML='<section class="fw-shell"><header class="fw-head"><div><small>ENXOVAL • PRODUÇÃO TÊXTIL</small><h2>'+esc(({overview:'Gestão de Tecidos e Produção de Enxoval',buying:'Necessidades','material-need':'Necessidade de compra de tecido',stock:'Estoque de tecidos',purchases:'Pedidos de compra',receipt:'Receber nota fiscal',lots:'Lotes recebidos',catalog:'Padronização de produtos',suppliers:'Fornecedores',quality:'Qualidade de tecidos',production:'Produção e facção',cost:'Custos e perdas',workbook:'Gestão de Tecidos e Produção de Enxoval','faction-desk':'Portal da facção'})[state.tab]||'Produção têxtil')+'</h2><p>'+esc(({overview:'Planejamento, compras, estoque e ordens da facção.',buying:'Necessidade, estoque, corte/facção e compras no mesmo lugar.','material-need':'Quanto tecido falta comprar, em metros, descontando estoque e compras a receber.',stock:'Saldo disponível e reservado de cada tecido.',purchases:'Pedidos em andamento, entregas previstas e histórico.',receipt:'Importe o XML ou registre o material recebido.',lots:'Consulte os lotes e a avaliação por nota fiscal.'})[state.tab]||'Demanda ligada a estoque, produção e custo real.')+'</p></div><div class="fw-tabs">'+(state.tab==='overview'||state.canViewInventory===false?'':'<button type="button" data-fw-back>← Voltar</button>')+'<button type="button" data-fw-refresh>Atualizar dados</button></div></header>'+(state.error?'<div class="fw-error">'+esc(state.error)+'</div>':'')+(state.busy?'<div class="fw-note">Salvando no banco…</div>':'')+(state.notice?'<div class="fw-note" role="status">'+esc(state.notice)+'</div>':'')+(quickLinks?'<div class="fw-tabs" aria-label="Atalhos do módulo">'+quickLinks+'</div>':'')+body+'</section>';
  for(const d of host.querySelectorAll('details[data-fw-detail-key]'))if(expanded.includes(d.dataset.fwDetailKey))d.open=true;
  const purchasePanel=host.querySelector('.fw-purchase-orders');
  if(purchasePanel){
@@ -1133,6 +1136,7 @@ function changeWorkflowScreen(tab,lot=null,invoice=state.qualityInvoice){
  render();
 }
 function returnToScreen(){
+ if(state.canViewInventory===false){state.tab='faction-desk';setFlowMode(true);render();return;}
  const previous=screenHistory.pop();
  if(!previous&&directFactionRoute){location.assign('/enxoval-tecidos');return;}
  if(!previous||previous.mode){
