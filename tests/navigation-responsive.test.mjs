@@ -86,7 +86,7 @@ test('Portal da Facção tem entrada no menu principal e carrega no mesmo painel
   assert.equal(route({pathname:href('faccao'),hash:''}), 'faccao');
   assert.match(core, /r==='enxoval'\|\|r==='faccao'/);
   assert.match(linen, /path === '\/enxoval-tecidos\/faccao'/);
-  assert.match(fabric, /tab:directFactionRoute\?'faction-desk':'overview'/);
+  assert.match(fabric, /directFactionRoute\?'faction-desk':'overview'/);
   assert.match(faction, /\['provision', 'Provisão Facção',[\s\S]*?\['cut', 'Corte',[\s\S]*?\['sewing', 'Costura',/);
 });
 
