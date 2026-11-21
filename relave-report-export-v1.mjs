@@ -58,7 +58,7 @@ export function openReport(report, filename, {page = window.open('', '_blank'), 
     const worker = page.html2pdf().set({
       margin: 11,
       image: {type: 'jpeg', quality: 0.94},
-      html2canvas: {scale: 1.5, backgroundColor: '#fff', logging: false},
+      html2canvas: {scale: 1.5, backgroundColor: '#fff', logging: false, useCORS: true},
       jsPDF: {unit: 'mm', format: 'a4', orientation},
       pagebreak: {mode: ['css'], avoid: ['tr', 'article', 'header']}
     }).from(content).toContainer();
