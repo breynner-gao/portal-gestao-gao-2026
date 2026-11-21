@@ -64,6 +64,8 @@ let state = {
   cloudBusy: false
 };
 
+let rfidRevision = 0;
+
 function readHistory() { try { const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); const seen = new Set(); return raw.filter(item => { const key = `${item.asOf}|${item.label}|${item.estoque}|${item.pedidoReal}|${item.faccao}`; if (seen.has(key)) return false; seen.add(key); return true; }); } catch { return []; } }
 function readCurrent() { try { return JSON.parse(localStorage.getItem(CURRENT_KEY) || 'null'); } catch { return null; } }
 function saveCurrent() { try { localStorage.setItem(CURRENT_KEY, JSON.stringify({ baseRows: state.baseRows, factionMap: state.factionMap, rows: state.rows, asOf: state.asOf, informedAt: state.informedAt, sourceSheet: state.sourceSheet, sourceRule: state.sourceRule, fileName: state.fileName, factionSource: state.factionSource, cloudUpdatedAt: state.cloudUpdatedAt, needsCloudSync: state.needsCloudSync })); } catch {} }
@@ -251,11 +253,12 @@ async function fetchOnlineFaction() {
   state.factionMap=buildFactionMap(state.rows.map(row=>({PRODUTO:row.produtoNome,product_reference:row.produtoId,QUANTIDADE:row.pecasFaccao,ENTREGA:0,Status:'PENDENTE'})));
   for(const row of state.rows)if(row.produtoId)state.factionMap['ID:'+String(row.produtoId)]=row.pecasFaccao;
   saveCurrent();render();
- }catch(e){state={...state,coverageReady:false,productionError:e.message,uploadMessage:'Produção: '+e.message};render()}
+ }catch(e){state={...state,coverageReady:false,productionError:e.message};render()}
 }
 window.addEventListener('gao-production-updated',fetchOnlineFaction);
 
 async function load(force = false) {
+  const startingRevision = rfidRevision;
   if (!force && (state.loaded || state.error)) return;
   const current = readCurrent();
   let shared = null;
@@ -264,6 +267,7 @@ async function load(force = false) {
     state = { ...state, cloudReady: true, cloudCanWrite: context.canWrite, cloudOrgId: context.organizationId };
     const revision = idealRevision;
     const [snapshot, references] = await Promise.allSettled([loadSharedSnapshot(context), readIdealReferences(context)]);
+    if (startingRevision !== rfidRevision) return;
     if (references.status === 'fulfilled' && revision === idealRevision && !idealSaving) {
       idealReferences = references.value;
       idealMessage = '';
@@ -296,6 +300,7 @@ async function load(force = false) {
   } catch (error) {
     state = { ...state, cloudStatus: 'Sincronização indisponível: ' + (error.message || String(error)) };
   }
+  if (startingRevision !== rfidRevision) return;
   if (current?.baseRows?.length) {
     state = {
       ...state,
@@ -321,6 +326,7 @@ async function load(force = false) {
     const response = await fetch(DATA, { cache: 'no-store' });
     if (!response.ok) throw Error('A base RFID não foi publicada no servidor.');
     const data = await response.json();
+    if (startingRevision !== rfidRevision) return;
     const summary = summarizeRows(data.rows || []);
     if (!summary.rows.length) throw Error('O arquivo publicado está sem linhas RFID válidas.');
     state = {
@@ -435,6 +441,7 @@ function applyUploadedRows(rows, fileName) {
     render();
     return;
   }
+  rfidRevision++;
   const decimalSample=summary.rows.find(row=>!Number.isInteger(row.mediaDiaria));
   const decimalNote=decimalSample?' Exemplo de média diária: '+br(decimalSample.mediaDiaria,2)+' pç/dia.':'';
   const detectedFactionRows = rows.filter(row => row && (row.PRODUTO || row.produto || row.Produto) && (row.QUANTIDADE !== undefined || row.quantidade !== undefined) && (row.Status !== undefined || row.status !== undefined));
@@ -495,6 +502,10 @@ function readExcelFile(file, kind) {
       state = { ...state, uploadMessage: `Não consegui ler o Excel: ${e.message || e}` };
       render();
     }
+  };
+  reader.onerror = () => {
+    state = { ...state, uploadMessage: 'Não consegui abrir o Excel. Selecione o arquivo novamente.' };
+    render();
   };
   reader.readAsArrayBuffer(file);
 }
@@ -677,7 +688,7 @@ function panel() {
       </div>
       <label class="lr150-upload">
         <input id="lr150-file" type="file" accept=".csv,.txt,.json,.xlsx,.xls">
-        <span>Subir CSV RFID</span>
+        <span>Importar Excel / CSV RFID</span>
       </label>
 
     </div>
@@ -813,8 +824,13 @@ function bind() {
     render();
   }));
   document.querySelector('#lr150-sync-cloud')?.addEventListener('click', syncSharedSnapshot);
-  document.querySelector('#lr150-file')?.addEventListener('change', event => readRfidFile(event.target.files?.[0]));
-  document.querySelector('#lr150-faction-file')?.addEventListener('change', event => readFactionFile(event.target.files?.[0]));
+  const rfidInput = document.querySelector('#lr150-file');
+  if (rfidInput) {
+    rfidInput.onchange = event => readRfidFile(event.target.files?.[0]);
+    rfidInput.onclick = () => { rfidInput.value = ''; };
+  }
+  const factionInput = document.querySelector('#lr150-faction-file');
+  if (factionInput) factionInput.onchange = event => readFactionFile(event.target.files?.[0]);
   document.querySelectorAll('.lr150-ideal-input').forEach(input => {
     input.addEventListener('change', editIdealReference);
     input.addEventListener('keydown', event => {
@@ -952,7 +968,14 @@ function render() {
   window.GAO_LINEN_SOURCE_UPDATED_AT = state.cloudUpdatedAt || null;
   window.GAO_LINEN_NEED_SNAPSHOT = state.rows.map(row => ({ produtoId: row.produtoId, produtoNome: row.produtoNome, pedidoReal: row.pedidoReal, estoqueUtil:row.estoqueUtil, estoqueGao:row.estoqueGao, trocaReferencia:row.trocaReferencia, metaTrocas:row.mediaDiaria>0&&row.trocaReferencia>0?Math.ceil(row.mediaDiaria*row.trocaReferencia):null, coverageReady:state.coverageReady, necessidade:row.compraSugerida, pendingTracking:factionQuantityFor(row,state.trackingMap), pendingServiceOrders:factionQuantityFor(row,state.serviceOrderMap), needWithoutTracking:Math.max(0,Number(row.compraSugerida||0)-factionQuantityFor(row,state.trackingMap)), asOf: state.asOf }));
   const recordsOpen = shell.querySelector('#lr150-movement-records')?.open;
+  // A focus refresh can run while the native file picker is open. Keep its
+  // original input connected to the new view so the eventual change is handled.
+  const fileInputs = [...shell.querySelectorAll('input[type="file"][id]')];
   shell.innerHTML = panel();
+  for (const input of fileInputs) {
+    const replacement = shell.querySelector('#' + input.id);
+    if (replacement) replacement.replaceWith(input);
+  }
   if (recordsOpen && shell.querySelector('#lr150-movement-records')) shell.querySelector('#lr150-movement-records').open = true;
   mountTextileSubmenu(shell);
   bind();
@@ -1040,6 +1063,7 @@ async function publishWeeklyStock(file, asOf) {
   const saved=await response.json().catch(()=>null);
   if (!response.ok) throw Error(saved?.message||'Não foi possível publicar a posição semanal.');
   if (!saved?.[0]) throw Error('Outra posição foi publicada enquanto você enviava o arquivo. Atualize e tente novamente.');
+  rfidRevision++;
   state={...state,loaded:true,error:'',baseRows:saved[0].rows,asOf,informedAt:asOf,fileName:file.name,sourceSheet:sheet,
     sourceRule:'Posição semanal enviada por Necessidades',cloudUpdatedAt:saved[0].updated_at,needsCloudSync:false};
   recalculateIdealDecisions();
@@ -1085,10 +1109,10 @@ new MutationObserver(mountWeeklyUpload).observe(document.getElementById('root'),
 mountWeeklyUpload();
 
 window.addEventListener('focus', async () => {
-  if (!route() || !state.loaded || weeklyBusy) return;
+  if (!route() || !state.loaded || weeklyBusy || state.needsCloudSync) return;
   try {
     const latest=await loadSharedSnapshot(await cloudContext());
-    if (!weeklyBusy && latest?.updated_at && Date.parse(latest.updated_at)>(Date.parse(state.cloudUpdatedAt)||0)) {
+    if (!weeklyBusy && !state.needsCloudSync && latest?.updated_at && Date.parse(latest.updated_at)>(Date.parse(state.cloudUpdatedAt)||0)) {
       await load(true);
       render();
     }
