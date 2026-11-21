@@ -16,6 +16,8 @@ on:
       - "security-session-v614.js"
       - "tests/security-session.test.mjs"
       - "portal-sgq-core.js"
+      - "chemical-analysis-*"
+      - "tests/chemical-analysis.test.mjs"
       - "src/gao-ui-fix-v1.js"
       - "tests/navigation-responsive.test.mjs"
       - "supabase/migrations/**"
@@ -34,6 +36,8 @@ on:
       - "security-session-v614.js"
       - "tests/security-session.test.mjs"
       - "portal-sgq-core.js"
+      - "chemical-analysis-*"
+      - "tests/chemical-analysis.test.mjs"
       - "src/gao-ui-fix-v1.js"
       - "tests/navigation-responsive.test.mjs"
       - "supabase/migrations/**"
@@ -64,10 +68,16 @@ jobs:
           node --check fabric-workflow-rules-v1.mjs
           node --check security-session-v614.js
           node --check portal-sgq-core.js
+          node --check chemical-analysis-ui-v1.mjs
+          node --check chemical-analysis-template-v1.mjs
+          node --check chemical-analysis-rules-v1.mjs
           node --check src/gao-ui-fix-v1.js
 
       - name: Check fabric workflow calculations
         run: node --test tests/fabric-workflow-rules.test.mjs
+
+      - name: Check chemical analysis behavior
+        run: node --test tests/chemical-analysis.test.mjs tests/production-access.test.mjs
 
       - name: Check security session behavior
         run: node --test tests/security-session.test.mjs
