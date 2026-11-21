@@ -1,4 +1,5 @@
-import {normalizeRow} from './linen-risk-rules-v150.mjs?v=227';
+import {parseLinenNumber} from './linen-number-v1.mjs?v=1';
+import {normalizeRow} from './linen-risk-rules-v150.mjs?v=228';
 
 const columns = [
   ['Média diária','media_diaria',['media_diaria','Média diária']],
@@ -25,7 +26,7 @@ export function prepareWeeklyStock(rows) {
     for (const [label,key,aliases] of columns) {
       const field=aliases.find(alias=>Object.hasOwn(row,alias));
       const raw=String(row[field]??'').trim();
-      const value=Number(raw.includes(',')?raw.replaceAll('.','').replace(',','.'):raw);
+      const value=parseLinenNumber(raw);
       if (!raw || !Number.isFinite(value) || value<0 || (key!=='media_diaria'&&!Number.isInteger(value))) {
         throw Error(`Confira ${label} na linha ${line}. Informe zero quando não houver saldo.`);
       }

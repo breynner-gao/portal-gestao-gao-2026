@@ -9,6 +9,10 @@ on:
       - "src/rouparia-operations-v2.js"
       - "linen-risk-panel-v150.js"
       - "linen-risk-rules-v150.mjs"
+      - "linen-number-v1.mjs"
+      - "linen-weekly-stock-v1.mjs"
+      - "tests/linen-csv-numbers.test.mjs"
+      - "linen-risk-rules-v150.mjs"
       - "fabric-purchase-addon-v1.js"
       - "fabric-workflow-ui-v1.js"
       - "fabric-workflow-*.mjs"
@@ -31,6 +35,10 @@ on:
       - "index.html"
       - "src/rouparia-operations-v2.js"
       - "linen-risk-panel-v150.js"
+      - "linen-risk-rules-v150.mjs"
+      - "linen-number-v1.mjs"
+      - "linen-weekly-stock-v1.mjs"
+      - "tests/linen-csv-numbers.test.mjs"
       - "linen-risk-rules-v150.mjs"
       - "fabric-purchase-addon-v1.js"
       - "fabric-workflow-*.mjs"
@@ -82,6 +90,9 @@ jobs:
 
       - name: Check fabric workflow calculations
         run: node --test tests/fabric-workflow-rules.test.mjs
+
+      - name: Check RFID CSV decimal conventions
+        run: node --test tests/linen-csv-numbers.test.mjs tests/linen-weekly-stock.test.mjs
 
       - name: Check monthly textile costs
         run: node --test tests/textile-cost.test.mjs

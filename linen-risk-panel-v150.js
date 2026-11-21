@@ -1,5 +1,6 @@
-import { prepareWeeklyStock } from './linen-weekly-stock-v1.mjs?v=1';
-import { applyFactionToRows, buildFactionMap, buildPendingProductionCoverage, applyPendingProductionCoverage, factionQuantityFor, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, applyIdealReferences, idealReferenceKey } from './linen-risk-rules-v150.mjs?v=227';
+import {normalizeImportedLinenRows,formatLinenCsvValue} from './linen-number-v1.mjs?v=1';
+import { prepareWeeklyStock } from './linen-weekly-stock-v1.mjs?v=2';
+import { applyFactionToRows, buildFactionMap, buildPendingProductionCoverage, applyPendingProductionCoverage, factionQuantityFor, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, applyIdealReferences, idealReferenceKey } from './linen-risk-rules-v150.mjs?v=228';
 
 const DATA = '/assets/linen-rfid-report-2026-10-13.json';
 const FACTION_DATA = '/assets/linen-production-pending-2026-10-13.json';
@@ -427,6 +428,7 @@ function sortHeader(label, value) {
 }
 
 function applyUploadedRows(rows, fileName) {
+  rows = normalizeImportedLinenRows(rows);
   const summary = summarizeRows(rows);
   if (!summary.rows.length) {
     state = { ...state, uploadMessage: 'Não encontrei linhas válidas com média diária nessa planilha.' };
@@ -450,7 +452,7 @@ function applyUploadedRows(rows, fileName) {
     factionMap,
     factionSource: detectedFactionRows.length ? `${fileName} — facção detectada automaticamente` : state.factionSource,
     needsCloudSync: true,
-    uploadMessage: `${summary.rows.length} itens carregados de ${fileName}.${detectedFactionRows.length ? ` Facção detectada: ${br(Object.values(detectedFactionMap).reduce((a, b) => a + Number(b || 0), 0))} pç pendentes.` : ''}`
+    uploadMessage: `${summary.rows.length} itens carregados de ${fileName}. Decimais reconhecidos automaticamente; exibição no padrão brasileiro.${detectedFactionRows.length ? ` Facção detectada: ${br(Object.values(detectedFactionMap).reduce((a, b) => a + Number(b || 0), 0))} pç pendentes.` : ''}`
   };
   saveHistory();
   saveCurrent();
@@ -563,7 +565,7 @@ function downloadItemReport() {
   if (!rows.length) return;
   const header = ['Item', 'Categoria', 'Criticidade', 'Cliente', 'Area critica', 'Mercado', 'Estoque GAO', 'Relave', 'Qualidade', 'Desengoma', 'Costura avaliacao', 'Total util', 'Trocas cliente + AC', 'Trocas mercado', 'Trocas GAO', 'Trocas total', 'Necessidade', 'Pedidos em andamento', 'Pedido real'];
   const csv = [header, ...rows.map(row => [row.produtoNome, row.categoria, row.criticidade, row.cliente, row.areaCritica, row.mercado, row.estoqueGao, row.relave, row.qualidade, row.desengoma, row.costura, row.totalUtil, row.trocasClienteArea, row.trocasMercado, row.trocasGao, row.trocasTotal, row.necessidade, row.faccao, row.pedidoReal])]
-    .map(line => line.map(value => `"${String(value ?? '').replace(/"/g, '""')}"`).join(';'))
+    .map(line => line.map(value => `"${formatLinenCsvValue(value).replace(/"/g, '""')}"`).join(';'))
     .join('\n');
   const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -579,7 +581,7 @@ function downloadMovementReport() {
   if (!rows.length) return;
   const header = ['Item', 'Categoria', 'Subcategoria', 'Origem', 'Destino', 'Quantidade sugerida', 'Consumo medio diario', 'Circulacao sem deposito', 'Trocas sem deposito', 'Trocas ideais', 'Meta circulacao em pecas', 'Excedente circulacao', 'Tolerancia retirada', 'Mercado atual', 'Estoque GAO atual'];
   const csv = [header, ...rows.map(row => [row.produtoNome, row.categoria, row.subcategoria, row.origem, row.destino, row.quantidade, row.mediaDiaria, row.estoqueCirculacao, row.trocasCirculacao, row.trocasIdeal, row.metaCirculacao, row.excedenteCirculacao, row.direcao === 'return' ? 30 : 0, row.mercadoAtual, row.deposito])]
-    .map(line => line.map(value => `"${String(value ?? '').replace(/"/g, '""')}"`).join(';'))
+    .map(line => line.map(value => `"${formatLinenCsvValue(value).replace(/"/g, '""')}"`).join(';'))
     .join('\n');
   const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);

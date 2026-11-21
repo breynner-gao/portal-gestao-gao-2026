@@ -1,5 +1,7 @@
+import {parseLinenNumber,normalizeImportedLinenRows} from './linen-number-v1.mjs?v=1';
+
 const n = value => {
-  const num = Number(String(value ?? '').replace(',', '.'));
+  const num = parseLinenNumber(value);
   return Number.isFinite(num) ? num : 0;
 };
 
@@ -348,13 +350,13 @@ export function parseDelimitedRows(text) {
   const sample = lines[0];
   const delimiter = [';', '\t', ','].sort((a, b) => sample.split(b).length - sample.split(a).length)[0];
   const headers = splitDelimitedLine(lines[0], delimiter).map(header => header.trim());
-  return lines.slice(1).map(line => {
+  return normalizeImportedLinenRows(lines.slice(1).map(line => {
     const cells = splitDelimitedLine(line, delimiter);
     return headers.reduce((row, header, index) => {
       row[header] = cells[index] ?? '';
       return row;
     }, {});
-  });
+  }));
 }
 
 export function classifyRisk(trocasTotais) {
