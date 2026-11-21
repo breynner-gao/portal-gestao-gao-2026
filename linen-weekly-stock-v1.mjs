@@ -1,5 +1,5 @@
-import {parseLinenNumber} from './linen-number-v1.mjs?v=1';
-import {normalizeRow} from './linen-risk-rules-v150.mjs?v=228';
+import {parseLinenNumber,normalizeImportedLinenRows} from './linen-number-v1.mjs?v=2';
+import {normalizeRow} from './linen-risk-rules-v150.mjs?v=229';
 
 const columns = [
   ['Média diária','media_diaria',['media_diaria','Média diária']],
@@ -15,6 +15,7 @@ const columns = [
 
 export function prepareWeeklyStock(rows) {
   if (!Array.isArray(rows) || !rows.length) throw Error('A planilha está vazia.');
+  rows=normalizeImportedLinenRows(rows);
   const result=[], seen=new Set();
   for (const [index,row] of rows.entries()) {
     const line=index+2;

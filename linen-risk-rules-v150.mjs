@@ -1,4 +1,4 @@
-import {parseLinenNumber,normalizeImportedLinenRows} from './linen-number-v1.mjs?v=1';
+import {parseLinenNumber,normalizeImportedLinenRows} from './linen-number-v1.mjs?v=2';
 
 const n = value => {
   const num = parseLinenNumber(value);
@@ -422,6 +422,7 @@ function criticalPoint({ trocasClienteArea, trocasMercado, trocasDeposito, estoq
 }
 
 export function normalizeRow(row) {
+  row=normalizeImportedLinenRows([row])[0];
   const media = n(pick(row, 'media_diaria', 'Média diária'));
   const estoqueCliente = n(pick(row, 'estoque_cliente'));
   const areaCritica = n(pick(row, 'area_critica'));

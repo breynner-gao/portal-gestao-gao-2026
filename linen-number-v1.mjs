@@ -18,6 +18,26 @@ export function parseLinenNumber(value){
  const parsed=Number(text+exponent);return Number.isFinite(parsed)?parsed:NaN;
 }
 const numericHeaders=new Set(['MEDIA DIARIA','ESTOQUE CLIENTE','AREA CRITICA','MERCADO','DEPOSITO GAO','ESTOQUE GAO','RELAVE GERAL','RELAVE','QUALIDADE','DESENGOMA GAO','DESENGOMA','COSTURA','ESTOQUE TOTAL','TROCAS CLIENTE','TROCAS AREA CRITICA','TROCAS MERCADO','TROCAS GAO','TROCAS TOTAIS','TROCAS IDEAIS','PEDIDO FINAL','NECESSIDADE COMPRA','FACCAO','EM FACCAO','EM PRODUCAO','PECAS FACCAO','QUANTIDADE']);
+export function normalizeLinenHeader(header){
+ let text=String(header).trim();
+ // UTF-8 decoded as Latin-1, observed in the RFID export: depÃ³sito_gao.
+ for(let pass=0;pass<2&&/[ÃÂ]/.test(text);pass++){
+  if([...text].some(c=>c.charCodeAt(0)>255))break;
+  try{text=new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from([...text],c=>c.charCodeAt(0)));}catch{break;}
+ }
+ const plain=text.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replaceAll('_',' ').replace(/\s+/g,' ').trim().toUpperCase();
+ return plain==='DEPOSITO GAO'||text==='dep√≥sito_gao'?'deposito_gao':text;
+}
 const key=header=>String(header).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replaceAll('_',' ').replace(/\s+/g,' ').trim().toUpperCase();
-export function normalizeImportedLinenRows(rows){return rows.map(row=>Object.fromEntries(Object.entries(row).map(([header,value])=>{if(!numericHeaders.has(key(header))&&header!=='dep√≥sito_gao')return [header,value];const number=parseLinenNumber(value);return [header,Number.isFinite(number)?number:value];})));}
+export function normalizeImportedLinenRows(rows){return rows.map(row=>{
+ const result={};
+ for(const [original,value] of Object.entries(row)){
+  const header=normalizeLinenHeader(original);
+  const number=numericHeaders.has(key(header))?parseLinenNumber(value):NaN;
+  const normalized=Number.isFinite(number)?number:value;
+  if(Object.hasOwn(result,header)&&String(result[header])!==String(normalized))throw Error('Duas colunas de '+header+' possuem valores diferentes. Confira o cabeçalho da planilha.');
+  result[header]=normalized;
+ }
+ return result;
+});}
 export function formatLinenCsvValue(value){if(typeof value!=='number'||!Number.isFinite(value))return String(value??'');return value.toLocaleString('pt-BR',{useGrouping:false,minimumFractionDigits:Number.isInteger(value)?0:2,maximumFractionDigits:20});}

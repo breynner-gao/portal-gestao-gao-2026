@@ -1,6 +1,6 @@
-import {normalizeImportedLinenRows,formatLinenCsvValue} from './linen-number-v1.mjs?v=1';
-import { prepareWeeklyStock } from './linen-weekly-stock-v1.mjs?v=2';
-import { applyFactionToRows, buildFactionMap, buildPendingProductionCoverage, applyPendingProductionCoverage, factionQuantityFor, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, applyIdealReferences, idealReferenceKey } from './linen-risk-rules-v150.mjs?v=228';
+import {normalizeImportedLinenRows,formatLinenCsvValue} from './linen-number-v1.mjs?v=2';
+import { prepareWeeklyStock } from './linen-weekly-stock-v1.mjs?v=3';
+import { applyFactionToRows, buildFactionMap, buildPendingProductionCoverage, applyPendingProductionCoverage, factionQuantityFor, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, applyIdealReferences, idealReferenceKey } from './linen-risk-rules-v150.mjs?v=229';
 
 const DATA = '/assets/linen-rfid-report-2026-10-13.json';
 const FACTION_DATA = '/assets/linen-production-pending-2026-10-13.json';
@@ -435,6 +435,8 @@ function applyUploadedRows(rows, fileName) {
     render();
     return;
   }
+  const decimalSample=summary.rows.find(row=>!Number.isInteger(row.mediaDiaria));
+  const decimalNote=decimalSample?' Exemplo de média diária: '+br(decimalSample.mediaDiaria,2)+' pç/dia.':'';
   const detectedFactionRows = rows.filter(row => row && (row.PRODUTO || row.produto || row.Produto) && (row.QUANTIDADE !== undefined || row.quantidade !== undefined) && (row.Status !== undefined || row.status !== undefined));
   const detectedFactionMap = detectedFactionRows.length ? buildFactionMap(detectedFactionRows) : {};
   const factionMap = Object.keys(detectedFactionMap).length ? { ...state.factionMap, ...detectedFactionMap } : state.factionMap;
@@ -452,7 +454,7 @@ function applyUploadedRows(rows, fileName) {
     factionMap,
     factionSource: detectedFactionRows.length ? `${fileName} — facção detectada automaticamente` : state.factionSource,
     needsCloudSync: true,
-    uploadMessage: `${summary.rows.length} itens carregados de ${fileName}. Decimais reconhecidos automaticamente; exibição no padrão brasileiro.${detectedFactionRows.length ? ` Facção detectada: ${br(Object.values(detectedFactionMap).reduce((a, b) => a + Number(b || 0), 0))} pç pendentes.` : ''}`
+    uploadMessage: `${summary.rows.length} itens carregados de ${fileName}. Decimais reconhecidos automaticamente; exibição no padrão brasileiro.${decimalNote}${detectedFactionRows.length ? ` Facção detectada: ${br(Object.values(detectedFactionMap).reduce((a, b) => a + Number(b || 0), 0))} pç pendentes.` : ''}`
   };
   saveHistory();
   saveCurrent();
@@ -486,7 +488,7 @@ function readExcelFile(file, kind) {
       const book = window.XLSX.read(reader.result, { type: 'array', cellDates: true });
       const sheetName = kind === 'faction' ? (book.SheetNames.find(name => /base|produção|producao/i.test(name)) || book.SheetNames[0]) : book.SheetNames[0];
       const sheet = book.Sheets[sheetName];
-      const rows = window.XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+      const rows = window.XLSX.utils.sheet_to_json(sheet, { defval: '', raw: kind !== 'faction' });
       if (kind === 'faction') applyUploadedFaction(rows, file.name);
       else applyUploadedRows(rows, file.name);
     } catch (e) {
