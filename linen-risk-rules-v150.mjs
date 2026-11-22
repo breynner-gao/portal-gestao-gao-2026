@@ -1,4 +1,4 @@
-import {parseLinenNumber,normalizeImportedLinenRows} from './linen-number-v1.mjs?v=2';
+import {parseLinenNumber,normalizeImportedLinenRows} from './linen-number-v1.mjs?v=3';
 
 const n = value => {
   const num = parseLinenNumber(value);
@@ -240,7 +240,7 @@ function movementRecommendation({ media, mercado, deposito, estoqueCirculacao, t
   const movimentoDepositoMercado = Math.min(deficitCirculacao, Math.max(0, Math.floor(n(deposito))));
   let sugestaoMovimento = 'Sem movimentação sugerida';
   if (!apuravel) {
-    sugestaoMovimento = 'Não apurado: consumo médio ou referência de trocas indisponível';
+    sugestaoMovimento = 'Não apurado: estoque ideal ou referência de trocas indisponível';
   } else if (retiradaMercadoDeposito > 0) {
     sugestaoMovimento = `Retirar ${retiradaMercadoDeposito} pç do mercado para estoque GAO`;
   } else if (excedenteCirculacao > TOLERANCIA_EXCEDENTE_CIRCULACAO) {
@@ -275,13 +275,14 @@ export function idealReferenceKey({ produtoId, produtoNome }) {
 export function applyIdealReferences(rows, references) {
   return rows.map(row => {
     const ideal = references.get(idealReferenceKey(row));
-    return ideal === undefined ? row : updateIdealReference(row, ideal);
+    const recalculated = normalizeRow(row);
+    return ideal === undefined ? recalculated : updateIdealReference(recalculated, ideal);
   });
 }
 
 export function updateIdealReference(row, value) {
   const ideal = Math.max(0, n(value));
-  const media = n(row.mediaDiaria);
+  const media = n(row.estoqueIdeal);
   const apuravel = media > 0 && ideal > 0;
   const compraPorIdeal = apuravel ? Math.max(0, Math.ceil(media * ideal - n(row.estoqueUtil))) : 0;
   const compraSugerida = apuravel ? compraPorIdeal : n(row.compraSugerida);
@@ -422,8 +423,10 @@ function criticalPoint({ trocasClienteArea, trocasMercado, trocasDeposito, estoq
 }
 
 export function normalizeRow(row) {
+  if (row.produtoNome !== undefined) row = {...row, em_producao:row.pecasFaccao,Fornecedor:row.fornecedor,Cor:row.cor,produto_id:row.produtoId,produto_nome:row.produtoNome,media_diaria:row.mediaDiaria,estoque_ideal:row.estoqueIdeal,estoque_cliente:row.estoqueCliente,area_critica:row.areaCritica,deposito_gao:row.deposito,relave_geral:row.relave,desengoma_gao:row.desengoma,'Trocas Ideais':row.trocaReferencia};
   row=normalizeImportedLinenRows([row])[0];
   const media = n(pick(row, 'media_diaria', 'Média diária'));
+  const estoqueIdeal = n(pick(row, 'estoque_ideal', 'Estoque ideal'));
   const estoqueCliente = n(pick(row, 'estoque_cliente'));
   const areaCritica = n(pick(row, 'area_critica'));
   const mercado = n(pick(row, 'mercado'));
@@ -437,29 +440,29 @@ export function normalizeRow(row) {
   const estoqueProcesso = relave + qualidade + desengoma;
   const estoqueBloqueado = costura;
   const estoqueUtil = Math.max(0, estoqueCliente + areaCritica + mercado + deposito + estoqueProcesso);
-  const trocasCalculadas = media ? estoqueUtil / media : 0;
-  const trocasClienteCalculada = media ? estoqueCliente / media : 0;
-  const trocasAreaCritica = media ? areaCritica / media : 0;
-  const trocasClienteArea = media ? (estoqueCliente + areaCritica) / media : 0;
-  const trocasMercado = media ? mercado / media : 0;
-  const trocasDeposito = media ? deposito / media : 0;
+  const trocasCalculadas = estoqueIdeal > 0 ? estoqueUtil / estoqueIdeal : 0;
+  const trocasClienteCalculada = estoqueIdeal > 0 ? estoqueCliente / estoqueIdeal : 0;
+  const trocasAreaCritica = estoqueIdeal > 0 ? areaCritica / estoqueIdeal : 0;
+  const trocasClienteArea = estoqueIdeal > 0 ? (estoqueCliente + areaCritica) / estoqueIdeal : 0;
+  const trocasMercado = estoqueIdeal > 0 ? mercado / estoqueIdeal : 0;
+  const trocasDeposito = estoqueIdeal > 0 ? deposito / estoqueIdeal : 0;
   const trocasIdeais = n(pick(row, 'Trocas Ideais'));
   const trocaReferencia = exchangeReference(row, trocasIdeais);
   const trocasTotaisInformadas = n(pick(row, 'Trocas Totais', 'trocas_totais'));
-  const trocasTotaisBase = media ? trocasCalculadas : trocasTotaisInformadas;
+  const trocasTotaisBase = estoqueIdeal > 0 ? trocasCalculadas : trocasTotaisInformadas;
   const trocasTotais = trocasTotaisBase;
   const pedidoFinal = n(pick(row, 'Pedido Final'));
   const necessidadeCompra = n(pick(row, 'Necessidade compra'));
-  const compraPorIdeal = media && trocaReferencia ? Math.max(0, Math.ceil((trocaReferencia * media) - estoqueUtil)) : 0;
+  const compraPorIdeal = estoqueIdeal > 0 && trocaReferencia ? Math.max(0, Math.ceil((trocaReferencia * estoqueIdeal) - estoqueUtil)) : 0;
   const compraTratada = hasValue(row, 'Pedido Final')
     ? pedidoFinal
     : (hasValue(row, 'Necessidade compra') ? necessidadeCompra : null);
-  const compraSugerida = media && trocaReferencia ? compraPorIdeal : Math.max(0, compraTratada || 0);
+  const compraSugerida = estoqueIdeal > 0 && trocaReferencia ? compraPorIdeal : 0;
   const pecasFaccao = n(pick(row, 'Facção', 'Faccao', 'Em Facção', 'Em Faccao', 'Em Produção', 'Em Producao', 'pecas_faccao', 'em_faccao', 'em_producao'));
   const pedidoReal = Math.max(0, compraSugerida - pecasFaccao);
   const criticidade = classifyRisk(trocasTotais);
   const estoqueCirculacao = Math.max(0, estoqueCliente + areaCritica + mercado + estoqueProcesso);
-  const movimentacao = movementRecommendation({ media, mercado, deposito, estoqueCirculacao, trocaReferencia });
+  const movimentacao = movementRecommendation({ media: estoqueIdeal, mercado, deposito, estoqueCirculacao, trocaReferencia });
   const pontoCritico = criticalPoint({ trocasClienteArea, trocasMercado, trocasDeposito, estoqueBloqueado, criticidade });
   const condutaDimensionamento = dimensioningAction({ criticidade, trocasDeposito, trocasMercado, estoqueBloqueado, compraSugerida });
   const sazonalidadeAreaCritica = trocasClienteCalculada < 5 && trocasClienteArea >= 5;
@@ -472,6 +475,8 @@ export function normalizeRow(row) {
     fornecedor: row.Fornecedor || '',
     cor: row.Cor || '',
     mediaDiaria: media,
+    estoqueIdeal,
+    calculoDisponivel: estoqueIdeal > 0,
     estoqueCliente,
     areaCritica,
     mercado,

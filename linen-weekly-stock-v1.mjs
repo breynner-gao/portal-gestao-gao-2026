@@ -1,5 +1,5 @@
-import {parseLinenNumber,normalizeImportedLinenRows} from './linen-number-v1.mjs?v=2';
-import {normalizeRow} from './linen-risk-rules-v150.mjs?v=229';
+import {parseLinenNumber,normalizeImportedLinenRows} from './linen-number-v1.mjs?v=3';
+import {normalizeRow} from './linen-risk-rules-v150.mjs?v=230';
 
 const columns = [
   ['Média diária','media_diaria',['media_diaria','Média diária']],

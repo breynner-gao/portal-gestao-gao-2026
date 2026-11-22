@@ -37,7 +37,7 @@ export function buildBuyingRows({
         String(r.product_reference) === key &&
         num(r.consumption_m_per_piece) > 0,
     );
-    const ready = s.coverageReady === true && !receiptReview;
+    const ready = s.coverageReady === true && s.calculoDisponivel !== false && !receiptReview;
     const stock = num(s.estoqueUtil),
       net = num(s.necessidade),
       production = num(s.pendingTracking) + num(s.pendingServiceOrders);

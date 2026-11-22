@@ -1,7 +1,7 @@
 import { createEnfestoControls } from "./fabric-enfesto-v1.mjs?v=2";
 import {
   buildBuyingRows,
-} from "./linen-buying-rules-v1.mjs?v=1";
+} from "./linen-buying-rules-v1.mjs?v=2";
 import { buyingView, buyingStyles, buyingSortStyles, buyingSortLabel, sortBuyingRows } from "./linen-buying-view-v1.mjs?v=6";
 import { compactDimensionKey } from "./linen-risk-rules-v150.mjs?v=226";
 export function createBuyingController(env) {

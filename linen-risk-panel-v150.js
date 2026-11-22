@@ -1,6 +1,6 @@
-import {normalizeImportedLinenRows,formatLinenCsvValue} from './linen-number-v1.mjs?v=2';
-import { prepareWeeklyStock } from './linen-weekly-stock-v1.mjs?v=3';
-import { applyFactionToRows, buildFactionMap, buildPendingProductionCoverage, applyPendingProductionCoverage, factionQuantityFor, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, applyIdealReferences, idealReferenceKey } from './linen-risk-rules-v150.mjs?v=229';
+import {normalizeImportedLinenRows,formatLinenCsvValue} from './linen-number-v1.mjs?v=3';
+import { prepareWeeklyStock } from './linen-weekly-stock-v1.mjs?v=4';
+import { applyFactionToRows, buildFactionMap, buildPendingProductionCoverage, applyPendingProductionCoverage, factionQuantityFor, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, applyIdealReferences, idealReferenceKey } from './linen-risk-rules-v150.mjs?v=230';
 
 const DATA = '/assets/linen-rfid-report-2026-10-13.json';
 const FACTION_DATA = '/assets/linen-production-pending-2026-10-13.json';
@@ -677,6 +677,7 @@ function panel() {
   return `<section class="lr150-shell">
     ${textileMenu()}
     ${returnToolbar}
+    <div class="lr150-message">Trocas = estoque útil ÷ estoque ideal. Necessidade = mínimo de trocas × estoque ideal − estoque útil. Costura e estoque lavanderia excluídos. Se a base antiga não possui estoque ideal, importe novamente o Excel.</div>
     ${idealMessage ? `<div class="lr150-message" role="status">${esc(idealMessage)}</div>` : ''}
     ${!state.coverageReady?`<div class="lr150-message" role="status">${state.productionError?'Pedidos em andamento não atualizados: '+esc(state.productionError)+'. Aguarde a atualização antes de emitir novo pedido.':'Carregando pedidos em andamento para conferir a necessidade…'}</div>`:''}
     ${state.dimensionView === 'imports' ? `
@@ -966,7 +967,7 @@ function render() {
   const activeId = document.activeElement?.id || '';
   const activeStart = document.activeElement?.selectionStart;
   window.GAO_LINEN_SOURCE_UPDATED_AT = state.cloudUpdatedAt || null;
-  window.GAO_LINEN_NEED_SNAPSHOT = state.rows.map(row => ({ produtoId: row.produtoId, produtoNome: row.produtoNome, pedidoReal: row.pedidoReal, estoqueUtil:row.estoqueUtil, estoqueGao:row.estoqueGao, trocaReferencia:row.trocaReferencia, metaTrocas:row.mediaDiaria>0&&row.trocaReferencia>0?Math.ceil(row.mediaDiaria*row.trocaReferencia):null, coverageReady:state.coverageReady, necessidade:row.compraSugerida, pendingTracking:factionQuantityFor(row,state.trackingMap), pendingServiceOrders:factionQuantityFor(row,state.serviceOrderMap), needWithoutTracking:Math.max(0,Number(row.compraSugerida||0)-factionQuantityFor(row,state.trackingMap)), asOf: state.asOf }));
+  window.GAO_LINEN_NEED_SNAPSHOT = state.rows.map(row => ({ produtoId: row.produtoId, produtoNome: row.produtoNome, calculoDisponivel:row.calculoDisponivel, pedidoReal: row.pedidoReal, estoqueUtil:row.estoqueUtil, estoqueGao:row.estoqueGao, trocaReferencia:row.trocaReferencia, metaTrocas:row.estoqueIdeal>0&&row.trocaReferencia>0?Math.ceil(row.estoqueIdeal*row.trocaReferencia):null, coverageReady:state.coverageReady, necessidade:row.compraSugerida, pendingTracking:factionQuantityFor(row,state.trackingMap), pendingServiceOrders:factionQuantityFor(row,state.serviceOrderMap), needWithoutTracking:Math.max(0,Number(row.compraSugerida||0)-factionQuantityFor(row,state.trackingMap)), asOf: state.asOf }));
   const recordsOpen = shell.querySelector('#lr150-movement-records')?.open;
   // A focus refresh can run while the native file picker is open. Keep its
   // original input connected to the new view so the eventual change is handled.

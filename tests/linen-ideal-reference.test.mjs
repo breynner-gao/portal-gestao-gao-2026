@@ -5,7 +5,7 @@ import {buildBuyingRows} from '../linen-buying-rules-v1.mjs';
 import {buyingView} from '../linen-buying-view-v1.mjs';
 
 test('o ideal salvo vale na importação seguinte e alimenta as duas decisões', () => {
-  const stock = normalizeRow({produto_id:42,produto_nome:'FRONHA',categoria:'Hotelaria',media_diaria:100,mercado:120,estoque_cliente:700,deposito_gao:100,'Trocas Ideais':8});
+  const stock = normalizeRow({produto_id:42,produto_nome:'FRONHA',categoria:'Hotelaria',media_diaria:100,estoque_ideal:100,mercado:120,estoque_cliente:700,deposito_gao:100,'Trocas Ideais':8});
   const base = [stock, {...stock,produtoId:43}];
   const [edited, independent] = applyIdealReferences(base, new Map([['ID:42', 10]]));
   const [movement] = listMovementItems([edited]);
@@ -21,12 +21,12 @@ test('o ideal salvo vale na importação seguinte e alimenta as duas decisões',
   assert.match(buyingView({rows:[need]}), /10 trocas ideais/);
 });
 
-test('ajuste do ideal sem média não apaga a necessidade informada', () => {
+test('sem estoque ideal não usa pedido antigo como necessidade calculada', () => {
   const row = normalizeRow({produto_nome:'FRONHA 50 X 70',categoria:'Hotelaria','Pedido Final':23});
   const [edited] = applyIdealReferences([row], new Map([['NOME:FRONHA 50X70', 15]]));
   assert.equal(edited.trocaReferencia, 15);
-  assert.equal(edited.compraSugerida, 23);
-  assert.equal(edited.pedidoReal, 23);
+  assert.equal(edited.compraSugerida, 0);
+  assert.equal(edited.pedidoReal, 0);
 });
 
 test('a busca em necessidades permite consultar a meta de item coberto', () => {

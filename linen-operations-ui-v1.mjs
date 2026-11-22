@@ -1,4 +1,4 @@
-import {applyIdealReferences, idealReferenceKey, listMovementItems} from './linen-risk-rules-v150.mjs?v=227';
+import {applyIdealReferences, idealReferenceKey, listMovementItems} from './linen-risk-rules-v150.mjs?v=230';
 import {directionLabel, filterTransferHistory, localTimestamp, transferWorkbook} from './linen-operations-history-v1.mjs?v=2';
 
 import {views,newFilters,movementRows,invoiceFromXml} from './linen-management-views-v1.mjs?v=5';
