@@ -1,9 +1,10 @@
+import {readDanfe,validInvoiceKey} from './linen-danfe-import-v1.mjs?v=1';
 import {applyIdealReferences, idealReferenceKey, listMovementItems} from './linen-risk-rules-v150.mjs?v=230';
 import {directionLabel, filterTransferHistory, localTimestamp, transferWorkbook} from './linen-operations-history-v1.mjs?v=2';
 
 import {views,newFilters,movementRows,invoiceFromXml} from './linen-management-views-v1.mjs?v=5';
 import {productivityView, productivityRecords, shiftDate} from './linen-productivity-v1.mjs?v=1';
-import {workflowView,bindEvaluationProductPickers} from './linen-management-workflow-v1.mjs?v=4';
+import {workflowView,bindEvaluationProductPickers} from './linen-management-workflow-v1.mjs?v=5';
 
 const HOST='gao-linen-operations';
 const SB='https://fquzuxdqvhecijjuxbmg.supabase.co';
@@ -18,7 +19,7 @@ function mount(host) {
   const native=host.id===nativeHost;
   let page=views.some(([key])=>key===tabFromUrl())?tabFromUrl():'painel';
   let session, organization, canWrite=false, canManage=false, canSew=false;
-  let snapshot, proposals=[], requests=[], events=[], balances=[], weeklyStock=new Map(), workflow={}, draft;
+  let snapshot, proposals=[], requests=[], events=[], balances=[], weeklyStock=new Map(), workflow={}, draft, invoiceRead=0;
   const choices=new Map(), outstanding=new Map(), workflowIds=new Map();
   let loading=true, saving=false, message='', failed=false, sewingOnly=false;
   let filters=newFilters();
@@ -205,7 +206,7 @@ function mount(host) {
     saving=true;message='';
     host.querySelectorAll('button').forEach(button=>{if(!button.disabled){button.disabled=true;button.dataset.leoBusy='1';}});
     try{
-      const rpc=['inspect_piece','edit_piece','archive_piece'].includes(action)?'linen_piece_review':'linen_management_action';
+      const rpc=action==='invoice'&&data.pdf?'linen_receive_danfe':['inspect_piece','edit_piece','archive_piece'].includes(action)?'linen_piece_review':'linen_management_action';
       await api('/rest/v1/rpc/'+rpc,{p_org:organization,p_event:workflowIds.get(key),p_action:action,p_data:data});
       workflowIds.delete(key);
       if(action==='invoice')draft=undefined;
@@ -313,14 +314,40 @@ function mount(host) {
         window.XLSX.writeFile(file,'historico-movimentacoes-enxoval.xlsx');
       }catch(error){message=error.message;render();}
     });
-    host.querySelector('[data-leo-xml]')?.addEventListener('change',async event=>{
+    host.querySelector('[data-leo-invoice-file]')?.addEventListener('change',async event=>{
+      const file=event.target.files[0];
+      if(!file||saving)return;
+      const read=++invoiceRead;
+      const pdf=/\.pdf$/i.test(file.name)||file.type==='application/pdf';
+      draft=undefined;
+      message=pdf?'Lendo DANFE. A leitura de um PDF digitalizado pode levar alguns instantes…':'Lendo XML…';
+      render();
       try{
-        const file=event.target.files[0];
-        if(!file)return;
-        if(file.size>2000000)throw Error('Selecione um XML de até 2 MB.');
-        const xml=await file.text();
-        draft={...invoiceFromXml(xml),xml};message='';
-      }catch(error){draft=undefined;message=error.message;}render();
+        let parsed;
+        if(pdf)parsed=await readDanfe(file);
+        else{
+          if(file.size>2000000)throw Error('Selecione um XML de até 2 MB.');
+          const xml=await file.text();
+          parsed={...invoiceFromXml(xml),xml};
+        }
+        if(read!==invoiceRead||page!=='recepcao')return;
+        draft=parsed;
+        message=pdf&&(!draft.items.length||draft.incomplete)?'Complete os dados a partir do DANFE antes de salvar.':'';
+      }catch(error){
+        if(read!==invoiceRead||page!=='recepcao')return;
+        message=error.message;
+      }
+      render();
+    });
+    const danfeItems=host.querySelector('[data-leo-danfe-items]');
+    host.querySelector('[data-leo-add-danfe]')?.addEventListener('click',()=>{
+      if(!saving&&danfeItems.children.length<500){
+        danfeItems.append(host.querySelector('[data-leo-danfe-template]').content.cloneNode(true));
+      }
+    });
+    danfeItems?.addEventListener('click',event=>{
+      const remove=event.target.closest('[data-leo-remove-danfe]');
+      if(remove&&!saving&&danfeItems.children.length>1)remove.closest('fieldset').remove();
     });
     if(page==='chip')bindEvaluationProductPickers(host,workflow.products||[]);
     host.querySelectorAll('[data-leo-workflow]').forEach(form=>{
@@ -329,6 +356,21 @@ function mount(host) {
         const data=Object.fromEntries(new FormData(form));
         const action=form.dataset.leoWorkflow;
         if(action==='invoice'){
+          if(draft?.pdf){
+            const key=data.key.replace(/\s/g,'');
+            if(!validInvoiceKey(key)||!data.supplier.trim()){
+              host.querySelector('[role=status]').textContent='Confira a chave de acesso de 44 dígitos e o fornecedor.';
+              return;
+            }
+            const lines=[...danfeItems.children].map((row,index)=>({
+              line:index+1,description:row.querySelector('[name=description]').value.trim(),
+              amount:row.querySelector('[name=amount]').value,
+              product:row.querySelector('[name=product]').value,
+              quantity:row.querySelector('[name=quantity]').value
+            }));
+            void workflowSubmit(action,{key,number:String(Number(key.slice(25,34))),supplier:data.supplier.trim(),pdf:draft.pdf,lines});
+            return;
+          }
           const {key,number,issuer,xml,items}=draft;
           void workflowSubmit(action,{key,number,supplier:issuer,xml,lines:items.map(({line})=>({line,
             product:data['product-'+line],quantity:data['quantity-'+line]}))});

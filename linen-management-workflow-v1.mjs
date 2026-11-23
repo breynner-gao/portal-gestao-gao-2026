@@ -73,12 +73,27 @@ export function workflowView(page,model,{canManage,canSew,saving,draft}){
     locationName[row.destination],row.active?'Ativo':'Inativo',date(row.created_at)]));
 
   if(page==='recepcao'){
-    const upload=canManage?card('Importar NF-e','<label>Arquivo XML <input type="file" data-leo-xml accept=".xml,text/xml,application/xml"></label>'+
-      (draft?'<p>NF-e <strong>'+esc(draft.number)+'</strong> · '+esc(draft.issuer)+'<br>'+esc(draft.key)+'</p>'+
+    const pdf=Boolean(draft?.pdf);
+    const pdfRow=row=>'<fieldset data-leo-danfe-row><legend>Item da nota</legend>'+
+      field('description','Descrição no DANFE','text','required maxlength="250" value="'+esc(row.name||'')+'"')+
+      field('amount','Quantidade no DANFE','number',decimal+' value="'+esc(row.amount??'')+'"')+
+      product()+field('quantity','Peças conferidas','number',integer)+
+      '<button type="button" data-leo-remove-danfe>Remover item</button></fieldset>';
+    const upload=canManage?card('Importar NF-e',
+      '<label>Arquivo PDF ou XML <input type="file" data-leo-invoice-file accept=".pdf,.xml,application/pdf,text/xml,application/xml" '+(saving?'disabled':'')+'></label>'+
+      (pdf?form('invoice',
+        '<p>Confira a chave, o fornecedor e todos os itens com o DANFE antes de confirmar. Você pode corrigir a leitura e incluir itens.</p>'+
+        field('key','Chave de acesso','text','required inputmode="numeric" maxlength="60" value="'+esc(draft.key)+'"')+
+        field('supplier','Fornecedor','text','required maxlength="200" value="'+esc(draft.issuer)+'"')+
+        '<div data-leo-danfe-items>'+(draft.items.length?draft.items:[{}]).map(pdfRow).join('')+'</div>'+
+        '<template data-leo-danfe-template>'+pdfRow({})+'</template>'+
+        '<button type="button" data-leo-add-danfe>Adicionar item</button>',
+        'Confirmar e enviar à quarentena',saving):
+      draft?'<p>NF-e <strong>'+esc(draft.number)+'</strong> · '+esc(draft.issuer)+'<br>'+esc(draft.key)+'</p>'+
         form('invoice',draft.items.map(row=>'<fieldset><legend>'+esc(row.line+' · '+row.code+' · '+row.name)+'</legend><p>Quantidade no XML '+esc(row.amount+' '+row.unit)+'</p>'+
           product('product-'+row.line,products.find(p=>p.code===row.code)?.id)+field('quantity-'+row.line,'Peças conferidas','number',integer)+'</fieldset>').join(''),
           'Confirmar e enviar à quarentena',saving):'')+
-      '<p>Confira cada item e vincule ao produto cadastrado. PDF e imagem dependem de integração de extração.</p>'):'';
+      '<p>Selecione o XML da NF-e ou o DANFE em PDF. Vincule cada item ao produto cadastrado.</p>'):'';
     return upload+card('Recebimentos no SGQ',table(['NF-e','Fornecedor','Chave','Recebimento'],invoices.map(x=>[x.invoice_number,x.supplier,x.access_key,date(x.created_at)])));
   }
   if(page==='ficha'){
