@@ -3,7 +3,7 @@ import {createTextileCostDashboard} from '/textile-cost-dashboard-v1.mjs?v=5';
 import {groupPurchaseCards,supplierCards} from '/fabric-purchase-cards-v1.mjs?v=1';
 import { purchaseReportStatuses, renderPurchaseReport, formatPurchasePaymentDays } from '/fabric-purchase-report-v1.mjs?v=5';
 import { openReport as openPurchaseReportWindow } from '/relave-report-export-v1.mjs?v=1';
-import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=8';
+import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=9';
 import {createFactionDesk} from '/fabric-faction-portal-v1.mjs?v=2';
 import {createFabricWorkbookImport} from '/fabric-workbook-import-v1.mjs?v=1';
 import {buildPendingProductionCoverage,applyPendingProductionCoverage,compactDimensionKey} from '/linen-risk-rules-v150.mjs?v=230';
@@ -88,6 +88,13 @@ async function reload(){
  ];
  const [fabric,suppliers,recipes,consumptionReferences,costReferences,lots,orders,items,moves,returns,purchaseOrders,purchaseItems,purchaseReceipts,aliases,inspections,tracking,cuts,materialLinks,standards,reconciliations,pieceOrders,pieceReceipts,enfestos]=await Promise.all(tables.map(([table,order])=>loadTable(table,order)));
  Object.assign(state,{fabric,suppliers,recipes,consumptionReferences,costReferences,lots,orders,items,moves,returns,purchaseOrders,purchaseItems,purchaseReceipts,aliases,inspections,tracking,cuts,materialLinks,standards,reconciliations,pieceOrders,pieceReceipts,enfestos});
+ state.factionCatalogError=false;
+ if(state.canViewInventory===false&&state.canOperateFaction){
+  try{
+   const catalog=await rpc('fabric_faction_operational_catalog',{p_org:state.org});
+   Object.assign(state,{fabric:catalog.fabric,recipes:catalog.recipes,standards:catalog.standards});
+  }catch{state.factionCatalogError=true;}
+ }
  try{state.cutPlans=await loadTable('fabric_faction_cut_plans','created_at');state.cutPlansError=false;}
  catch{state.cutPlans=[];state.cutPlansError=true;}
  try{state.deliveryDocuments=await loadTable('fabric_faction_delivery_documents','created_at');state.deliveryDocumentsError=false;}catch{state.deliveryDocuments=[];state.deliveryDocumentsError=true;}

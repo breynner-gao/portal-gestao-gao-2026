@@ -525,6 +525,8 @@ export function createFactionWorkflow({
     const {factionAction:action,factionId:id}=trigger.dataset;
     if(action==='reserve')return reserve();
     if(action==='manual-item'&&state.canOperateFaction){
+      if(!state.loaded||state.factionCatalogError)
+        return openDialog('Adicionar produto','<p>Não foi possível carregar as fichas da facção. Feche a janela e clique em Atualizar dados.</p>');
       const options=state.recipes.filter(recipe=>recipe.active&&state.fabric.some(fabric=>fabric.id===recipe.fabric_id&&fabric.active))
         .slice().sort((a,b)=>a.product_name.localeCompare(b.product_name,'pt-BR')).map(recipe=>{
           const fabric=state.fabric.find(row=>row.id===recipe.fabric_id);
