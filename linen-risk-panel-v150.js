@@ -1,6 +1,6 @@
 import {normalizeImportedLinenRows,formatLinenCsvValue} from './linen-number-v1.mjs?v=3';
 import { prepareWeeklyStock } from './linen-weekly-stock-v1.mjs?v=4';
-import { applyFactionToRows, buildFactionMap, buildPendingProductionCoverage, applyPendingProductionCoverage, factionQuantityFor, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, applyIdealReferences, idealReferenceKey } from './linen-risk-rules-v150.mjs?v=230';
+import { applyFactionToRows, buildFactionMap, buildPendingProductionCoverage, applyPendingProductionCoverage, factionQuantityFor, listDecisionItems, listMovementItems, parseDelimitedRows, sortOrderItems, summarizeDimensioning, summarizeRows, applyIdealReferences, idealReferenceKey } from './linen-risk-rules-v150.mjs?v=231';
 
 const DATA = '/assets/linen-rfid-report-2026-10-13.json';
 const FACTION_DATA = '/assets/linen-production-pending-2026-10-13.json';
@@ -443,7 +443,7 @@ function applyUploadedRows(rows, fileName) {
   rows = normalizeImportedLinenRows(rows);
   const summary = summarizeRows(rows);
   if (!summary.rows.length) {
-    state = { ...state, uploadMessage: 'Não encontrei linhas válidas com média diária nessa planilha.' };
+    state = { ...state, uploadMessage: 'Não encontrei itens identificados nessa planilha.' };
     render();
     return;
   }
@@ -583,8 +583,8 @@ function downloadItemReport() {
   if(!state.coverageReady)return;
   const rows = sortOrderItems(listDecisionItems(filteredDecisionItems()), state.itemSort);
   if (!rows.length) return;
-  const header = ['Item', 'Categoria', 'Criticidade', 'Cliente', 'Area critica', 'Mercado', 'Estoque GAO', 'Relave', 'Qualidade', 'Desengoma', 'Costura avaliacao', 'Total util', 'Trocas cliente + AC', 'Trocas mercado', 'Trocas GAO', 'Trocas total', 'Necessidade', 'Pedidos em andamento', 'Pedido real'];
-  const csv = [header, ...rows.map(row => [row.produtoNome, row.categoria, row.criticidade, row.cliente, row.areaCritica, row.mercado, row.estoqueGao, row.relave, row.qualidade, row.desengoma, row.costura, row.totalUtil, row.trocasClienteArea, row.trocasMercado, row.trocasGao, row.trocasTotal, row.necessidade, row.faccao, row.pedidoReal])]
+  const header = ['Item', 'Categoria', 'Criticidade', 'Cliente', 'Area critica', 'Mercado', 'Estoque GAO', 'Relave', 'Qualidade', 'Desengoma', 'Costura avaliacao', 'Total util', 'Trocas cliente + AC', 'Trocas mercado', 'Trocas GAO', 'Trocas atuais', 'Alvo de trocas', 'Pedidos em andamento', 'Pedido real', 'Compra sugerida (peças)'];
+  const csv = [header, ...rows.map(row => [row.produtoNome, row.categoria, row.criticidade, row.cliente, row.areaCritica, row.mercado, row.estoqueGao, row.relave, row.qualidade, row.desengoma, row.costura, row.totalUtil, row.trocasClienteArea, row.trocasMercado, row.trocasGao, row.trocasTotal, row.trocasIdeal, row.faccao, row.trocasTotal === null ? '' : row.pedidoReal, row.necessidade ?? 'Sem média diária'])]
     .map(line => line.map(value => `"${formatLinenCsvValue(value).replace(/"/g, '""')}"`).join(';'))
     .join('\n');
   const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
@@ -791,7 +791,7 @@ function panel() {
             <span><b>Cliente</b>${br(row.cliente)} pç</span>
             <span><b>AC</b>${br(row.areaCritica)} pç</span>
             <span><b>Mercado</b>${br(row.mercado)} pç</span>
-            <span><b>Estoque GAO</b>${br(row.estoqueGao)} pç</span>
+            <span><b>Depósito GAO</b>${br(row.estoqueGao)} pç</span>
             <span class="lr150-group-start"><b>Relave</b>${br(row.relave)} pç</span>
             <span><b>Qualidade</b>${br(row.qualidade)} pç</span>
             <span><b>Desengoma</b>${br(row.desengoma)} pç</span>
@@ -802,13 +802,13 @@ function panel() {
             <span><b>Cli+AC</b>${br(row.trocasClienteArea, 1)}</span>
             <span><b>Merc</b>${br(row.trocasMercado, 1)}</span>
             <span><b>GAO</b>${br(row.trocasGao, 1)}</span>
-            <span class="strong lr150-total-card"><b>Total</b>${br(row.trocasTotal, 1)}</span>
+            <span class="strong lr150-total-card"><b>Trocas atuais</b>${row.trocasTotal === null ? "—" : br(row.trocasTotal, 2)}</span>
             <label class="lr150-ideal-card" title="Meta usada em Necessidades e Movimentações. Pressione Enter para salvar."><b>Ideal</b><input class="lr150-ideal-input" type="number" min="0.1" max="99" step="0.1" value="${esc(row.trocasIdeal)}" data-produto-id="${esc(row.produtoId)}" data-produto-nome="${esc(row.produtoNome)}" data-previous-value="${esc(row.trocasIdeal)}" aria-label="Troca ideal de ${esc(row.produtoNome)}"><em>trocas</em></label>
           </div></td>
           <td><div class="lr150-decision">
-            <span><b>Necessidade</b>${br(row.necessidade)} pç</span>
             <span><b>Em andamento</b>${br(row.faccao)} pç</span>
-            <strong>Pedir ${br(row.pedidoReal)} pç</strong>
+            ${row.trocasTotal === null ? "" : `<span><b>Pedido real após deduzir em andamento</b>${br(row.pedidoReal)} pç</span>`}
+            <strong><b>Compra sugerida</b> ${row.necessidade === null ? "Sem média diária" : `${br(row.necessidade)} pç`}</strong>
           </div></td>
         </tr>`).join('') : '<tr><td colspan="4" class="lr150-empty">Nenhuma peça encontrada nos filtros atuais.</td></tr>'}</tbody>
       </table>
@@ -974,7 +974,7 @@ function render() {
   const activeId = document.activeElement?.id || '';
   const activeStart = document.activeElement?.selectionStart;
   window.GAO_LINEN_SOURCE_UPDATED_AT = state.cloudUpdatedAt || null;
-  window.GAO_LINEN_NEED_SNAPSHOT = state.rows.map(row => ({ produtoId: row.produtoId, produtoNome: row.produtoNome, calculoDisponivel:row.calculoDisponivel, pedidoReal: row.pedidoReal, estoqueUtil:row.estoqueUtil, estoqueGao:row.estoqueGao, trocaReferencia:row.trocaReferencia, metaTrocas:row.estoqueIdeal>0&&row.trocaReferencia>0?Math.ceil(row.estoqueIdeal*row.trocaReferencia):null, coverageReady:state.coverageReady, necessidade:row.compraSugerida, pendingTracking:factionQuantityFor(row,state.trackingMap), pendingServiceOrders:factionQuantityFor(row,state.serviceOrderMap), needWithoutTracking:Math.max(0,Number(row.compraSugerida||0)-factionQuantityFor(row,state.trackingMap)), asOf: state.asOf }));
+  window.GAO_LINEN_NEED_SNAPSHOT = state.rows.map(row => ({ produtoId: row.produtoId, produtoNome: row.produtoNome, calculoDisponivel:row.calculoDisponivel, pedidoReal: row.pedidoReal, estoqueUtil:row.estoqueUtil, estoqueGao:row.estoqueGao, trocaReferencia:row.trocaReferencia, metaTrocas:row.mediaDiaria>0&&row.trocaReferencia>0?Math.ceil(row.mediaDiaria*row.trocaReferencia):null, coverageReady:state.coverageReady, necessidade:row.compraSugerida, pendingTracking:factionQuantityFor(row,state.trackingMap), pendingServiceOrders:factionQuantityFor(row,state.serviceOrderMap), needWithoutTracking:Math.max(0,Number(row.compraSugerida||0)-factionQuantityFor(row,state.trackingMap)), asOf: state.asOf }));
   const recordsOpen = shell.querySelector('#lr150-movement-records')?.open;
   // A focus refresh can run while the native file picker is open. Keep its
   // original input connected to the new view so the eventual change is handled.
