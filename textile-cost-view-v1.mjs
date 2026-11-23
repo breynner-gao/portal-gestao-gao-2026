@@ -1,4 +1,4 @@
-import {costCategories,shiftMonth,cents} from './textile-cost-rules-v1.mjs?v=3';
+import {costCategories,shiftMonth,cents} from './textile-cost-rules-v1.mjs?v=4';
 export const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const money=v=>(v/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 const qty=v=>Number(v).toLocaleString('pt-BR',{maximumFractionDigits:3});
@@ -31,6 +31,7 @@ export function spendingDetails(model,view,category=''){
   future:['Provisões dos próximos 6 meses',model.planned.filter(row=>row.month>model.month&&row.month<=shiftMonth(model.month,6))],
   orders:['Pedidos e OS emitidos no mês',inMonth(model.commitments)],
   cash:['Pagamentos previstos no mês',inMonth(model.payments)],
+  paid:['Pagamentos registrados no mês',inMonth(model.paid)],
   unscheduled:['Valores sem vencimento calculado',model.unscheduled]
  };
  const [title,rows]=choices[view]||choices.total;
@@ -90,24 +91,25 @@ function paymentSettings(model,canManage,failed){
 }
 
 function financialView(model,{canManage,paymentError,report}){
- const orders=spendingDetails(model,'orders').rows,cash=spendingDetails(model,'cash').rows;
+ const orders=spendingDetails(model,'orders').rows,cash=spendingDetails(model,'cash').rows,paid=spendingDetails(model,'paid').rows;
  const ceiling=model.ceiling==null?null:cents(model.ceiling);
  const balance=ceiling===null?null:ceiling-sum(orders);
  const rows=Array.from({length:7},(_,index)=>{
   const month=shiftMonth(model.month,index);
-  const due=model.payments.filter(row=>row.month===month),ordered=model.commitments.filter(row=>row.month===month);
+  const settled=model.paid.filter(row=>row.month===month),due=model.payments.filter(row=>row.month===month),ordered=model.commitments.filter(row=>row.month===month);
   return '<tr><th scope="row">'+monthLabel(month)+'</th><td>'+drillLink('orders',money(sum(ordered)),'',month)+'</td>'+
    costCategories.map(([key])=>'<td>'+drillLink('cash',money(sum(due.filter(row=>row.category===key))),key,month)+'</td>').join('')+
-   '<td><b>'+drillLink('cash',money(sum(due)),'',month)+'</b></td></tr>';
+   '<td><b>'+drillLink('cash',money(sum(due)),'',month)+'</b></td><td>'+drillLink('paid',money(sum(settled)),'',month)+'</td></tr>';
  }).join('');
  return '<section><h4>Pedidos e calendário de pagamentos</h4><div class="fw-spend-kpis">'+
   metricCard('orders','Pedidos e OS do mês',money(sum(orders)),'Pela emissão da OC ou OS')+
-  metricCard('cash','Pagamentos previstos no mês',money(sum(cash)),'Pelo vencimento calculado, sem baixa financeira','fw-spend-amber')+
+  metricCard('cash','Pagamentos previstos no mês',money(sum(cash)),'Pelo vencimento calculado','fw-spend-amber')+
+  metricCard('paid','Pagamentos registrados no mês',money(sum(paid)),'Custos das NFs pela data efetiva da baixa')+
   metricCard('ceiling','Teto cadastrado',ceiling===null?'A definir':money(ceiling),
     balance===null?'Cadastre no orçamento mensal':(balance<0?'Excesso sobre o teto: ':'Saldo após pedidos e OS: ')+money(Math.abs(balance)))+
   metricCard('unscheduled','Sem vencimento calculado',money(sum(model.unscheduled)),'Falta prazo ou data de referência','fw-spend-amber')+'</div>'+
   '<p class="fw-spend-help">Pagamentos pela emissão da NF + prazo. Sem emissão registrada, a previsão usa a entrega prevista ou o recebimento e fica identificada como estimativa.</p>'+
-  '<div class="fw-table-scroll"><table><thead><tr><th>Mês</th><th>Pedidos e OS</th>'+costCategories.map(([,label])=>'<th>'+label+'</th>').join('')+'<th>Pagamento previsto</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+  '<div class="fw-table-scroll"><table><thead><tr><th>Mês</th><th>Pedidos e OS</th>'+costCategories.map(([,label])=>'<th>'+label+'</th>').join('')+'<th>Pagamento previsto</th><th>Pagamento registrado</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
   (report?'':paymentSettings(model,canManage,paymentError))+'</section>';
 }
 

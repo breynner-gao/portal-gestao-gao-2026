@@ -5,6 +5,10 @@ export const monthOf=date=>/^\d{4}-\d{2}-\d{2}/.test(String(date||''))?String(da
 export function shiftMonth(month,offset){const [y,m]=month.split('-').map(Number);return new Date(Date.UTC(y,m-1+offset,1)).toISOString().slice(0,7);}
 export function localDay(value){if(!value)return null;if(/^\d{4}-\d{2}-\d{2}$/.test(String(value)))return value;const date=new Date(value);if(!Number.isFinite(+date))return null;return new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(date);}
 const unique=rows=>[...new Map((rows||[]).map((r,i)=>[r.id??'row-'+i,r])).values()];
+export function invoicePaymentKey(supplierId,invoice){
+ const number=String(invoice??'').trim();
+ return supplierId&&number?'invoice:'+supplierId+':'+number:null;
+}
 export function buildTextileCosts(state,{month,today}={}){
  month||=new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit'}).format(new Date());today||=localDay(new Date().toISOString());
  const actual=[],planned=[],warnings=[],commitments=[];
@@ -14,7 +18,7 @@ export function buildTextileCosts(state,{month,today}={}){
  const orderPayment=order=>({orderId:order?.id,paymentDays:order?.payment_days});
  const invoicePayment=(id,order,supplierId,invoice)=>({
   ...orderPayment(order),
-  paymentKey:invoice&&supplierId?'invoice:'+supplierId+':'+String(invoice).trim():id
+  paymentKey:invoicePaymentKey(supplierId,invoice)||id
  });
  const push=(target,row)=>{row.month=monthOf(row.date);row.overdue=target===planned&&row.date&&row.date<today;target.push(row);};
  // Received lot is the single source for fabric expenditure. PO receipts only identify it.
@@ -23,7 +27,7 @@ export function buildTextileCosts(state,{month,today}={}){
   const quantity=n(lot.quantity_received_m);const price=lot.effective_price_per_m!=null?n(lot.effective_price_per_m):n(lot.purchase_price_per_m)+(quantity?(n(lot.freight_cost)+n(lot.other_cost))/quantity:0);
   // Opening stock without an invoice is not a new purchase in the dashboard.
   if(!source&&!String(lot.invoice_number||'').trim()){warnings.push({kind:'opening',name:lot.lot_code||lot.id});continue;}
-  push(actual,{id:'fabric:'+lot.id,lotId:lot.id,...invoicePayment('fabric:'+lot.id,order,lot.supplier_id,lot.invoice_number||source?.invoice_number),category:'fabric',date:localDay(lot.received_date),description:fabricName(lot.fabric_id),document:'NF '+(lot.invoice_number||source?.invoice_number||'a informar')+' · lote '+lot.lot_code,order:order?'OC '+order.order_number:'Entrada direta',supplier:supplier(lot.supplier_id),quantity,unit:'m',price,amount:cents(quantity*price),basis:'Quantidade recebida × custo efetivo do lote'});
+  push(actual,{id:'fabric:'+lot.id,lotId:lot.id,...invoicePayment('fabric:'+lot.id,order,lot.supplier_id||order?.supplier_id,lot.invoice_number||source?.invoice_number),category:'fabric',date:localDay(lot.received_date),description:fabricName(lot.fabric_id),document:'NF '+(lot.invoice_number||source?.invoice_number||'a informar')+' · lote '+lot.lot_code,order:order?'OC '+order.order_number:'Entrada direta',supplier:supplier(lot.supplier_id),quantity,unit:'m',price,amount:cents(quantity*price),basis:'Quantidade recebida × custo efetivo do lote'});
  }
  // Canceled orders retain genuine historical receipts. Only their future balance is canceled.
  for(const receipt of readyReceipts){const order=ready.find(o=>o.id===receipt.order_id);if(!order){warnings.push({kind:'orphan',name:receipt.id});continue;}const quantity=n(receipt.accepted_pieces),price=n(receipt.unit_price);push(actual,{id:'ready:'+receipt.id,...invoicePayment('ready:'+receipt.id,order,order.supplier_id,receipt.invoice_number),category:'ready',date:localDay(receipt.received_date),description:order.product_name,document:'NF '+(receipt.invoice_number||'a informar'),order:'OC '+order.order_number,supplier:supplier(order.supplier_id),quantity,unit:'pç',price,amount:cents(quantity*price),basis:'Peças aceitas × preço registrado no recebimento'});}
@@ -88,8 +92,13 @@ export function buildTextileCosts(state,{month,today}={}){
   return {...row,sourceKey,pending,days,invoiceDate,base,
    basis:invoiceDate?'Emissão da NF informada':pending?'Entrega prevista como estimativa da emissão':'Recebimento como estimativa da emissão'};
  });
- const payments=[],unscheduled=[];
+ const payments=[],paid=[],unscheduled=[];
  for(const row of paymentSources){
+  const paidDate=!row.pending&&row.sourceKey.startsWith('invoice:')?localDay(terms.get(row.sourceKey)?.paid_date):null;
+  if(paidDate){
+   paid.push({...row,date:paidDate,month:monthOf(paidDate),basis:'NF baixada integralmente · custo registrado'});
+   continue;
+  }
   if(!row.base||!row.days.length){unscheduled.push(row);continue;}
   const share=Math.floor(row.amount/row.days.length),remainder=row.amount%row.days.length;
   for(const [index,days] of row.days.entries()){
@@ -104,5 +113,5 @@ export function buildTextileCosts(state,{month,today}={}){
  const months=Array.from({length:12},(_,i)=>shiftMonth(month,i-5));
  const sum=rows=>rows.reduce((s,r)=>s+r.amount,0),byCategory=rows=>Object.fromEntries(costCategories.map(([k])=>[k,sum(rows.filter(r=>r.category===k))]));
  const monthly=months.map(m=>{const a=actual.filter(r=>r.month===m),p=planned.filter(r=>r.month===m);return {month:m,actual:byCategory(a),planned:byCategory(p),actualTotal:sum(a),plannedTotal:sum(p),count:a.length+p.length};});
- return {month,today,actual,planned,monthly,commitments,payments,unscheduled,paymentSources,ceiling:state.budgetError?null:(state.budgets||[]).find(row=>row.month.slice(0,7)===month)?.ceiling_brl,undated:planned.filter(r=>!r.month),undatedActual:actual.filter(r=>!r.month),overdue:planned.filter(r=>r.overdue),warnings,totals:{actual:sum(actual.filter(r=>r.month===month)),planned:sum(planned.filter(r=>r.month===month)),future:sum(planned.filter(r=>r.month>month&&r.month<=shiftMonth(month,6))),undated:sum(planned.filter(r=>!r.month)),overdue:sum(planned.filter(r=>r.overdue))}};
+ return {month,today,actual,planned,monthly,commitments,payments,paid,unscheduled,paymentSources,ceiling:state.budgetError?null:(state.budgets||[]).find(row=>row.month.slice(0,7)===month)?.ceiling_brl,undated:planned.filter(r=>!r.month),undatedActual:actual.filter(r=>!r.month),overdue:planned.filter(r=>r.overdue),warnings,totals:{actual:sum(actual.filter(r=>r.month===month)),planned:sum(planned.filter(r=>r.month===month)),future:sum(planned.filter(r=>r.month>month&&r.month<=shiftMonth(month,6))),undated:sum(planned.filter(r=>!r.month)),overdue:sum(planned.filter(r=>r.overdue))}};
 }

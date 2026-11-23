@@ -85,3 +85,19 @@ test('lançamento de tecido aponta para o lote exato e para a ordem vinculada',a
  assert.match(detail,/data-fw-spend-purchase="oc-1"/);
  assert.match(detail,/Voltar aos lançamentos/);
 });
+
+test('data efetiva quita todos os lotes da NF no mês correto sem baixar o saldo da OC',()=>{
+ const state={
+  purchaseOrders:[{id:'oc',status:'PARCIAL',supplier_id:'fornecedor',ordered_date:'2026-11-01',expected_date:'2026-12-01',payment_days:[90]}],
+  purchaseItems:[{id:'item',purchase_order_id:'oc',ordered_m:10,received_m:5,purchase_price_per_m:10}],
+  lots:[{id:'a',supplier_id:'fornecedor',invoice_number:'490204',received_date:'2026-11-01',quantity_received_m:2,effective_price_per_m:10},
+        {id:'b',supplier_id:'fornecedor',invoice_number:'490204',received_date:'2026-11-01',quantity_received_m:3,effective_price_per_m:10}],
+  purchaseReceipts:[{id:'r1',lot_id:'a',purchase_order_item_id:'item',quantity_received_m:2},{id:'r2',lot_id:'b',purchase_order_item_id:'item',quantity_received_m:3}],
+  paymentSchedule:[{source_key:'invoice:fornecedor:490204',paid_date:'2026-11-20'}]
+ };
+ const model=buildTextileCosts(state,{month:'2026-11'});
+ assert.deepEqual(model.paid.map(row=>[row.date,row.amount]),[['2026-11-20',2000],['2026-11-20',3000]]);
+ assert.deepEqual(model.payments.map(row=>row.amount),[5000]);
+ assert.equal(model.unscheduled.length,0);
+ assert.match(renderTextileCosts(model),/Pagamentos registrados no mês/);
+});

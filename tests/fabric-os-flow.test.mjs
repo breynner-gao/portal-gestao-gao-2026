@@ -1,3 +1,4 @@
+import {invoicePaymentKey,localDay} from '../textile-cost-rules-v1.mjs';
 import {createTextileCostDashboard} from '../textile-cost-dashboard-v1.mjs';
 import {createFactionWorkflow} from '../fabric-faction-workflow-v1.mjs';
 import {createFactionDesk} from '../fabric-faction-portal-v1.mjs';
@@ -12,7 +13,7 @@ import * as standards from '../fabric-standard-rules-v1.mjs';
 import {createFabricWorkbookImport} from '../fabric-workbook-import-v1.mjs';
 const source=await readFile(new URL('../fabric-workflow-ui-v1.js',import.meta.url),'utf8');
 function harness(){
- const calls=[];const context={createTextileCostDashboard,purchaseReportStatuses,formatPurchasePaymentDays,...linenRules,...rules,...standards,createFactionWorkflow,createFactionDesk,createFabricWorkbookImport,createBuyingController:()=>({view:()=>'',restore(){}}),console,Event:class{},crypto:{randomUUID:()=> 'test-key'},window:{GAO_LINEN_NEED_SNAPSHOT:[],dispatchEvent(){}},document:{createElement:()=>({textContent:''}),head:{appendChild(){}},addEventListener(){},querySelector:()=>null,documentElement:{}},MutationObserver:class{observe(){}},setInterval(){},FormData:class{constructor(form){this.form=form}entries(){return Object.entries(this.form.values)}},fetch:async(url,options)=>{calls.push({url,body:options.body?JSON.parse(options.body):null});return{ok:true,text:async()=> '[]'}}};
+ const calls=[];const context={invoicePaymentKey,localDay,createTextileCostDashboard,purchaseReportStatuses,formatPurchasePaymentDays,...linenRules,...rules,...standards,createFactionWorkflow,createFactionDesk,createFabricWorkbookImport,createBuyingController:()=>({view:()=>'',restore(){}}),console,Event:class{},crypto:{randomUUID:()=> 'test-key'},window:{GAO_LINEN_NEED_SNAPSHOT:[],dispatchEvent(){}},document:{createElement:()=>({textContent:''}),head:{appendChild(){}},addEventListener(){},querySelector:()=>null,documentElement:{}},MutationObserver:class{observe(){}},setInterval(){},FormData:class{constructor(form){this.form=form}entries(){return Object.entries(this.form.values)}},fetch:async(url,options)=>{calls.push({url,body:options.body?JSON.parse(options.body):null});return{ok:true,text:async()=> '[]'}}};
  vm.createContext(context);vm.runInContext(source.replace(/^(?:import[^\n]+\n)+/,'').replace(/\}\)\(\);\s*$/,'window.test={state,submit,orderStats,trackingView,createOrder,catalogModelValues,catalogAction,catalogManagementView,stockPanelGroup,stockLotsView,purchaseOrderView,purchaseOrderBody,purchaseSupplierBody,qualityView,demandDrafts,demandQuantity,demandRequestedPieces,materialPurchasePlan,materialCoverageView,materialLinkInfo,trackingReconciled,reconciliationLine,reconciliationStockPlan,recipeSourceChoices,recipeCostValues,applyRecipeCost,internalFabricOptions,planningFabrics,standardsManagementView,recipeView};})();'),context);
  context.window.test.state.org='org';context.window.test.state.session={access_token:'session',user:{id:'user'}};return{...context.window.test,calls,document:context.document,window:context.window};
 }
@@ -81,10 +82,10 @@ test('plano abate consumo conciliado, preserva reservas e não cria OS duplicada
  const plan=h.materialPurchasePlan();assert.equal(plan.reconciliationPending,false);assert.equal(plan.fabrics[0].needed,50);assert.equal(plan.fabrics[0].recorded,70);assert.equal(plan.fabrics[0].free,50);assert.equal(plan.fabrics[0].reserved,20);assert.equal(h.state.items.length,0);
 });
 test('consulta da OC mostra produtos, notas, lotes, recebimento e edição sem listas expansíveis',()=>{
- const h=harness();h.state.fabric=[{id:'f',code:'TEC',name:'Tecido'}];h.state.purchaseOrders=[{id:'p',order_number:'TESTE',status:'ABERTA'}];h.state.purchaseItems=[{id:'i',purchase_order_id:'p',fabric_id:'f',ordered_m:10,received_m:5}];h.state.purchaseReceipts=[{purchase_order_item_id:'i',lot_id:'l'}];h.state.lots=[{id:'l',invoice_number:'NF-TESTE',lot_code:'LOTE',quantity_received_m:5,quality_status:'APROVADO'}];
+ const h=harness();h.state.fabric=[{id:'f',code:'TEC',name:'Tecido'}];h.state.purchaseOrders=[{id:'p',order_number:'TESTE',status:'ABERTA',supplier_id:'sup'}];h.state.purchaseItems=[{id:'i',purchase_order_id:'p',fabric_id:'f',ordered_m:10,received_m:5}];h.state.purchaseReceipts=[{purchase_order_item_id:'i',lot_id:'l'}];h.state.lots=[{id:'l',invoice_number:'NF-TESTE',lot_code:'LOTE',quantity_received_m:5,quality_status:'APROVADO'}];
  h.state.canManagePurchases=true;
  const html=h.purchaseOrderBody(h.state.purchaseOrders[0]);
- assert.match(html,/NF-TESTE/);assert.match(html,/LOTE/);assert.match(html,/Receber este produto/);assert.match(html,/Editar pedido/);assert.doesNotMatch(html,/<details/);
+ assert.match(html,/NF-TESTE/);assert.match(html,/Data efetiva do pagamento/);assert.match(html,/invoice:sup:NF-TESTE/);assert.match(html,/LOTE/);assert.match(html,/Receber este produto/);assert.match(html,/Editar pedido/);assert.doesNotMatch(html,/<details/);
  const group={orders:[{id:'p'}]};
  assert.match(h.purchaseSupplierBody(group),/Editar pedido/);
  h.state.canManagePurchases=false;

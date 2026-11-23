@@ -1,4 +1,5 @@
-import {createTextileCostDashboard} from '/textile-cost-dashboard-v1.mjs?v=4';
+import {invoicePaymentKey,localDay} from '/textile-cost-rules-v1.mjs?v=4';
+import {createTextileCostDashboard} from '/textile-cost-dashboard-v1.mjs?v=5';
 import {groupPurchaseCards,supplierCards} from '/fabric-purchase-cards-v1.mjs?v=1';
 import { purchaseReportStatuses, renderPurchaseReport, formatPurchasePaymentDays } from '/fabric-purchase-report-v1.mjs?v=5';
 import { openReport as openPurchaseReportWindow } from '/relave-report-export-v1.mjs?v=1';
@@ -494,6 +495,31 @@ function openPurchaseSupplier(button){
  const group=purchaseGroups(root).find(item=>item.id===button.dataset.fwPurchaseSupplier);
  if(group)purchasePopup(root,'supplier',group.id,group.name,purchaseSupplierBody(group));
 }
+function purchasePaymentInvoices(order){
+ const invoices=new Map();
+ for(const item of purchaseLines(order.id)){
+  for(const receipt of purchaseReceipts(item)){
+   const lot=state.lots.find(row=>row.id===receipt.lot_id);
+   const number=String(lot?.invoice_number||receipt.invoice_number||'').trim();
+   const key=invoicePaymentKey(lot?.supplier_id||order.supplier_id,number);
+   if(key)invoices.set(key,number);
+  }
+ }
+ return invoices;
+}
+function purchaseSettlementView(order){
+ const invoices=purchasePaymentInvoices(order);
+ if(!invoices.size)return '<section class="fw-po-product"><h3>Baixa de pagamento</h3><p>A data efetiva fica disponível após vincular uma nota fiscal ao recebimento.</p></section>';
+ if(state.paymentScheduleError)return '<p role="alert">Não foi possível carregar os pagamentos. Atualize os dados antes de registrar a baixa.</p>';
+ return '<section class="fw-po-product"><h3>Baixa de pagamento</h3><p>Informe a data em que a NF foi quitada integralmente. Uma baixa vale para todos os lotes da mesma NF.</p>'+
+  [...invoices].map(([key,number])=>{
+   const date=state.paymentSchedule?.find(row=>row.source_key===key)?.paid_date;
+   const summary='<b>NF '+esc(number)+'</b> · '+(date?'Paga em '+purchaseDate(date):'Sem baixa registrada');
+   return state.canManagePurchases?'<form data-fw-settle-invoice data-source-key="'+esc(key)+'"><span>'+summary+'</span>'+
+    '<label>Data efetiva do pagamento<input name="paid_date" type="date" max="'+localDay(new Date().toISOString())+'" value="'+esc(date||'')+'" required></label>'+
+    '<button type="submit">'+(date?'Salvar data':'Registrar pagamento')+'</button></form>':'<p>'+summary+'</p>';
+  }).join('')+'</section>';
+}
 function purchaseOrderBody(order){
  const items=purchaseLines(order.id),summary=purchaseSummary(order);
  const labels=[['Fornecedor',purchaseSupplier(order)],['Situação',summary.label],['Data do pedido',purchaseDate(order.ordered_date)],['Previsão de entrega',purchaseDate(order.expected_date)],['Condição de pagamento',order.payment_terms||'—'],['Prazo de pagamento',formatPurchasePaymentDays(order.payment_days)],['Acompanhamento',purchaseLogistics[order.logistics_stage]||'—'],['Transportadora',order.carrier||'—'],['Rastreio',order.tracking_code||'—'],['Observação',order.notes||'—']];
@@ -507,11 +533,35 @@ function purchaseOrderBody(order){
   }).join('');
   return '<section class="fw-po-product"><h3>'+esc(internalName(fabric))+'</h3><p>'+esc([fabric?.code,fabric?.name,fabric?.color_reference,fabric?.quality_code?'Q'+fabric.quality_code:''].filter(Boolean).join(' · '))+'</p><p>'+br(item.ordered_m,3)+' m pedidos · '+br(item.received_m,3)+' m recebidos · '+br(pending,3)+' m a receber · R$ '+br(item.purchase_price_per_m,4)+'/m</p><span class="fw-status">'+esc(line?.label||'Pendente')+'</span> '+(state.canManagePurchases&&pending>0.0005?purchaseButton('data-fw-receive-po-item',item.id,'Receber este produto'):'')+'<h4>Notas e lotes recebidos</h4>'+(receipts?purchaseTable(['Nota fiscal','Lote','Recebimento','Quantidade','Custo por metro','Qualidade'],receipts):'<p>Nenhum recebimento vinculado.</p>')+'</section>';
  }).join('');
- return '<dl class="fw-po-facts">'+labels.map(([label,value])=>'<div><dt>'+label+'</dt><dd>'+esc(value)+'</dd></div>').join('')+'</dl><div class="fw-po-actions">'+(state.canManagePurchases&&order.status!=='CANCELADA'?purchaseButton('data-fw-edit-purchase',order.id,'Editar pedido'):'')+purchaseButton('data-fw-purchase-report-order',order.id,'Relatório desta OC')+(state.canManagePurchases&&canExcludePurchase(order,items)?'<button class="fw-exclude-po" type="button" data-fw-exclude-po="'+esc(order.id)+'">Excluir pedido</button>':'')+'</div>'+purchasePopupError+products;
+ return '<dl class="fw-po-facts">'+labels.map(([label,value])=>'<div><dt>'+label+'</dt><dd>'+esc(value)+'</dd></div>').join('')+'</dl><div class="fw-po-actions">'+(state.canManagePurchases&&order.status!=='CANCELADA'?purchaseButton('data-fw-edit-purchase',order.id,'Editar pedido'):'')+purchaseButton('data-fw-purchase-report-order',order.id,'Relatório desta OC')+(state.canManagePurchases&&canExcludePurchase(order,items)?'<button class="fw-exclude-po" type="button" data-fw-exclude-po="'+esc(order.id)+'">Excluir pedido</button>':'')+'</div>'+purchasePopupError+purchaseSettlementView(order)+products;
 }
 function openPurchaseOrder(id,root){
  const order=state.purchaseOrders.find(row=>row.id===id);
- if(order&&root)purchasePopup(root,'order',id,purchaseLabel(order),purchaseOrderBody(order));
+ if(!order||!root)return;
+ const dialog=purchasePopup(root,'order',id,purchaseLabel(order),purchaseOrderBody(order));
+ dialog.addEventListener('submit',async event=>{
+  const form=event.target;
+  if(!form.matches('[data-fw-settle-invoice]'))return;
+  event.preventDefault();
+  if(dialog.dataset.saving==='true'||!state.canManagePurchases)return;
+  const key=form.dataset.sourceKey,date=form.elements.paid_date.value;
+  const current=state.purchaseOrders.find(row=>row.id===id);
+  if(!current||!purchasePaymentInvoices(current).has(key)||!date||date>localDay(new Date().toISOString()))return;
+  const error=dialog.querySelector('[data-fw-po-error]');
+  const button=form.querySelector('button[type="submit"]');
+  dialog.dataset.saving='true';
+  button.disabled=true;
+  error.hidden=true;
+  try{
+   await api('/rest/v1/fabric_payment_schedule?on_conflict=organization_id,source_key',{method:'POST',
+    headers:{Prefer:'resolution=merge-duplicates,return=minimal'},
+    body:JSON.stringify({organization_id:state.org,source_key:key,paid_date:date,updated_at:new Date().toISOString()})});
+   state.paymentSchedule=await loadTable('fabric_payment_schedule','source_key',false);
+   dialog.querySelector('[data-fw-po-body]').innerHTML=purchaseOrderBody(current);
+   if(state.tab==='cost')render();
+  }catch(err){error.textContent=err.message||String(err);error.hidden=false;}
+  finally{dialog.dataset.saving='false';button.disabled=false;}
+ });
 }
 function refreshPurchaseWindows(root){
  if(!root?.isConnected||!root.matches('.fw-purchase-orders')){render();return;}
