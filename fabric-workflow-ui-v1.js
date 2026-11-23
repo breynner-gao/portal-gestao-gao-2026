@@ -3,7 +3,7 @@ import {createTextileCostDashboard} from '/textile-cost-dashboard-v1.mjs?v=5';
 import {groupPurchaseCards,supplierCards} from '/fabric-purchase-cards-v1.mjs?v=1';
 import { purchaseReportStatuses, renderPurchaseReport, formatPurchasePaymentDays } from '/fabric-purchase-report-v1.mjs?v=5';
 import { openReport as openPurchaseReportWindow } from '/relave-report-export-v1.mjs?v=1';
-import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=6';
+import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=7';
 import {createFactionDesk} from '/fabric-faction-portal-v1.mjs?v=2';
 import {createFabricWorkbookImport} from '/fabric-workbook-import-v1.mjs?v=1';
 import {buildPendingProductionCoverage,applyPendingProductionCoverage,compactDimensionKey} from '/linen-risk-rules-v150.mjs?v=230';
@@ -106,6 +106,8 @@ async function reload(){
   state.paymentSchedule=await loadTable('fabric_payment_schedule','source_key',false);
   state.paymentScheduleError=false;
  }catch{state.paymentSchedule=[];state.paymentScheduleError=true;}
+ try{state.forecastPreferences=await loadTable('fabric_faction_forecast_preferences','product_reference',false);state.forecastPreferencesError=false;}
+ catch{state.forecastPreferences=[];state.forecastPreferencesError=true;}
  state.loaded=true;
 }
 async function loadTable(table,order,hasId=true){
@@ -116,8 +118,11 @@ async function loadTable(table,order,hasId=true){
   if(page.length<limit)return rows;
  }
 }
+function forecastIncluded(reference){
+ return !(state.forecastPreferences||[]).some(row=>!row.include_in_forecast&&row.product_reference===String(reference??'').trim());
+}
 function buyingSnapshot(){
- const snapshot=window.GAO_LINEN_NEED_SNAPSHOT||[];
+ const snapshot=(window.GAO_LINEN_NEED_SNAPSHOT||[]).filter(row=>forecastIncluded(row.produtoId||row.produtoNome));
  if(!state.loaded)return snapshot.map(row=>({...row,coverageReady:false}));
  const coverage=buildPendingProductionCoverage(state);
  const cutoff=Date.parse(window.GAO_LINEN_SOURCE_UPDATED_AT||'');
@@ -309,7 +314,7 @@ function demandRequestedPieces(row){
  return demandDrafts.has(String(row.produtoId||row.produtoNome))?quantity+n(row.pendingServiceOrders):n(row.needWithoutTracking??row.pedidoReal);
 }
 function demandView(showOrders=true){
- const snap=window.GAO_LINEN_NEED_SNAPSHOT||state.snapshot||[];
+ const snap=(window.GAO_LINEN_NEED_SNAPSHOT||state.snapshot||[]).filter(row=>forecastIncluded(row.produtoId||row.produtoNome));
  const balances=liveBalances();
  const pending=state.items.reduce((a,i)=>a+orderStats(i).remaining,0);
  const rows=snap.filter(x=>n(x.pedidoReal)>0).map(x=>{
@@ -1000,6 +1005,7 @@ function materialPurchasePlan(snapshot=buyingSnapshot()){
  const activeTracking=state.tracking.filter(r=>!/cancelad|conclu[ií]d|entregue/i.test(r.delivery_status||''));
  const trackingPending=activeTracking.filter(r=>n(r.quantity)>n(r.delivered)&&!trackingReconciled(r)),reconciliationPending=trackingPending.length>0;
  for(const x of snapshot){
+  if(!forecastIncluded(x.produtoId||x.produtoNome))continue;
   if(n(x.pedidoReal)<=0&&!demandDrafts.has(String(x.produtoId||x.produtoNome)))continue;
   let quantity;try{quantity=demandQuantity(x)}catch{unlinked.push({row:x,reason:'Quantidade a pedir inválida'});continue;}
   if(!quantity&&!readyPieceCoverage(x).review)continue;
@@ -1089,6 +1095,7 @@ async function saveAliasMapping(d,id=null){
 }
 async function createOrder(){
  const picks=[...document.querySelectorAll('[data-fw-demand]:checked')],snap=window.GAO_LINEN_NEED_SNAPSHOT||[];
+ if(picks.some(p=>!forecastIncluded(p.dataset.fwDemand)))throw Error('A seleção inclui um produto fora da previsão automática. Atualize a lista.');
  const lines=picks.map(p=>{const x=snap.find(i=>String(i.produtoId||i.produtoNome)===p.dataset.fwDemand),r=state.recipes.find(q=>q.active&&q.product_reference===String(x?.produtoId||x?.produtoNome));if(!x||!r)throw Error('Cadastre ficha técnica ativa para todas as peças selecionadas.');if(!x.coverageReady)throw Error('Aguarde a atualização dos pedidos em andamento antes de gerar uma nova OS.');const lots=state.lots.filter(l=>fabricMatches(l.fabric_id,r.fabric_id));const planned=lots.reduce((a,l)=>a+n(l.effective_price_per_m)*n(l.quantity_received_m),0)/(lots.reduce((a,l)=>a+n(l.quantity_received_m),0)||1);return {source_item_key:String(x.produtoId||x.produtoNome),product_reference:String(x.produtoId||''),product_name:String(x.produtoNome||''),requested_pieces:demandRequestedPieces(x),recipe_id:r.id,planned_price_per_m:planned}});
  if(!lines.length)throw Error('Marque pelo menos uma peça com demanda e ficha técnica.');
  const result=await rpc('fabric_create_orders_for_demand',{p_organization_id:state.org,p_demand_as_of:(window.GAO_LINEN_NEED_SNAPSHOT||[])[0]?.asOf||new Date().toISOString().slice(0,10),p_lines:lines,p_idempotency_key:'fabric-demand-'+uid()});demandDrafts.clear();return result;
@@ -1396,7 +1403,7 @@ function mount(){
  if(!shell.querySelector('#gao-fabric-flow')){const host=document.createElement('div');host.id='gao-fabric-flow';host.hidden=!state.mode;shell.appendChild(host);render();if(!state.org){init().then(render).catch(err=>{state.error=err.message;render()})}}
 }
 const buying=createBuyingController({state,buyingSnapshot,esc,n,br,rpc,reload,render,uid,fabricBuyingBalances,liveBalances,fabricMatches,openRecipeDialog,productionView,trackingView,ordersTable,purchaseOrderView,openPurchaseOrder,stockPanels,qualityView,costView,standardsManagementView,recipeView,openFabricPurchaseDraft,submit,saveQualityBatch,returnForm,orderStats,syncOrderStatuses,refreshPurchaseReferences});
-const factionWorkflow=createFactionWorkflow({state,esc,n,br,liveBalances,fabricMatches,internalName,physicalFactionMeters,orderStats,demandView,factionDesk,render,run,rpc,reload,uid,supplierOptionList,openFabricPurchaseDraft,submit,returnForm,syncOrderStatuses});
+const factionWorkflow=createFactionWorkflow({state,esc,n,br,liveBalances,fabricMatches,internalName,physicalFactionMeters,orderStats,demandView,forecastIncluded,factionDesk,render,run,rpc,reload,uid,supplierOptionList,openFabricPurchaseDraft,submit,returnForm,syncOrderStatuses});
 new MutationObserver(mount).observe(document.documentElement,{childList:true,subtree:true});
 setInterval(mount,900);
 })();

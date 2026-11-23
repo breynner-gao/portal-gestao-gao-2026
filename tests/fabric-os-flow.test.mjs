@@ -167,3 +167,12 @@ test('relatórios geral, por fornecedor e individual mostram o prazo de pagament
  assert.match(old,/Prazo de entrega \(dias\)/);
  assert.match(old,/Prazo de pagamento<\/b> —/);
 });
+
+test('produto fora da previsão não pode gerar OS pelo mapa',async()=>{
+ const h=harness();
+ h.state.forecastPreferences=[{product_reference:'2625',include_in_forecast:false}];
+ h.window.GAO_LINEN_NEED_SNAPSHOT=[{produtoId:'2625',produtoNome:'Camisola',pedidoReal:206,coverageReady:true}];
+ h.document.querySelectorAll=()=>[{dataset:{fwDemand:'2625'}}];
+ await assert.rejects(h.createOrder(),/fora da previsão automática/);
+ assert.equal(h.calls.length,0);
+});
