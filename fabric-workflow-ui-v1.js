@@ -1,4 +1,4 @@
-import {createTextileCostDashboard} from '/textile-cost-dashboard-v1.mjs?v=2';
+import {createTextileCostDashboard} from '/textile-cost-dashboard-v1.mjs?v=3';
 import {groupPurchaseCards,supplierCards} from '/fabric-purchase-cards-v1.mjs?v=1';
 import { purchaseReportStatuses, renderPurchaseReport, formatPurchasePaymentDays } from '/fabric-purchase-report-v1.mjs?v=5';
 import { openReport as openPurchaseReportWindow } from '/relave-report-export-v1.mjs?v=1';

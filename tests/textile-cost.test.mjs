@@ -15,7 +15,28 @@ test('competência respeita fuso de São Paulo e virada do ano',()=>{assert.equa
 test('meses, categorias e total geral são reconciliáveis',()=>{const m=buildTextileCosts(base(),options);for(const row of m.monthly){assert.equal(Object.values(row.actual).reduce((a,b)=>a+b,0),row.actualTotal);assert.equal(Object.values(row.planned).reduce((a,b)=>a+b,0),row.plannedTotal);}assert.equal(m.monthly.length,12);assert.equal(m.monthly.at(-1).month,'2027-05');});
 test('painel e relatório mostram provisões, auditoria e texto escapado',()=>{const s=base();s.fabric[0].name='<script>ataque</script>';const m=buildTextileCosts(s,options),html=renderTextileCosts(m),report=renderTextileCostReport(m);assert.match(html,/Gastos mensais e provisões futuras/);assert.match(html,/Produtos prontos/);assert.match(html,/não são somados duas vezes/);assert.ok(!html.includes('<script>ataque'));assert.match(html,/&lt;script&gt;/);assert.match(report,/class="print"/);assert.match(report,/landscape/);assert.match(report,/Provisões dos próximos 6 meses/);});
 
-test('navegação mensal e seleção de categoria atualizam o painel',async()=>{const {createTextileCostDashboard}=await import('../textile-cost-dashboard-v1.mjs');const state={...base(),budgetMonth:'2026-11',loaded:true};let renders=0;const handlers={},host={querySelector:()=>({addEventListener:(name,fn)=>handlers[name]=fn})};const dashboard=createTextileCostDashboard({state,render:()=>renders++});dashboard.bind(host);handlers.change({target:{matches:s=>s==='[data-spend-month-input]',value:'2026-12'}});assert.equal(state.budgetMonth,'2026-12');assert.equal(renders,1);handlers.click({target:{closest:()=>({dataset:{spendCategory:'faction'}})}});assert.match(dashboard.view(),/data-spend-category="faction" aria-pressed="true"/);});
+test('detalhamento abre o diálogo sem mudar o mês do painel nem renderizar novamente',async()=>{
+ const {createTextileCostDashboard}=await import('../textile-cost-dashboard-v1.mjs');
+ const state={...base(),budgetMonth:'2026-11',loaded:true};
+ let renders=0,opens=0,focusOptions;
+ const handlers={},dialogEvents={};
+ const dialog={innerHTML:'',showModal:()=>opens++,addEventListener:(name,handler)=>dialogEvents[name]=handler};
+ const host={querySelector:()=>({querySelector:()=>dialog,addEventListener:(name,handler)=>handlers[name]=handler})};
+ const dashboard=createTextileCostDashboard({state,render:()=>renders++});
+ dashboard.bind(host);
+ handlers.change({target:{matches:selector=>selector==='[data-spend-month-input]',value:'2026-12'}});
+ assert.equal(state.budgetMonth,'2026-12');
+ assert.equal(renders,1);
+ const trigger={dataset:{spendDrill:'cash',spendDrillMonth:'2027-03',spendDrillCategory:'faction'},focus:options=>focusOptions=options};
+ handlers.click({preventDefault(){},target:{closest:()=>trigger}});
+ assert.equal(opens,1);
+ assert.equal(renders,1);
+ assert.equal(state.budgetMonth,'2026-12');
+ assert.match(dialog.innerHTML,/Pagamentos previstos no mês · Facção/);
+ assert.match(dialog.innerHTML,/mar\.\/2027/);
+ dialogEvents.close();
+ assert.deepEqual(focusOptions,{preventScroll:true});
+});
 
 test('uma OC de novembro aparece no mês do pedido e a 90 dias da NF no caixa, sem duplicar a entrega parcial',()=>{
  const state={
@@ -33,7 +54,7 @@ test('uma OC de novembro aparece no mês do pedido e a 90 dias da NF no caixa, s
   ['2027-02-28',6473396,'2026-11-30'],['2027-03-15',9710094,null]
  ]);
  assert.equal(model.unscheduled.length,0);
- assert.match(renderTextileCosts(model,{drill:'orders'}),/Pedidos e OS emitidos no mês/);
+ assert.match(renderTextileCosts(model),/data-spend-drill="orders"/);
 });
 
 test('parcelas preservam os centavos; registros sem prazo ficam fora dos meses de pagamento',()=>{
