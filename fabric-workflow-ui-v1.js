@@ -1,4 +1,4 @@
-import {createTextileCostDashboard} from '/textile-cost-dashboard-v1.mjs?v=1';
+import {createTextileCostDashboard} from '/textile-cost-dashboard-v1.mjs?v=2';
 import {groupPurchaseCards,supplierCards} from '/fabric-purchase-cards-v1.mjs?v=1';
 import { purchaseReportStatuses, renderPurchaseReport, formatPurchasePaymentDays } from '/fabric-purchase-report-v1.mjs?v=5';
 import { openReport as openPurchaseReportWindow } from '/relave-report-export-v1.mjs?v=1';
@@ -101,12 +101,16 @@ async function reload(){
   state.budgets=await api('/rest/v1/fabric_monthly_budgets?select=month,ceiling_brl&organization_id=eq.'+state.org+'&order=month.desc');
   state.budgetError=false;
  }catch{state.budgetError=true;}
+ try{
+  state.paymentSchedule=await loadTable('fabric_payment_schedule','source_key',false);
+  state.paymentScheduleError=false;
+ }catch{state.paymentSchedule=[];state.paymentScheduleError=true;}
  state.loaded=true;
 }
-async function loadTable(table,order){
+async function loadTable(table,order,hasId=true){
  const rows=[],limit=500;
  for(let offset=0;;offset+=limit){
-  const page=await api('/rest/v1/'+table+'?select=*&organization_id=eq.'+state.org+'&order='+order+'.desc,id.desc&limit='+limit+'&offset='+offset);
+  const page=await api('/rest/v1/'+table+'?select=*&organization_id=eq.'+state.org+'&order='+order+'.desc'+(hasId?',id.desc':'')+'&limit='+limit+'&offset='+offset);
   rows.push(...page);
   if(page.length<limit)return rows;
  }
@@ -1041,6 +1045,15 @@ async function createOrder(){
 }
 async function submit(form){
  const d=formData(form),table=form.dataset.fwForm;
+ if(table==='paymentSchedule'){
+  const values=String(d.payment_days||'').trim();
+  const days=values?values.split(/\s*[/,]\s*/):[];
+  if(days.length>24||days.some(day=>!/^\d{1,4}$/.test(day)||Number(day)>3650))throw Error('Informe até 24 prazos em dias, por exemplo 30/60/90.');
+  if(!d.source_key||d.source_key.length>240)throw Error('Origem do pagamento inválida.');
+  return api('/rest/v1/fabric_payment_schedule?on_conflict=organization_id,source_key',{method:'POST',
+   headers:{Prefer:'resolution=merge-duplicates,return=minimal'},
+   body:JSON.stringify({organization_id:state.org,source_key:d.source_key,invoice_date:d.invoice_date||null,payment_days:days.length?days.map(Number):null,updated_at:new Date().toISOString()})});
+ }
  if(table==='monthlyBudget'){
   if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(d.month)||!/^\d{1,12}(?:\.\d{1,2})?$/.test(d.ceiling))throw Error('Informe o mês e um teto válido em reais.');
   return api('/rest/v1/fabric_monthly_budgets?on_conflict=organization_id,month',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({organization_id:state.org,month:d.month+'-01',ceiling_brl:d.ceiling,updated_at:new Date().toISOString()})});

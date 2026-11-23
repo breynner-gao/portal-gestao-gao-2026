@@ -16,3 +16,35 @@ test('meses, categorias e total geral são reconciliáveis',()=>{const m=buildTe
 test('painel e relatório mostram provisões, auditoria e texto escapado',()=>{const s=base();s.fabric[0].name='<script>ataque</script>';const m=buildTextileCosts(s,options),html=renderTextileCosts(m),report=renderTextileCostReport(m);assert.match(html,/Gastos mensais e provisões futuras/);assert.match(html,/Produtos prontos/);assert.match(html,/não são somados duas vezes/);assert.ok(!html.includes('<script>ataque'));assert.match(html,/&lt;script&gt;/);assert.match(report,/class="print"/);assert.match(report,/landscape/);assert.match(report,/Provisões dos próximos 6 meses/);});
 
 test('navegação mensal e seleção de categoria atualizam o painel',async()=>{const {createTextileCostDashboard}=await import('../textile-cost-dashboard-v1.mjs');const state={...base(),budgetMonth:'2026-11',loaded:true};let renders=0;const handlers={},host={querySelector:()=>({addEventListener:(name,fn)=>handlers[name]=fn})};const dashboard=createTextileCostDashboard({state,render:()=>renders++});dashboard.bind(host);handlers.change({target:{matches:s=>s==='[data-spend-month-input]',value:'2026-12'}});assert.equal(state.budgetMonth,'2026-12');assert.equal(renders,1);handlers.click({target:{closest:()=>({dataset:{spendCategory:'faction'}})}});assert.match(dashboard.view(),/data-spend-category="faction" aria-pressed="true"/);});
+
+test('uma OC de novembro aparece no mês do pedido e a 90 dias da NF no caixa, sem duplicar a entrega parcial',()=>{
+ const state={
+  purchaseOrders:[{id:'oc',status:'PARCIAL',order_number:'161',ordered_date:'2026-11-23',expected_date:'2026-12-15',payment_days:[90]}],
+  purchaseItems:[{id:'item',purchase_order_id:'oc',ordered_m:100,received_m:40,purchase_price_per_m:1618.349}],
+  lots:[{id:'lote',supplier_id:'fornecedor',invoice_number:'123',received_date:'2026-12-06',quantity_received_m:40,effective_price_per_m:1618.349}],
+  purchaseReceipts:[{id:'receipt',lot_id:'lote',purchase_order_item_id:'item',quantity_received_m:40}],
+  paymentSchedule:[{source_key:'invoice:fornecedor:123',invoice_date:'2026-11-30'}],
+  budgets:[{month:'2026-11-01',ceiling_brl:200000}]
+ };
+ const model=buildTextileCosts(state,{month:'2026-11'});
+ assert.equal(model.commitments[0].amount,16183490);
+ assert.equal(model.commitments[0].month,'2026-11');
+ assert.deepEqual(model.payments.map(row=>[row.date,row.amount,row.invoiceDate]),[
+  ['2027-02-28',6473396,'2026-11-30'],['2027-03-15',9710094,null]
+ ]);
+ assert.equal(model.unscheduled.length,0);
+ assert.match(renderTextileCosts(model,{drill:'orders'}),/Pedidos e OS emitidos no mês/);
+});
+
+test('parcelas preservam os centavos; registros sem prazo ficam fora dos meses de pagamento',()=>{
+ const state={
+  pieceOrders:[
+   {id:'parcelado',status:'ABERTA',ordered_pieces:1,unit_price:100,ordered_date:'2026-11-01',expected_date:'2026-11-30'},
+   {id:'sem-prazo',status:'ABERTA',ordered_pieces:1,unit_price:10,ordered_date:'2026-11-01',expected_date:'2026-12-01'}
+  ],
+  paymentSchedule:[{source_key:'order:parcelado',payment_days:[30,60,90]}]
+ };
+ const model=buildTextileCosts(state,{month:'2026-11'});
+ assert.deepEqual(model.payments.map(row=>row.amount),[3334,3333,3333]);
+ assert.deepEqual(model.unscheduled.map(row=>row.orderId),['sem-prazo']);
+});
