@@ -107,7 +107,7 @@ test('as três etapas da Facção exibem as ordens e lotes do portal em tabelas'
     state,esc:String,n:value=>Number(value)||0,br:String,physicalFactionMeters:()=>0,
     fabricMatches:(a,b)=>a===b,internalName:row=>row.name,demandView:()=>'',render(){},
     liveBalances:()=>[{id:'roll',fabric_id:'p53',lot_code:'R1',quality_status:'APROVADO',onhand:200,reserved:144}],
-    orderStats:()=>({accepted:0,rejected:0})
+    orderStats:()=>({accepted:0,rejected:0}),factionAvailableStock:()=>'<p>Lotes liberados para reserva</p>'
   });
   wf.bind(host);
   assert.match(wf.view(), /Ordens de produção[\s\S]*?Camisa P53[\s\S]*?144 m/);
@@ -116,6 +116,9 @@ test('as três etapas da Facção exibem as ordens e lotes do portal em tabelas'
   assert.match(wf.view(),/Quantidade a cortar neste lote[\s\S]*?Máx. com reserva: 120/);
   open('sewing');
   assert.match(wf.view(),/Lotes recebidos do corte[\s\S]*?corte-01[\s\S]*?80/);
+  open('stock');
+  assert.match(wf.view(),/data-fw-faction-stage="stock" aria-pressed="true"/);
+  assert.match(wf.view(),/Lotes liberados para reserva/);
 });
 
 test('Costura libera corte concluído para entregar e mostra previsão na linha', async () => {

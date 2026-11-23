@@ -3,7 +3,7 @@ import {createTextileCostDashboard} from '/textile-cost-dashboard-v1.mjs?v=5';
 import {groupPurchaseCards,supplierCards} from '/fabric-purchase-cards-v1.mjs?v=1';
 import { purchaseReportStatuses, renderPurchaseReport, formatPurchasePaymentDays } from '/fabric-purchase-report-v1.mjs?v=5';
 import { openReport as openPurchaseReportWindow } from '/relave-report-export-v1.mjs?v=1';
-import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=9';
+import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=10';
 import {createFactionDesk} from '/fabric-faction-portal-v1.mjs?v=2';
 import {createFabricWorkbookImport} from '/fabric-workbook-import-v1.mjs?v=1';
 import {buildPendingProductionCoverage,applyPendingProductionCoverage,compactDimensionKey} from '/linen-risk-rules-v150.mjs?v=230';
@@ -115,6 +115,12 @@ async function reload(){
  }catch{state.paymentSchedule=[];state.paymentScheduleError=true;}
  try{state.forecastPreferences=await loadTable('fabric_faction_forecast_preferences','product_reference',false);state.forecastPreferencesError=false;}
  catch{state.forecastPreferences=[];state.forecastPreferencesError=true;}
+ state.factionStock=null;
+ state.factionStockError=false;
+ if(state.canViewInventory===false&&state.canOperateFaction){
+  try{state.factionStock=await rpc('fabric_faction_available_fabric',{p_org:state.org});}
+  catch{state.factionStockError=true;}
+ }
  state.loaded=true;
 }
 async function loadTable(table,order,hasId=true){
@@ -938,14 +944,14 @@ function stockPanelGroup(heading){
  if(heading==='Lotes recebidos e aprovação')return 'lots';
  return 'stock';
 }
-function factionStockPosition(){
+function factionStockPosition(counts=state.factionCounts,error=state.factionCountsError){
  const title='<h3>Estoque físico na facção</h3>';
  const wrap=body=>'<section class="fw-panel">'+title+body+'</section>';
- if(state.factionCountsError)return wrap('<p role="status">Posição da facção indisponível. Use Atualizar dados para tentar novamente.</p>');
+ if(error)return wrap('<p role="status">Posição da facção indisponível. Use Atualizar dados para tentar novamente.</p>');
  if(!state.loaded)return wrap('<p>Aguardando dados.</p>');
- const latest=state.factionCounts[0];
+ const latest=counts[0];
  if(!latest)return wrap('<p>Nenhuma posição informada.</p>');
- const rows=state.factionCounts.filter(row=>row.source_key===latest.source_key);
+ const rows=counts.filter(row=>row.source_key===latest.source_key);
  const total=rows.reduce((sum,row)=>sum+n(row.physical_m),0);
  const date=latest.reported_on.split('-').reverse().join('/');
  return wrap('<p>Posição informada em '+esc(date)+' · '+br(total,3)+' m informados como saldo físico.</p><p>A posição física substitui os lotes antigos como referência de estoque. Na previsão de compra, só entram os tecidos vinculados a um padrão GAO.</p><div class="fw-scroll" style="overflow:auto"><table><thead><tr><th>Tecido</th><th>Fornecedor ou marca</th><th>Largura</th><th>Saldo físico informado</th><th>Situação</th></tr></thead><tbody>'+rows.map(row=>'<tr><td>'+esc(row.material)+'</td><td>'+esc(row.supplier_or_brand||'—')+'</td><td>'+(row.width_m==null?'—':br(row.width_m,3)+' m')+'</td><td>'+(row.physical_m==null?'Pendente':br(row.physical_m,3)+' m')+'</td><td>'+(row.physical_m==null?'Conferir valor informado ('+br(row.reported_m,3)+' m)':'Informado')+'</td></tr>').join('')+'</tbody></table></div>');
@@ -1462,7 +1468,20 @@ function mount(){
  if(!shell.querySelector('#gao-fabric-flow')){const host=document.createElement('div');host.id='gao-fabric-flow';host.hidden=!state.mode;shell.appendChild(host);render();if(!state.org){init().then(render).catch(err=>{state.error=err.message;render()})}}
 }
 const buying=createBuyingController({state,buyingSnapshot,esc,n,br,rpc,reload,render,uid,fabricBuyingBalances,liveBalances,fabricMatches,openRecipeDialog,productionView,trackingView,ordersTable,purchaseOrderView,openPurchaseOrder,stockPanels,qualityView,costView,forecastProductMatrix,standardsManagementView,recipeView,openFabricPurchaseDraft,submit,saveQualityBatch,returnForm,orderStats,syncOrderStatuses,refreshPurchaseReferences});
-const factionWorkflow=createFactionWorkflow({state,esc,n,br,liveBalances,fabricMatches,internalName,physicalFactionMeters,orderStats,demandView,factionDesk,render,run,rpc,reload,uid,supplierOptionList,openFabricPurchaseDraft,submit,returnForm,syncOrderStatuses});
+function factionAvailableStock(){
+ if(!state.loaded)return '<p role="status">Carregando estoque de tecidos…</p>';
+ if(state.factionStockError||(!state.factionStock&&state.factionCountsError))
+  return '<p role="alert">Estoque indisponível. Clique em Atualizar dados para tentar novamente.</p>';
+ const lots=state.factionStock?.lots||liveBalances().filter(lot=>lot.quality_status==='APROVADO'&&lot.onhand>0)
+  .map(lot=>({...lot,fabric_label:internalName(state.fabric.find(fabric=>fabric.id===lot.fabric_id))}));
+ const rows=lots.map(lot=>'<tr><td>'+esc(lot.fabric_label)+'</td><td>'+esc(lot.lot_code)+'</td><td>'+br(lot.onhand,3)+
+  ' m</td><td>'+br(lot.reserved,3)+' m</td><td><strong>'+br(Math.max(0,n(lot.onhand)-n(lot.reserved)),3)+' m</strong></td></tr>').join('');
+ const lotsView='<section class="fw-panel"><h3>Lotes liberados para reserva</h3><p>Disponível é o saldo do lote após descontar as reservas. A posição física informada aparece separadamente abaixo.</p>'+
+  '<div class="fw-table-scroll"><table><thead><tr><th>Tecido</th><th>Lote</th><th>Saldo do lote</th><th>Reservado</th><th>Disponível</th></tr></thead><tbody>'+
+  (rows||'<tr><td colspan="5">Nenhum lote liberado com saldo.</td></tr>')+'</tbody></table></div></section>';
+ return lotsView+(state.factionStock?factionStockPosition(state.factionStock.counts,false):factionStockPosition());
+}
+const factionWorkflow=createFactionWorkflow({state,esc,n,br,liveBalances,fabricMatches,internalName,physicalFactionMeters,orderStats,demandView,factionDesk,factionAvailableStock,render,run,rpc,reload,uid,supplierOptionList,openFabricPurchaseDraft,submit,returnForm,syncOrderStatuses});
 new MutationObserver(mount).observe(document.documentElement,{childList:true,subtree:true});
 setInterval(mount,900);
 })();

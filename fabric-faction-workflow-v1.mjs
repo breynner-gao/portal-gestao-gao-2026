@@ -1,6 +1,6 @@
 export function createFactionWorkflow({
   state, esc, n, br, liveBalances, fabricMatches, internalName, physicalFactionMeters,
-  orderStats, demandView, factionDesk, render, run, rpc, reload, uid,
+  orderStats, demandView, factionDesk, factionAvailableStock, render, run, rpc, reload, uid,
   supplierOptionList, openFabricPurchaseDraft, submit, returnForm, syncOrderStatuses
 }) {
   const stages = [
@@ -220,17 +220,12 @@ export function createFactionWorkflow({
     const balances = table(['Produto','Ordem','Não distribuídas','Em corte','Em costura','Entregues','Saldo de entrega'],
       orders.map(row=>`<tr><td>${product(row)}</td><td>${pieces(row.item.ordered_pieces)}</td><td>${pieces(row.remaining)}</td><td>${pieces(row.cutting)}</td>
       <td>${pieces(Math.max(0,row.cut-row.receivedByOrder))}</td><td>${pieces(row.returns.accepted)}</td><td>${pieces(Math.max(0,n(row.item.ordered_pieces)-row.returns.accepted))}</td></tr>`).join(''),'Nenhuma ordem de produção.');
-    const stock = table(['Tecido / lote','Físico','Reservado','Disponível'],liveBalances().map(lot=>{
-      const fabric=state.fabric.find(f=>f.id===lot.fabric_id);
-      return `<tr><td>${esc(lot.lot_code)} · ${esc(fabric?internalName(fabric):'Tecido')}</td><td>${meters(lot.onhand)}</td><td>${meters(lot.reserved)}</td><td>${meters(lot.quality_status==='APROVADO'?Math.max(0,lot.onhand-lot.reserved):0)}</td></tr>`;
-    }).join(''),'Nenhum lote de tecido registrado.');
     const items = new Map(orders.map(row=>[row.item.id,row]));
     const movements = state.moves.filter(move=>items.has(move.order_item_id)).sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
     const history = table(['Data','Produto','Movimento','Metros','Observação'],movements.slice(0,50).map(move=>
       `<tr><td>${dateLabel(move.created_at)}</td><td>${product(items.get(move.order_item_id))}</td><td>${esc(move.movement_type)}</td>
       <td>${meters(move.quantity_m)}</td><td>${esc(move.notes||'—')}</td></tr>`).join(''),'Nenhuma movimentação vinculada.');
     return section('Saldos consolidados por ordem de produção',balances) +
-      section('Estoque de tecidos compartilhado',stock+shortcut('Consultar estoque','stock')) +
       section('Histórico de movimentações',history+(movements.length>50?'<p>Mostrando os 50 registros mais recentes.</p>':''));
 
   }
@@ -247,10 +242,12 @@ export function createFactionWorkflow({
       const stageView={provision,cut:cutView,sewing};
       body=`<header class="fw-faction-heading"><small>OPERAÇÃO / PRODUÇÃO</small><h3>${current[1]}</h3><p>${current[2]}</p></header>
         <div class="faction-flow" aria-label="Fluxo da produção">${flow}</div>`+stageView[stage](orders)+consolidated(orders);
+    } else if(stage==='stock') {
+      body='<header class="fw-faction-heading"><h3>Estoque de tecido disponível</h3></header>'+factionAvailableStock();
     } else {
       body=stage==='review'?factionDesk.view():'<section class="fw-panel" data-faction-assigned aria-live="polite">Carregando ordens atribuídas…</section>';
     }
-    return '<div class="fw-faction-page"><aside class="faction-stage-nav"><nav class="fw-tabs fw-faction-tabs" aria-label="Etapas do Portal da Facção"><strong>PRODUÇÃO</strong>'+main+'</nav>'+
+    return '<div class="fw-faction-page"><aside class="faction-stage-nav"><nav class="fw-tabs fw-faction-tabs" aria-label="Etapas do Portal da Facção"><strong>PRODUÇÃO</strong>'+main+`<button type="button" data-fw-faction-stage="stock" aria-pressed="${stage==='stock'}">Estoque de tecido disponível</button>`+'</nav>'+
       '<details class="faction-access"><summary>Ordens atribuídas</summary><div class="fw-tabs fw-faction-tabs">'+options+'</div></details></aside><div class="faction-stage-content">'+body+'</div></div>';
 
   }
