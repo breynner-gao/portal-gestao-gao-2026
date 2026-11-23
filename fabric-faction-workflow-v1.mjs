@@ -86,29 +86,36 @@ export function createFactionWorkflow({
   const stockOptions = (lots, measure, chosen = '') => lots.map(lot =>
     `<option value="${esc(lot.id)}" ${lot.id===chosen?'selected':''}>${esc(lot.lot_code)} · ${meters(measure(lot))}</option>`).join('');
 
+  function hasProductionHistory(id) {
+    return [state.moves,state.cuts,state.returns,plans()].some(rows=>rows.some(record=>record.order_item_id===id))||
+      (state.enfestos||[]).some(record=>record.outputs?.some(output=>output.source_type==='os'&&output.source_id===id));
+  }
+  const isManual=order=>String(order.idempotency_key||'').startsWith('manual:');
+
   function provision(orders) {
     const rows = activeOrders(orders).map(row=>{
       const {item,fabric,unit,physical,available,reserved,needed,shortage}=row;
       const supplier=state.suppliers?.find(supplier=>supplier.id===fabric?.supplier_id);
       return `<tr>
         <td><input type="checkbox" data-faction-select="${esc(item.id)}" aria-label="Selecionar ${esc(item.product_name)}" ${selected.has(item.id)?'checked':''}></td>
-        <td>${product(row)}<div class="fw-tabs"><button type="button" data-fw-buy-map>Mapa de trocas</button>${button('Ficha técnica','recipe',item.id,!item.recipe_id)}</div></td>
+        <td>${product(row)}<div class="fw-tabs">${isManual(row.order)?'<small>Lançado manualmente</small>':'<button type="button" data-fw-buy-map>Mapa de trocas</button>'}${button('Ficha técnica','recipe',item.id,!item.recipe_id)}</div></td>
         <td><input type="number" data-provision-quantity="${esc(item.id)}" min="1" max="2147483647" step="1" value="${n(item.ordered_pieces)}" aria-label="Quantidade da ordem de ${esc(item.product_name)}" required></td><td>${esc(fabric?internalName(fabric):'Tecido a vincular')}<small>${esc([fabric?.color||fabric?.color_reference,supplier?.trade_name||supplier?.legal_name].filter(Boolean).join(' · '))}</small></td>
         <td>${br(unit,4)}</td><td data-provision-estimate data-unit="${unit}">${meters(n(item.ordered_pieces)*unit)}</td>
         <td>${meters(physical)}<small>${meters(available)} disponíveis para reserva</small></td>
         <td>${meters(reserved)}<small>${meters(reserved-row.committed)} livres para novos lotes</small>${reserved>row.committed?button('Liberar reserva','release',item.id):''}</td>
         <td>${meters(Math.max(0,needed-reserved))}<small>${meters(row.incoming)} a receber por tecido</small><small>${meters(shortage)} estimados a solicitar</small></td>
         <td>${row.remaining===0?'Corte atendido':reserved>=needed?'Reservado':reserved>0?'Reserva parcial':'Aguardando reserva'}
-        ${shortage>0?button('Solicitar faltante','request',item.id,!fabric):''}</td></tr>`;
+        ${shortage>0?button('Solicitar faltante','request',item.id,!fabric):''}
+        ${state.canOperateFaction&&!hasProductionHistory(item.id)?button('Excluir item','remove-item',item.id):''}</td></tr>`;
     }).join('');
-    const ordersTable = table(['<input type="checkbox" data-faction-select-all aria-label="Selecionar todas as ordens">','Produto / origem','Peças','Tecido','m/peça','Estimado total','Físico do tecido','Reserva da ordem','Falta reservar','Situação'],rows,'Gere uma ordem a partir do mapa de necessidades.');
+    const ordersTable = table(['<input type="checkbox" data-faction-select-all aria-label="Selecionar todas as ordens">','Produto / origem','Peças','Tecido','m/peça','Estimado total','Físico do tecido','Reserva da ordem','Falta reservar','Situação'],rows,'Adicione um produto manualmente ou gere a ordem pelo mapa de necessidades.');
     const requests = table(['Pedido / tecido','Solicitado','A receber','Situação'],state.purchaseItems.flatMap(item=>{
       const order=state.purchaseOrders.find(row=>row.id===item.purchase_order_id);
       if(!order||order.status==='CANCELADA'||n(item.received_m)>=n(item.ordered_m))return [];
       const fabric=state.fabric.find(row=>row.id===item.fabric_id);
       return `<tr><td>${esc(order.order_number)} · ${esc(fabric?internalName(fabric):'Tecido')}</td><td>${meters(item.ordered_m)}</td><td>${meters(n(item.ordered_m)-n(item.received_m))}</td><td>${esc(order.logistics_stage||order.status)}</td></tr>`;
     }).join(''),'Nenhum pedido de tecido com saldo a receber.');
-    return panel('Ordens de produção',ordersTable,`<div class="fw-tabs">${button('Solicitar faltantes','request-selected','')}${button('Reservar para corte','reserve','')}</div>`) +
+    return panel('Ordens de produção',ordersTable,`<div class="fw-tabs">${state.canOperateFaction?button('Adicionar produto','manual-item',''):''}${button('Solicitar faltantes','request-selected','')}${button('Reservar para corte','reserve','')}</div>`) +
       '<p class="faction-notice">As ordens que usam o mesmo tecido compartilham o saldo do estoque. Uma reserva parcial já permite planejar o corte.</p>'+
       panel('Solicitações de tecido',requests,shortcut('Pedidos e recebimentos','purchases'))+
       section('Gerar ordem pelo mapa de necessidades',demandView(false));
@@ -271,7 +278,14 @@ export function createFactionWorkflow({
         try {
           const values=Object.fromEntries(new FormData(form));
           const kind=form.dataset.factionForm;
-          if(kind==='faction-delivery') {
+          if(kind==='manual-item') {
+            await rpc('fabric_faction_manual_item',{p_org:state.org,p_recipe:values.recipe,p_pieces:Number(values.quantity),p_request:values.request});
+          } else if(kind==='remove-item') {
+            await rpc('fabric_faction_remove_item',{p_org:state.org,p_item:values.id});
+            selected.delete(values.id);
+            draft.delete(values.id);
+            cutSelected.delete(values.id);
+          } else if(kind==='faction-delivery') {
             await reload();
             const row=getOrders().find(row=>row.item.id===values.id);
             const pending=row?legacyPending(row,state.returns):0;
@@ -510,6 +524,20 @@ export function createFactionWorkflow({
   function handleAction(trigger) {
     const {factionAction:action,factionId:id}=trigger.dataset;
     if(action==='reserve')return reserve();
+    if(action==='manual-item'&&state.canOperateFaction){
+      const options=state.recipes.filter(recipe=>recipe.active&&state.fabric.some(fabric=>fabric.id===recipe.fabric_id&&fabric.active))
+        .slice().sort((a,b)=>a.product_name.localeCompare(b.product_name,'pt-BR')).map(recipe=>{
+          const fabric=state.fabric.find(row=>row.id===recipe.fabric_id);
+          const label=[recipe.product_name,recipe.product_reference,internalName(fabric),fabric.color_reference,br(recipe.consumption_m_per_piece,4)+' m/peça'].filter(Boolean).join(' · ');
+          return `<option value="${esc(recipe.id)}">${esc(label)}</option>`;
+        }).join('');
+      if(!options)return openDialog('Adicionar produto','<p>Cadastre primeiro uma ficha técnica ativa vinculada a um tecido ativo.</p>');
+      return openDialog('Adicionar produto',`<form data-faction-form="manual-item">
+        <input type="hidden" name="request" value="${esc(uid())}">
+        <label class="fw-field">Produto e ficha técnica<select name="recipe" required><option value="">Selecione</option>${options}</select></label>
+        <label class="fw-field">Quantidade de peças<input type="number" name="quantity" min="1" max="2147483647" step="1" required></label>
+        <button type="submit">Criar OS manual</button></form>`);
+    }
     const orders=getOrders();
     if(action==='request-selected') {
       const rows=activeOrders(orders).filter(row=>selected.has(row.item.id)&&row.fabric);
@@ -544,6 +572,12 @@ export function createFactionWorkflow({
     }
     const row=orders.find(o=>o.item.id===id||o.cuts.some(cut=>cut.id===id));
     if(!row)return;
+    if(action==='remove-item'&&state.canOperateFaction&&!hasProductionHistory(row.item.id)){
+      return openDialog('Excluir item da provisão',`<form data-faction-form="remove-item">
+        <input type="hidden" name="id" value="${esc(row.item.id)}">
+        <p>${product(row)}</p><p>Confirme a exclusão deste item da programação. O Portal preserva o registro da exclusão para auditoria.</p>
+        <button type="submit">Confirmar exclusão</button></form>`);
+    }
     const cut=row.cuts.find(cut=>cut.id===id);
     if(action==='recipe') {
       const recipe=state.recipes.find(recipe=>recipe.id===row.item.recipe_id);

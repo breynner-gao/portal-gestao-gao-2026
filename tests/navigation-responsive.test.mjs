@@ -143,3 +143,20 @@ test('Costura libera corte concluído para entregar e mostra previsão na linha'
   assert.match(html,/data-faction-action="group-delivery" data-faction-id="corte-01"\s*>Registrar entrega/);
   assert.doesNotMatch(html,/Aguardando envio/);
 });
+
+test('Provisão oferece lançamento manual e permite excluir somente linhas sem histórico', async () => {
+  const {createFactionWorkflow}=await import('../fabric-faction-workflow-v1.mjs');
+  const state={
+    canOperateFaction:true,
+    orders:[{id:'os',order_number:2,status:'ABERTA',idempotency_key:'manual:request'}],
+    items:['livre','reservado'].map(id=>({id,order_id:'os',product_name:id,ordered_pieces:4,consumption_m_per_piece:1})),
+    fabric:[],suppliers:[],cuts:[],returns:[],purchaseOrders:[],purchaseItems:[],
+    moves:[{order_item_id:'reservado',reserved_delta_m:4}]
+  };
+  const wf=createFactionWorkflow({state,esc:String,n:value=>Number(value)||0,br:String,liveBalances:()=>[],
+    orderStats:()=>({accepted:0,rejected:0}),demandView:()=>''});
+  assert.match(wf.view(),/Adicionar produto/);
+  assert.match(wf.view(),/Lançado manualmente/);
+  assert.match(wf.view(),/data-faction-action="remove-item" data-faction-id="livre"/);
+  assert.doesNotMatch(wf.view(),/data-faction-action="remove-item" data-faction-id="reservado"/);
+});
