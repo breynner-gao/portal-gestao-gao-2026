@@ -14,7 +14,7 @@ import {createFabricWorkbookImport} from '../fabric-workbook-import-v1.mjs';
 const source=await readFile(new URL('../fabric-workflow-ui-v1.js',import.meta.url),'utf8');
 function harness(){
  const calls=[];const context={invoicePaymentKey,localDay,createTextileCostDashboard,purchaseReportStatuses,formatPurchasePaymentDays,...linenRules,...rules,...standards,createFactionWorkflow,createFactionDesk,createFabricWorkbookImport,createBuyingController:()=>({view:()=>'',restore(){}}),console,Event:class{},crypto:{randomUUID:()=> 'test-key'},window:{GAO_LINEN_NEED_SNAPSHOT:[],dispatchEvent(){}},document:{createElement:()=>({textContent:''}),head:{appendChild(){}},addEventListener(){},querySelector:()=>null,documentElement:{}},MutationObserver:class{observe(){}},setInterval(){},FormData:class{constructor(form){this.form=form}entries(){return Object.entries(this.form.values)}},fetch:async(url,options)=>{calls.push({url,body:options.body?JSON.parse(options.body):null});return{ok:true,text:async()=> '[]'}}};
- vm.createContext(context);vm.runInContext(source.replace(/^(?:import[^\n]+\n)+/,'').replace(/\}\)\(\);\s*$/,'window.test={state,submit,orderStats,trackingView,createOrder,catalogModelValues,catalogAction,catalogManagementView,stockPanelGroup,stockLotsView,purchaseOrderView,purchaseOrderBody,purchaseSupplierBody,qualityView,demandDrafts,demandQuantity,demandRequestedPieces,materialPurchasePlan,materialCoverageView,materialLinkInfo,trackingReconciled,reconciliationLine,reconciliationStockPlan,recipeSourceChoices,recipeCostValues,applyRecipeCost,internalFabricOptions,planningFabrics,standardsManagementView,recipeView};})();'),context);
+ vm.createContext(context);vm.runInContext(source.replace(/^(?:import[^\n]+\n)+/,'').replace(/\}\)\(\);\s*$/,'window.test={state,submit,forecastProductMatrix,orderStats,trackingView,createOrder,catalogModelValues,catalogAction,catalogManagementView,stockPanelGroup,stockLotsView,purchaseOrderView,purchaseOrderBody,purchaseSupplierBody,qualityView,demandDrafts,demandQuantity,demandRequestedPieces,materialPurchasePlan,materialCoverageView,materialLinkInfo,trackingReconciled,reconciliationLine,reconciliationStockPlan,recipeSourceChoices,recipeCostValues,applyRecipeCost,internalFabricOptions,planningFabrics,standardsManagementView,recipeView};})();'),context);
  context.window.test.state.org='org';context.window.test.state.session={access_token:'session',user:{id:'user'}};return{...context.window.test,calls,document:context.document,window:context.window};
 }
 test('envio de lote calcula prazo de 21 dias e envia dados para persistência',async()=>{const h=harness();await h.submit({dataset:{fwForm:'dispatch'},values:{id:'cut',sent_date:'2026-11-09',expected_date:'',supplier_id:'supplier',notes:''}});assert.equal(h.calls[0].body.expected_date,'2026-11-30');assert.equal(h.calls[0].body.sent_date,'2026-11-09');assert.equal(h.calls[0].body.supplier_id,'supplier');});
@@ -175,4 +175,17 @@ test('produto fora da previsão não pode gerar OS pelo mapa',async()=>{
  h.document.querySelectorAll=()=>[{dataset:{fwDemand:'2625'}}];
  await assert.rejects(h.createOrder(),/fora da previsão automática/);
  assert.equal(h.calls.length,0);
+});
+
+test('matriz em Cadastros mostra a preferência salva por referência, inclusive itens fora da previsão',()=>{
+ const h=harness();
+ h.state.loaded=true;
+ h.state.canOperateFaction=true;
+ h.state.recipes=[{product_reference:'2625',product_name:'Camisola'},{product_reference:'3219',product_name:'Camisa'}];
+ h.state.forecastPreferences=[{product_reference:'2625',include_in_forecast:false}];
+ const html=h.forecastProductMatrix();
+ assert.match(html,/Matriz de produtos/);
+ assert.match(html,/data-fw-forecast-setting="2625"[^>]*> Incluir/);
+ assert.doesNotMatch(html,/data-fw-forecast-setting="2625"[^>]*checked/);
+ assert.match(html,/data-fw-forecast-setting="3219"[^>]*checked/);
 });

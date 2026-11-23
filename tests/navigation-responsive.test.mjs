@@ -154,9 +154,9 @@ test('Provisão oferece lançamento manual e permite excluir somente linhas sem 
     moves:[{order_item_id:'reservado',reserved_delta_m:4}]
   };
   const wf=createFactionWorkflow({state,esc:String,n:value=>Number(value)||0,br:String,liveBalances:()=>[],
-    orderStats:()=>({accepted:0,rejected:0}),demandView:()=>'',forecastIncluded:ref=>ref!=='reservado'});
+    orderStats:()=>({accepted:0,rejected:0}),demandView:()=>''});
   assert.match(wf.view(),/Adicionar produto/);
-  assert.match(wf.view(),/data-faction-id="reservado"\s*>Fora da previsão/);
+  assert.doesNotMatch(wf.view(),/Previsão por produto|Fora da previsão/);
   assert.match(wf.view(),/Lançado manualmente/);
   assert.match(wf.view(),/data-faction-action="remove-item" data-faction-id="livre"/);
   assert.doesNotMatch(wf.view(),/data-faction-action="remove-item" data-faction-id="reservado"/);

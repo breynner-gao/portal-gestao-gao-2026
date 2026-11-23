@@ -3,11 +3,11 @@ import {createTextileCostDashboard} from '/textile-cost-dashboard-v1.mjs?v=5';
 import {groupPurchaseCards,supplierCards} from '/fabric-purchase-cards-v1.mjs?v=1';
 import { purchaseReportStatuses, renderPurchaseReport, formatPurchasePaymentDays } from '/fabric-purchase-report-v1.mjs?v=5';
 import { openReport as openPurchaseReportWindow } from '/relave-report-export-v1.mjs?v=1';
-import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=7';
+import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=8';
 import {createFactionDesk} from '/fabric-faction-portal-v1.mjs?v=2';
 import {createFabricWorkbookImport} from '/fabric-workbook-import-v1.mjs?v=1';
 import {buildPendingProductionCoverage,applyPendingProductionCoverage,compactDimensionKey} from '/linen-risk-rules-v150.mjs?v=230';
-import {createBuyingController} from '/linen-buying-controller-v1.mjs?v=11';
+import {createBuyingController} from '/linen-buying-controller-v1.mjs?v=12';
 import { fabricCatalogVariantKey, fabricInvoiceAliasKey, summarizeFabricPurchaseOrder, groupPendingFabricLotsByInvoice, latestFabricConsumptionByVariant, fabricCostReferenceLabel, normalizeFabricNumber, serviceOrderDueDate } from '/fabric-workflow-rules-v1.mjs?v=3'; import {sameFabricStandard,groupFabricStandards,purchaseReferenceChoices} from '/fabric-standard-rules-v1.mjs?v=2';
 (() => {
 'use strict';
@@ -197,7 +197,7 @@ function render(){
   catalog:[['recipes','Fichas técnicas'],['suppliers','Fornecedores']]
  };
  const quickLinks=(shortcuts[state.tab]||[]).map(([id,label])=>'<button type="button" data-fw-tab="'+id+'">'+label+'</button>').join('');
- const body=state.tab==='overview'?overviewView():state.tab==='faction-desk'?factionWorkflow.view():state.tab==='workbook'?workbookImport.view():state.tab==='buying'?buying.view():state.tab==='material-need'?materialCoverageView():state.tab==='production'||state.tab==='demand'?demandView()+productionView()+trackingView():['stock','purchases','receipt','lots'].includes(state.tab)?(state.tab==='stock'?factionStockPosition():'')+stockPanels(state.tab):state.tab==='suppliers'?stockPanels('suppliers'):state.tab==='catalog'?standardsManagementView()+'<details class="fw-panel"><summary>Referências comerciais e códigos de NF</summary>'+stockPanels('catalog')+'</details>'+recipeView():state.tab==='quality'?qualityView():state.tab==='recipes'?recipeView():costView();
+ const body=state.tab==='overview'?overviewView():state.tab==='faction-desk'?factionWorkflow.view():state.tab==='workbook'?workbookImport.view():state.tab==='buying'?buying.view():state.tab==='material-need'?materialCoverageView():state.tab==='production'||state.tab==='demand'?demandView()+productionView()+trackingView():['stock','purchases','receipt','lots'].includes(state.tab)?(state.tab==='stock'?factionStockPosition():'')+stockPanels(state.tab):state.tab==='suppliers'?stockPanels('suppliers'):state.tab==='catalog'?forecastProductMatrix()+standardsManagementView()+'<details class="fw-panel"><summary>Referências comerciais e códigos de NF</summary>'+stockPanels('catalog')+'</details>'+recipeView():state.tab==='quality'?qualityView():state.tab==='recipes'?recipeView():costView();
  host.innerHTML='<section class="fw-shell"><header class="fw-head"><div><small>ENXOVAL • PRODUÇÃO TÊXTIL</small><h2>'+esc(({overview:'Gestão de Tecidos e Produção de Enxoval',buying:'Necessidades','material-need':'Necessidade de compra de tecido',stock:'Estoque de tecidos',purchases:'Pedidos de compra',receipt:'Receber nota fiscal',lots:'Lotes recebidos',catalog:'Padronização de produtos',suppliers:'Fornecedores',quality:'Qualidade de tecidos',production:'Produção e facção',cost:'Custos e perdas',workbook:'Gestão de Tecidos e Produção de Enxoval','faction-desk':'Portal da facção'})[state.tab]||'Produção têxtil')+'</h2><p>'+esc(({overview:'Planejamento, compras, estoque e ordens da facção.',buying:'Necessidade, estoque, corte/facção e compras no mesmo lugar.','material-need':'Quanto tecido falta comprar, em metros, descontando estoque e compras a receber.',stock:'Saldo disponível e reservado de cada tecido.',purchases:'Pedidos em andamento, entregas previstas e histórico.',receipt:'Importe o XML ou registre o material recebido.',lots:'Consulte os lotes e a avaliação por nota fiscal.'})[state.tab]||'Demanda ligada a estoque, produção e custo real.')+'</p></div><div class="fw-tabs">'+(state.tab==='overview'||state.canViewInventory===false?'':'<button type="button" data-fw-back>← Voltar</button>')+'<button type="button" data-fw-refresh>Atualizar dados</button></div></header>'+(state.error?'<div class="fw-error">'+esc(state.error)+'</div>':'')+(state.busy?'<div class="fw-note">Salvando no banco…</div>':'')+(state.notice?'<div class="fw-note" role="status">'+esc(state.notice)+'</div>':'')+(quickLinks?'<div class="fw-tabs" aria-label="Atalhos do módulo">'+quickLinks+'</div>':'')+body+'</section>';
  for(const d of host.querySelectorAll('details[data-fw-detail-key]'))if(expanded.includes(d.dataset.fwDetailKey))d.open=true;
  const purchasePanel=host.querySelector('.fw-purchase-orders');
@@ -671,6 +671,48 @@ function refreshPurchaseReferences(form){
   if(lot&&(!price.value||price.dataset.auto==='true')){price.value=lot.purchase_price_per_m??lot.effective_price_per_m;price.dataset.auto='true';}else if(!lot&&price.dataset.auto==='true'){price.value='';delete price.dataset.auto;}
  }
 }
+function forecastProductMatrix(){
+ const products=new Map();
+ const add=(ref,name)=>{
+  const key=String(ref??'').trim();
+  if(key&&key.length<=240)products.set(key,name||products.get(key)||key);
+ };
+ for(const pref of state.forecastPreferences||[])add(pref.product_reference);
+ for(const item of state.items)add(item.product_reference,item.product_name);
+ for(const recipe of state.recipes)add(recipe.product_reference,recipe.product_name);
+ for(const row of window.GAO_LINEN_NEED_SNAPSHOT||state.snapshot||[])add(row.produtoId||row.produtoNome,row.produtoNome);
+ const disabled=!state.loaded||state.forecastPreferencesError||!state.canOperateFaction;
+ const rows=[...products].sort((a,b)=>a[1].localeCompare(b[1],'pt-BR')).map(([ref,name])=>
+  '<tr data-fw-forecast-row data-search="'+esc((ref+' '+name).toLocaleLowerCase('pt-BR'))+'"><td>'+esc(ref)+
+  '</td><td>'+esc(name)+'</td><td><label><input type="checkbox" data-fw-forecast-setting="'+esc(ref)+
+  '" aria-label="Incluir '+esc(name)+' ('+esc(ref)+') nas provisões" '+(forecastIncluded(ref)?'checked ':'')+
+  (disabled?'disabled':'')+'> Incluir</label></td></tr>').join('');
+ return '<details class="fw-panel" data-fw-detail-key="forecast-product-matrix"><summary>Matriz de produtos</summary>'+
+  '<p>Defina quais produtos entram nas novas provisões automáticas. A alteração é salva ao marcar ou desmarcar.</p>'+
+  (state.forecastPreferencesError?'<p role="alert">Não foi possível carregar as configurações. Atualize os dados.</p>':'')+
+  '<label class="fw-field">Buscar produto<input type="search" data-fw-forecast-search placeholder="Nome ou referência"></label>'+
+  '<p data-fw-forecast-status role="status"></p><div class="fw-table-scroll"><table><thead><tr><th>Referência</th><th>Produto</th><th>Incluir nas provisões</th></tr></thead><tbody>'+
+  (rows||'<tr><td colspan="3">Nenhum produto cadastrado.</td></tr>')+'</tbody></table></div></details>';
+}
+
+async function saveForecastSetting(input){
+ if(!state.canOperateFaction||state.forecastPreferencesError)return;
+ const ref=input.dataset.fwForecastSetting,include=input.checked;
+ const status=input.closest('details').querySelector('[data-fw-forecast-status]');
+ input.disabled=true;
+ status.textContent='Salvando…';
+ try{
+  await rpc('fabric_faction_set_forecast',{p_org:state.org,p_reference:ref,p_include:include});
+  state.forecastPreferences=[...(state.forecastPreferences||[]).filter(row=>row.product_reference!==ref),
+   {product_reference:ref,include_in_forecast:include}];
+  status.textContent=include?'Produto incluído nas provisões.':'Produto retirado das provisões.';
+  if(input.closest('dialog[data-fw-buy-dialog]'))render();
+ }catch(error){
+  input.checked=forecastIncluded(ref);
+  status.textContent=error.message||'Não foi possível salvar a configuração.';
+ }finally{input.disabled=false;}
+}
+
 function standardsManagementView(){
  const fabrics=state.standards.filter(s=>s.active&&(s.material_kind||'TECIDO')==='TECIDO').sort((a,b)=>a.code.localeCompare(b.code));
  const finished=state.standards.filter(s=>s.active&&s.material_kind==='PRODUTO_ACABADO').sort((a,b)=>a.code.localeCompare(b.code));
@@ -1282,6 +1324,16 @@ document.addEventListener('input',e=>{
  if(!e.target.matches('[data-fw-catalog-search]'))return;
  const q=e.target.value.trim().toLocaleLowerCase('pt-BR');document.querySelectorAll('[data-fw-catalog-row]').forEach(row=>{row.hidden=!row.dataset.search.includes(q)});
 });
+document.addEventListener('change',event=>{
+ const input=event.target;
+ if(input.matches('[data-fw-forecast-setting]'))void saveForecastSetting(input);
+});
+document.addEventListener('input',event=>{
+ const input=event.target;
+ if(!input.matches('[data-fw-forecast-search]'))return;
+ const query=input.value.trim().toLocaleLowerCase('pt-BR');
+ for(const row of input.closest('details').querySelectorAll('[data-fw-forecast-row]'))row.hidden=!row.dataset.search.includes(query);
+});
 document.addEventListener('click',async e=>{
  const budgetLink=e.target.closest('[data-fw-budget-link]');
  if(budgetLink){
@@ -1402,8 +1454,8 @@ function mount(){
  const flowButton=nav.querySelector('[data-fw-open]');flowButton?.classList.toggle('active',state.mode);flowButton?.setAttribute('aria-pressed',String(state.mode));
  if(!shell.querySelector('#gao-fabric-flow')){const host=document.createElement('div');host.id='gao-fabric-flow';host.hidden=!state.mode;shell.appendChild(host);render();if(!state.org){init().then(render).catch(err=>{state.error=err.message;render()})}}
 }
-const buying=createBuyingController({state,buyingSnapshot,esc,n,br,rpc,reload,render,uid,fabricBuyingBalances,liveBalances,fabricMatches,openRecipeDialog,productionView,trackingView,ordersTable,purchaseOrderView,openPurchaseOrder,stockPanels,qualityView,costView,standardsManagementView,recipeView,openFabricPurchaseDraft,submit,saveQualityBatch,returnForm,orderStats,syncOrderStatuses,refreshPurchaseReferences});
-const factionWorkflow=createFactionWorkflow({state,esc,n,br,liveBalances,fabricMatches,internalName,physicalFactionMeters,orderStats,demandView,forecastIncluded,factionDesk,render,run,rpc,reload,uid,supplierOptionList,openFabricPurchaseDraft,submit,returnForm,syncOrderStatuses});
+const buying=createBuyingController({state,buyingSnapshot,esc,n,br,rpc,reload,render,uid,fabricBuyingBalances,liveBalances,fabricMatches,openRecipeDialog,productionView,trackingView,ordersTable,purchaseOrderView,openPurchaseOrder,stockPanels,qualityView,costView,forecastProductMatrix,standardsManagementView,recipeView,openFabricPurchaseDraft,submit,saveQualityBatch,returnForm,orderStats,syncOrderStatuses,refreshPurchaseReferences});
+const factionWorkflow=createFactionWorkflow({state,esc,n,br,liveBalances,fabricMatches,internalName,physicalFactionMeters,orderStats,demandView,factionDesk,render,run,rpc,reload,uid,supplierOptionList,openFabricPurchaseDraft,submit,returnForm,syncOrderStatuses});
 new MutationObserver(mount).observe(document.documentElement,{childList:true,subtree:true});
 setInterval(mount,900);
 })();

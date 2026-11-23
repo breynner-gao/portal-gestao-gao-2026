@@ -222,6 +222,7 @@ export function createBuyingController(env) {
       catalog: [
         "Cadastros de produtos e fornecedores",
         () =>
+          env.forecastProductMatrix() +
           env.standardsManagementView() +
           '<details class="fw-panel"><summary>Referências comerciais por fornecedor</summary>' +
           env.stockPanels("catalog") +

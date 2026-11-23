@@ -1,6 +1,6 @@
 export function createFactionWorkflow({
   state, esc, n, br, liveBalances, fabricMatches, internalName, physicalFactionMeters,
-  orderStats, demandView, forecastIncluded = () => true, factionDesk, render, run, rpc, reload, uid,
+  orderStats, demandView, factionDesk, render, run, rpc, reload, uid,
   supplierOptionList, openFabricPurchaseDraft, submit, returnForm, syncOrderStatuses
 }) {
   const stages = [
@@ -98,8 +98,7 @@ export function createFactionWorkflow({
       const supplier=state.suppliers?.find(supplier=>supplier.id===fabric?.supplier_id);
       return `<tr>
         <td><input type="checkbox" data-faction-select="${esc(item.id)}" aria-label="Selecionar ${esc(item.product_name)}" ${selected.has(item.id)?'checked':''}></td>
-        <td>${product(row)}<div class="fw-tabs">${isManual(row.order)?'<small>Lançado manualmente</small>':'<button type="button" data-fw-buy-map>Mapa de trocas</button>'}${button('Ficha técnica','recipe',item.id,!item.recipe_id)}
-          ${state.canOperateFaction?button(forecastIncluded(item.product_reference)?'Na previsão':'Fora da previsão','forecast-settings',item.product_reference,!state.loaded||state.forecastPreferencesError):''}</div></td>
+        <td>${product(row)}<div class="fw-tabs">${isManual(row.order)?'<small>Lançado manualmente</small>':'<button type="button" data-fw-buy-map>Mapa de trocas</button>'}${button('Ficha técnica','recipe',item.id,!item.recipe_id)}</div></td>
         <td><input type="number" data-provision-quantity="${esc(item.id)}" min="1" max="2147483647" step="1" value="${n(item.ordered_pieces)}" aria-label="Quantidade da ordem de ${esc(item.product_name)}" required></td><td>${esc(fabric?internalName(fabric):'Tecido a vincular')}<small>${esc([fabric?.color||fabric?.color_reference,supplier?.trade_name||supplier?.legal_name].filter(Boolean).join(' · '))}</small></td>
         <td>${br(unit,4)}</td><td data-provision-estimate data-unit="${unit}">${meters(n(item.ordered_pieces)*unit)}</td>
         <td>${meters(physical)}<small>${meters(available)} disponíveis para reserva</small></td>
@@ -116,7 +115,7 @@ export function createFactionWorkflow({
       const fabric=state.fabric.find(row=>row.id===item.fabric_id);
       return `<tr><td>${esc(order.order_number)} · ${esc(fabric?internalName(fabric):'Tecido')}</td><td>${meters(item.ordered_m)}</td><td>${meters(n(item.ordered_m)-n(item.received_m))}</td><td>${esc(order.logistics_stage||order.status)}</td></tr>`;
     }).join(''),'Nenhum pedido de tecido com saldo a receber.');
-    return panel('Ordens de produção',ordersTable,`<div class="fw-tabs">${state.canOperateFaction?button('Previsão por produto','forecast-settings','',!state.loaded||state.forecastPreferencesError)+button('Adicionar produto','manual-item',''):''}${button('Solicitar faltantes','request-selected','')}${button('Reservar para corte','reserve','')}</div>`) +
+    return panel('Ordens de produção',ordersTable,`<div class="fw-tabs">${state.canOperateFaction?button('Adicionar produto','manual-item',''):''}${button('Solicitar faltantes','request-selected','')}${button('Reservar para corte','reserve','')}</div>`) +
       '<p class="faction-notice">As ordens que usam o mesmo tecido compartilham o saldo do estoque. Uma reserva parcial já permite planejar o corte.</p>'+
       panel('Solicitações de tecido',requests,shortcut('Pedidos e recebimentos','purchases'))+
       section('Gerar ordem pelo mapa de necessidades',demandView(false));
@@ -279,9 +278,7 @@ export function createFactionWorkflow({
         try {
           const values=Object.fromEntries(new FormData(form));
           const kind=form.dataset.factionForm;
-          if(kind==='forecast-settings') {
-            await rpc('fabric_faction_set_forecast',{p_org:state.org,p_reference:values.reference,p_include:values.include==='yes'});
-          } else if(kind==='manual-item') {
+          if(kind==='manual-item') {
             await rpc('fabric_faction_manual_item',{p_org:state.org,p_recipe:values.recipe,p_pieces:Number(values.quantity),p_request:values.request});
           } else if(kind==='remove-item') {
             await rpc('fabric_faction_remove_item',{p_org:state.org,p_item:values.id});
@@ -527,31 +524,6 @@ export function createFactionWorkflow({
   function handleAction(trigger) {
     const {factionAction:action,factionId:id}=trigger.dataset;
     if(action==='reserve')return reserve();
-    if(action==='forecast-settings'&&state.canOperateFaction&&!state.forecastPreferencesError){
-      const products=new Map();
-      const add=(ref,name)=>{
-        const key=String(ref??'').trim();
-        if(key&&key.length<=240)products.set(key,name||key);
-      };
-      for(const pref of state.forecastPreferences||[])add(pref.product_reference);
-      for(const recipe of state.recipes)add(recipe.product_reference,recipe.product_name);
-      for(const entry of state.snapshot||[])add(entry.produtoId||entry.produtoNome,entry.produtoNome);
-      for(const item of state.items)add(item.product_reference,item.product_name);
-      const options=[...products].sort((a,b)=>a[1].localeCompare(b[1],'pt-BR')).map(([ref,name])=>
-        `<option value="${esc(ref)}" ${ref===id?'selected':''}>${esc(name+' · '+ref)}</option>`).join('');
-      const dialog=openDialog('Previsão por produto',`<form data-faction-form="forecast-settings">
-        <p>A configuração se aplica a novas sugestões. Ordens já criadas seguem na programação.</p>
-        <label class="fw-field">Produto<select name="reference" required><option value="">Selecione</option>${options}</select></label>
-        <label class="fw-field">Previsão automática<select name="include" required>
-          <option value="yes">Incluir na previsão</option><option value="no">Fabricar sob demanda</option>
-        </select></label>
-        <button type="submit">Salvar configuração</button></form>`);
-      const form=dialog.querySelector('form');
-      const sync=()=>{form.elements.include.value=forecastIncluded(form.elements.reference.value)?'yes':'no';};
-      form.elements.reference.addEventListener('change',sync);
-      sync();
-      return;
-    }
     if(action==='manual-item'&&state.canOperateFaction){
       const options=state.recipes.filter(recipe=>recipe.active&&state.fabric.some(fabric=>fabric.id===recipe.fabric_id&&fabric.active))
         .slice().sort((a,b)=>a.product_name.localeCompare(b.product_name,'pt-BR')).map(recipe=>{
