@@ -32,13 +32,22 @@ export function parseDanfe(pages){
     const start=page.search(/itens da nota fiscal|descri[çc][aã]o do produto|dados dos produtos/i);
     if(start<0)continue;
     const table=page.slice(start).split(/(?:dados|informa[çc][oõ]es) adicionais/i)[0];
-    for(const raw of table.split('\n')){
+    const rows=table.split('\n');
+    for(const [index,raw] of rows.entries()){
       const row=raw.replace(/[|\[\]{}()—]/g,' ').trim();
-      const match=row.match(/^([\w.-]+)[ /,]+(.+?)\s+\d{3,4}\s+\d\.?\d{3}[ /]*([A-Z]{1,6})\s*([\d.]+,\d{1,4})\b/i);
-      if(!match)continue;
-      const [,code,description,unit,quantity]=match;
-      const name=description.replace(/\s+[\w\d]{8,9}$/,'').trim();
-      if(decimal(quantity)>0)items.push({line:items.length+1,code,name,unit,amount:decimal(quantity)});
+      const fiscalColumns=row.match(/\s+[\dA-Z]{7,10}\s+[^\p{L}\d]{0,4}[\dOIl]{3,4}\s+\d\.?\d{3}/iu);
+      const quantity=row.match(/\b(UN[Ilj]?|UND|PC|PÇ|KG|CX|MT|M|PAR)\s*[:;./-]?\s*([\d.]+,\d{1,4})\b/iu);
+      const regular=row.match(/^([\w.-]+)[ /,]+(.+?)\s+\d{3,4}\s+\d\.?\d{3}[ /]*([A-Z]{1,6})\s*([\d.]+,\d{1,4})\b/i);
+      const rawDescription=fiscalColumns&&quantity&&fiscalColumns.index<quantity.index
+        ?row.slice(0,fiscalColumns.index):null;
+      const description=rawDescription?.match(/^([\w.-]+)[ /,]+(.+)$/);
+      const parsed=description&&quantity?[description[1],description[2],quantity[1],quantity[2]]:regular?.slice(1);
+      if(!parsed)continue;
+      const [code,printedName,unit,amount]=parsed;
+      let name=printedName.replace(/\s+[\d]{8,9}\s*[^\p{L}\d]*$/u,'').trim();
+      const continuation=rows[index+1]?.match(/^\s*[|\[\]]?\s*(\d{1,3}[,.]\d{2})\s*[|\[\]]?\s*$/)?.[1];
+      if(continuation&&/\bX$/i.test(name))name+=' '+continuation;
+      if(decimal(amount)>0)items.push({line:items.length+1,code,name,unit,amount:decimal(amount)});
     }
   }
   return {key,number:key?String(Number(key.slice(25,34))):'',issuer,items};
@@ -73,18 +82,29 @@ export async function readDanfe(file){
     for(let i=1;i<=doc.numPages;i++){
       const page=await doc.getPage(i);
       const text=textLines((await page.getTextContent()).items);
-      if(normalize(text).includes('DANFE')||text.trim().length>150){pages.push(text);continue;}
+      const textResult=parseDanfe([text]);
+      if(textResult.items.length&&textResult.key){pages.push(text);continue;}
       ocrLibrary??=loadOcr().catch(error=>{ocrLibrary=undefined;throw error;});
       worker??=await (await ocrLibrary).createWorker('por');
-      await worker.setParameters({tessedit_pageseg_mode:'6'});
       const original=page.getViewport({scale:1});
-      const viewport=page.getViewport({scale:2600/Math.max(original.width,original.height)});
-      const canvas=document.createElement('canvas');
-      canvas.width=Math.ceil(viewport.width);
-      canvas.height=Math.ceil(viewport.height);
-      await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
-      pages.push((await worker.recognize(canvas)).data.text);
-      canvas.width=0;
+      let bestText=text,bestResult=textResult;
+      for(const [size,mode] of [[2600,'6'],[3200,'6'],[2600,'4']]){
+        await worker.setParameters({tessedit_pageseg_mode:mode});
+        const viewport=page.getViewport({scale:size/Math.max(original.width,original.height)});
+        const canvas=document.createElement('canvas');
+        canvas.width=Math.ceil(viewport.width);
+        canvas.height=Math.ceil(viewport.height);
+        await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+        const recognized=(await worker.recognize(canvas)).data.text;
+        canvas.width=0;
+        const result=parseDanfe([recognized]);
+        if(result.items.length>bestResult.items.length||
+          (result.items.length===bestResult.items.length&&result.key&&!bestResult.key)){
+          bestText=recognized;
+          bestResult=result;
+        }
+      }
+      pages.push(bestText);
     }
   }catch{
     return {...parseDanfe(pages),pdf:encoded,incomplete:true};

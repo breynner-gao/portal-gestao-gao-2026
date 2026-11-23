@@ -1,4 +1,4 @@
-import {readDanfe,validInvoiceKey} from './linen-danfe-import-v1.mjs?v=1';
+import {readDanfe,validInvoiceKey} from './linen-danfe-import-v1.mjs?v=2';
 import {applyIdealReferences, idealReferenceKey, listMovementItems} from './linen-risk-rules-v150.mjs?v=230';
 import {directionLabel, filterTransferHistory, localTimestamp, transferWorkbook} from './linen-operations-history-v1.mjs?v=2';
 
@@ -332,7 +332,7 @@ function mount(host) {
         }
         if(read!==invoiceRead||page!=='recepcao')return;
         draft=parsed;
-        message=pdf&&(!draft.items.length||draft.incomplete)?'Complete os dados a partir do DANFE antes de salvar.':'';
+        message=pdf?(draft.items.length+' item(ns) lido(s). Compare com a tabela do DANFE e inclua eventuais linhas faltantes antes de salvar.'):'';
       }catch(error){
         if(read!==invoiceRead||page!=='recepcao')return;
         message=error.message;
