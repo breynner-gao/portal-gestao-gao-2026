@@ -1,6 +1,6 @@
 export function createFactionWorkflow({
   state, esc, n, br, liveBalances, fabricMatches, internalName, physicalFactionMeters,
-  orderStats, demandView, factionDesk, factionAvailableStock, render, run, rpc, reload, uid,
+  orderStats, demandView, factionDesk, factionAvailableStock, factionInventoryForm, render, run, rpc, reload, uid,
   supplierOptionList, openFabricPurchaseDraft, submit, returnForm, syncOrderStatuses
 }) {
   const stages = [
@@ -521,6 +521,24 @@ export function createFactionWorkflow({
   function handleAction(trigger) {
     const {factionAction:action,factionId:id}=trigger.dataset;
     if(action==='reserve')return reserve();
+    if(action==='inventory'&&state.canOperateFaction&&!state.factionInventoryError){
+      const dialog=openDialog('Lançar inventário de tecidos',factionInventoryForm());
+      const lines=dialog.querySelector('[data-inventory-lines]');
+      const add=dialog.querySelector('[data-inventory-add]');
+      lines.onclick=event=>{
+        const remove=event.target.closest('[data-inventory-remove]');
+        if(remove&&lines.children.length>1){
+          remove.closest('[data-inventory-line]').remove();
+          add.focus();
+        }
+      };
+      add.onclick=()=>{
+        if(lines.children.length>=500)return;
+        lines.append(dialog.querySelector('template[data-inventory-template]').content.cloneNode(true));
+        lines.lastElementChild.querySelector('input').focus();
+      };
+      return;
+    }
     if(action==='manual-item'&&state.canOperateFaction){
       if(!state.loaded||state.factionCatalogError)
         return openDialog('Adicionar produto','<p>Não foi possível carregar as fichas da facção. Feche a janela e clique em Atualizar dados.</p>');
