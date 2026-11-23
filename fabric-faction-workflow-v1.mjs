@@ -252,9 +252,9 @@ export function createFactionWorkflow({
 
   }
 
-  function openDialog(title, contents) {
+  function openDialog(title, contents, extraClass='') {
     const dialog=document.createElement('dialog');
-    dialog.className='fw-recipe-dialog';
+    dialog.className='fw-recipe-dialog '+extraClass;
     dialog.setAttribute('aria-labelledby','faction-dialog-title');
     dialog.innerHTML=`<header class="fw-modal-head"><h2 id="faction-dialog-title">${title}</h2><button type="button" aria-label="Fechar" data-faction-close>×</button></header><div class="fw-panel"><p data-faction-error role="alert" hidden></p>${contents}</div>`;
     dialog.querySelector('[data-faction-close]').onclick=()=>dialog.close();
@@ -522,7 +522,7 @@ export function createFactionWorkflow({
     const {factionAction:action,factionId:id}=trigger.dataset;
     if(action==='reserve')return reserve();
     if(action==='inventory'&&state.canOperateFaction&&!state.factionInventoryError){
-      const dialog=openDialog('Lançar inventário de tecidos',factionInventoryForm());
+      const dialog=openDialog('Lançar inventário de tecidos',factionInventoryForm(),'fw-inventory-dialog');
       const lines=dialog.querySelector('[data-inventory-lines]');
       const add=dialog.querySelector('[data-inventory-add]');
       lines.onclick=event=>{

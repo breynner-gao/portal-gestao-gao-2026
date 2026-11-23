@@ -3,7 +3,7 @@ import {createTextileCostDashboard} from '/textile-cost-dashboard-v1.mjs?v=5';
 import {groupPurchaseCards,supplierCards} from '/fabric-purchase-cards-v1.mjs?v=1';
 import { purchaseReportStatuses, renderPurchaseReport, formatPurchasePaymentDays } from '/fabric-purchase-report-v1.mjs?v=5';
 import { openReport as openPurchaseReportWindow } from '/relave-report-export-v1.mjs?v=1';
-import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=11';
+import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=12';
 import {createFactionDesk} from '/fabric-faction-portal-v1.mjs?v=2';
 import {createFabricWorkbookImport} from '/fabric-workbook-import-v1.mjs?v=1';
 import {buildPendingProductionCoverage,applyPendingProductionCoverage,compactDimensionKey} from '/linen-risk-rules-v150.mjs?v=230';
@@ -1162,7 +1162,7 @@ async function submit(form){
  if(table==='factionInventory'){
   const lines=[...form.querySelectorAll('[data-inventory-line]')].map(row=>Object.fromEntries(
    [...row.querySelectorAll('input')].map(input=>[input.dataset.field,input.value===''?null:
-     input.type==='number'?Number(input.value):input.value])));
+     input.type==='number'||input.dataset.field==='width_m'?Number(input.value):input.value])));
   return rpc('fabric_record_faction_inventory',{p_org:state.org,p_id:d.id,p_previous:d.previous||null,
    p_on:d.counted_on,p_notes:d.notes,p_lines:lines});
  }
@@ -1477,29 +1477,64 @@ function mount(){
  if(!shell.querySelector('#gao-fabric-flow')){const host=document.createElement('div');host.id='gao-fabric-flow';host.hidden=!state.mode;shell.appendChild(host);render();if(!state.org){init().then(render).catch(err=>{state.error=err.message;render()})}}
 }
 const buying=createBuyingController({state,buyingSnapshot,esc,n,br,rpc,reload,render,uid,fabricBuyingBalances,liveBalances,fabricMatches,openRecipeDialog,productionView,trackingView,ordersTable,purchaseOrderView,openPurchaseOrder,stockPanels,qualityView,costView,forecastProductMatrix,standardsManagementView,recipeView,openFabricPurchaseDraft,submit,saveQualityBatch,returnForm,orderStats,syncOrderStatuses,refreshPurchaseReferences});
+const inventoryStyle=document.createElement('style');
+inventoryStyle.textContent=`
+.fw-recipe-dialog.fw-inventory-dialog{width:min(860px,calc(100% - 20px));max-height:calc(100dvh - 24px);overflow:hidden}
+.fw-inventory-dialog .fw-panel{display:flex;flex-direction:column;max-height:calc(100dvh - 106px);overflow:hidden;box-sizing:border-box}
+.fw-inventory-dialog [data-faction-form]{display:flex;flex-direction:column;gap:12px;min-height:0;margin:0}
+.fw-inventory-meta{display:grid;grid-template-columns:minmax(130px,180px) minmax(0,1fr);gap:12px}
+.fw-inventory-meta label{display:grid;gap:5px;min-width:0}
+.fw-inventory-dialog input:not([type=hidden]){box-sizing:border-box;width:100%;min-width:0}
+.fw-inventory-help{margin:0;color:#39566e}
+.fw-inventory-table{overflow:auto;min-height:0;border:1px solid #d7e4ef;border-radius:8px}
+.fw-inventory-dialog .fw-inventory-table table{width:100%;min-width:0;table-layout:fixed;border-collapse:collapse}
+.fw-inventory-table thead th{position:sticky;top:0;background:#eef6fc;z-index:1}
+.fw-inventory-table th,.fw-inventory-table td{padding:8px 10px;text-align:left;overflow-wrap:anywhere}
+.fw-inventory-table thead th:first-child{width:50%}
+.fw-inventory-table tbody th{font-weight:400}
+.fw-inventory-table small{display:block;color:#415f76}
+.fw-inventory-new{display:grid;gap:6px}
+.fw-inventory-actions{display:flex;justify-content:space-between;gap:8px;padding-top:4px}
+.fw-inventory-actions [data-inventory-add]{background:#edf5fb;color:#164d78;border:1px solid #b9d6ec}
+@media(max-width:520px){
+ .fw-inventory-table th,.fw-inventory-table td{padding:6px 5px}
+ .fw-inventory-table thead th:first-child{width:40%}
+ .fw-inventory-meta{grid-template-columns:1fr;gap:6px}
+}
+`;
+document.head.appendChild(inventoryStyle);
 function factionInventoryLine(row={},existing=false){
- const field=(key,label,type,attrs='')=>'<label>'+label+'<input data-field="'+key+'" type="'+type+
-  '" value="'+esc(row[key]??'')+'" '+attrs+'></label>';
- return '<div class="fw-po-fields" data-inventory-line>'+
-  field('material','Tecido','text','required maxlength="120"'+(existing?' readonly':''))+
-  field('supplier_or_brand','Fornecedor ou marca','text','maxlength="120"'+(existing?' readonly':''))+
-  field('width_m','Largura (m)','number','min=".001" max="99999.999" step=".001"'+(existing?' readonly':''))+
-  field('physical_m','Saldo físico (m)','number','min="0" max="99999999999.999" step=".001"'+
-   (!existing||row.physical_m!=null?' required':' placeholder="Pendente"'))+
-  (existing?'':'<button type="button" data-inventory-remove>Remover nova linha</button>')+'</div>';
+ const field=(key,type,label,attrs='')=>'<input data-field="'+key+'" type="'+type+
+  '" value="'+esc(row[key]??'')+'" aria-label="'+esc(label)+'" '+attrs+'>';
+ const meta=[row.supplier_or_brand,row.width_m==null?'':br(row.width_m,3)+' m de largura'].filter(Boolean).join(' · ');
+ const identity=existing?
+  '<strong>'+esc(row.material)+'</strong>'+(meta?'<small>'+esc(meta)+'</small>':'')+
+  field('material','hidden','Tecido')+field('supplier_or_brand','hidden','Fornecedor')+field('width_m','hidden','Largura'):
+  '<div class="fw-inventory-new">'+field('material','text','Tecido','placeholder="Nome do tecido" required maxlength="120"')+
+  field('supplier_or_brand','text','Fornecedor ou marca','placeholder="Fornecedor ou marca" maxlength="120"')+
+  field('width_m','number','Largura em metros','placeholder="Largura (m)" min=".001" max="99999.999" step=".001"')+
+  '<button type="button" data-inventory-remove>Remover linha</button></div>';
+ const previous=existing?(row.physical_m==null?'Pendente':br(row.physical_m,3)):'—';
+ return '<tr data-inventory-line><th scope="row">'+identity+'</th><td>'+previous+'</td><td>'+
+  field('physical_m','number','Nova contagem em metros'+(existing?' de '+row.material+(row.supplier_or_brand?' · '+row.supplier_or_brand:''):''),
+   'min="0" max="99999999999.999" step=".001" inputmode="decimal"'+
+   (existing&&row.physical_m==null?' placeholder="Pendente"':' required'))+'</td></tr>';
 }
 function factionInventoryForm(){
  const latest=state.factionInventories?.[0];
  const rows=latest?.lines||(state.factionStock?.counts||currentFactionCount());
+ const today=localDay(new Date().toISOString());
  return '<form data-faction-form="factionInventory">'+
   '<input type="hidden" name="id" value="'+esc(uid())+'"><input type="hidden" name="previous" value="'+esc(latest?.id||'')+'">'+
-  '<label>Data da contagem<input type="date" name="counted_on" required value="'+localDay(new Date().toISOString())+'"'+
-   (latest?' min="'+esc(latest.counted_on)+'"':'')+' max="'+localDay(new Date().toISOString())+'"></label>'+
-  '<label>Observação<textarea name="notes" maxlength="1000"></textarea></label>'+
-  '<p>Confirme a metragem de cada tecido. Informe zero quando o tecido acabar e adicione novas linhas quando necessário.</p>'+
-  '<div data-inventory-lines style="display:grid;gap:10px">'+(rows.length?rows.map(row=>factionInventoryLine(row,true)).join(''):factionInventoryLine())+'</div>'+
+  '<div class="fw-inventory-meta"><label>Data da contagem<input type="date" name="counted_on" required value="'+today+'"'+
+   (latest?' min="'+esc(latest.counted_on)+'"':'')+' max="'+today+'"></label>'+
+  '<label>Observação (opcional)<input name="notes" maxlength="1000"></label></div>'+
+  '<p class="fw-inventory-help">Confira a nova contagem em metros. Se o tecido acabou, informe 0.</p>'+
+  '<div class="fw-inventory-table"><table><thead><tr><th scope="col">Tecido</th><th scope="col">Saldo anterior (m)</th><th scope="col">Nova contagem (m)</th></tr></thead>'+
+  '<tbody data-inventory-lines>'+(rows.length?rows.map(row=>factionInventoryLine(row,true)).join(''):factionInventoryLine())+'</tbody></table></div>'+
   '<template data-inventory-template>'+factionInventoryLine()+'</template>'+
-  '<button type="button" data-inventory-add>Adicionar tecido</button><button type="submit">Salvar inventário</button></form>';
+  '<footer class="fw-inventory-actions"><button type="button" data-inventory-add>+ Adicionar tecido</button>'+
+  '<button type="submit">Salvar inventário</button></footer></form>';
 }
 function factionInventoryHistory(){
  const records=state.factionInventories||[];
