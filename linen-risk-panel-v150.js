@@ -73,7 +73,7 @@ function snapshot(label = state.fileName) {
   const s = summary(); const t = sourceTotals();
   return { id: `${Date.now()}`, label, asOf: state.asOf || new Date().toISOString().slice(0, 10), informedAt: state.informedAt || state.asOf, source: state.factionSource || '', total: s.total, red: s.red, yellow: s.yellow, pedido: s.pedido, pedidoReal: s.pedidoReal, faccao: s.faccao, estoque: t.total, supply: listMovementItems(state.rows).filter(x=>x.direcao==='supply').reduce((a,x)=>a+x.quantidade,0), returns: listMovementItems(state.rows).filter(x=>x.direcao==='return').reduce((a,x)=>a+x.quantidade,0) };
 }
-function saveHistory() { const item = snapshot(); const old = readHistory(); localStorage.setItem(HISTORY_KEY, JSON.stringify([item, ...old].slice(0, 24))); }
+function saveHistory() { try { const item = snapshot(); const old = readHistory(); localStorage.setItem(HISTORY_KEY, JSON.stringify([item, ...old].slice(0, 24))); } catch {} }
 function resetCurrentBase() { localStorage.removeItem(CURRENT_KEY); location.reload(); }
 const IDEALS_TABLE = 'linen_ideal_references';
 let idealReferences = new Map();
@@ -202,9 +202,10 @@ async function loadSharedSnapshot(context) {
   return Array.isArray(result) ? result[0] || null : null;
 }
 
-async function syncSharedSnapshot() {
+async function syncSharedSnapshot({automatic = false} = {}) {
+  const revision = rfidRevision;
   if (!state.baseRows.length || state.cloudBusy) return;
-  if (!window.confirm('Compartilhar a base RFID atualmente carregada com os usuários autorizados da GAO neste portal? A cópia será gravada no Supabase para aparecer também no tablet.')) return;
+  if (!automatic && !window.confirm('Compartilhar a base RFID atualmente carregada com os usuários autorizados da GAO neste portal? A cópia será gravada no Supabase para aparecer também no tablet.')) return;
   state = { ...state, cloudBusy: true, cloudStatus: 'Sincronizando base RFID com o portal…' };
   render();
   try {
@@ -233,11 +234,16 @@ async function syncSharedSnapshot() {
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw Error(result.message || result.details || 'Falha ao gravar a base compartilhada.');
     const saved = Array.isArray(result) ? result[0] : result;
-    state = { ...state, cloudReady: true, cloudCanWrite: true, cloudOrgId: context.organizationId, cloudUpdatedAt: saved?.updated_at || new Date().toISOString(), needsCloudSync: false, cloudBusy: false, cloudStatus: 'Base RFID sincronizada. O tablet pode carregar os mesmos dados ao atualizar a página.' };
+    if (!saved?.updated_at) throw Error('O portal não confirmou a gravação da nova base.');
+    if (revision !== rfidRevision) {
+      state = {...state, cloudBusy:false};
+      return syncSharedSnapshot({automatic:true});
+    }
+    state = { ...state, cloudReady: true, cloudCanWrite: true, cloudOrgId: context.organizationId, cloudUpdatedAt: saved?.updated_at || new Date().toISOString(), needsCloudSync: false, cloudBusy: false, cloudStatus: 'Nova planilha salva no portal: '+state.fileName+'. Base atualizada para os usuários autorizados.' };
     saveCurrent();
     render();
   } catch (error) {
-    state = { ...state, cloudBusy: false, cloudStatus: error.message || String(error) };
+    state = { ...state, cloudBusy: false, cloudStatus: 'A nova planilha ainda NÃO foi salva no portal: '+(error.message || String(error)) };
     render();
   }
 }
@@ -454,8 +460,8 @@ function applyUploadedRows(rows, fileName) {
     baseRows: summary.rows,
     rows: applyFactionToRows(rowsWithIdeal(summary.rows), factionMap || {}),
     fileName,
-    asOf: new Date().toISOString().slice(0, 10),
-    informedAt: new Date().toISOString().slice(0, 10),
+    asOf: todayLocal(),
+    informedAt: todayLocal(),
     sourceSheet: 'Arquivo importado',
     sourceRule: 'Base importada pelo usuário nesta sessão.',
     factionMap,
@@ -466,6 +472,7 @@ function applyUploadedRows(rows, fileName) {
   saveHistory();
   saveCurrent();
   render();
+  void syncSharedSnapshot({automatic:true});
   fetchOnlineFaction();
 }
 
