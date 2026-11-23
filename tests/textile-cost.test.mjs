@@ -69,3 +69,19 @@ test('parcelas preservam os centavos; registros sem prazo ficam fora dos meses d
  assert.deepEqual(model.payments.map(row=>row.amount),[3334,3333,3333]);
  assert.deepEqual(model.unscheduled.map(row=>row.orderId),['sem-prazo']);
 });
+
+test('lançamento de tecido aponta para o lote exato e para a ordem vinculada',async()=>{
+ const {renderSpendingDetails,renderSpendingRow}=await import('../textile-cost-view-v1.mjs');
+ const state={
+  lots:[{id:'lote-1',invoice_number:'490204',received_date:'2026-11-01',quantity_received_m:600,effective_price_per_m:15.69}],
+  purchaseOrders:[{id:'oc-1',order_number:'ASJ2643402',status:'RECEBIDA',ordered_date:'2026-11-01'}],
+  purchaseItems:[{id:'item-1',purchase_order_id:'oc-1',ordered_m:600}],
+  purchaseReceipts:[{id:'recebimento-1',lot_id:'lote-1',purchase_order_item_id:'item-1',quantity_received_m:600}]
+ };
+ const model=buildTextileCosts(state,{month:'2026-11'});
+ assert.match(renderSpendingDetails(model,'total'),/data-spend-row="0"/);
+ const detail=renderSpendingRow(model.actual[0]);
+ assert.match(detail,/data-fw-open-lot-quality="lote-1"/);
+ assert.match(detail,/data-fw-spend-purchase="oc-1"/);
+ assert.match(detail,/Voltar aos lançamentos/);
+});

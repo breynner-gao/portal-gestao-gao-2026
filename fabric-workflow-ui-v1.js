@@ -1,4 +1,4 @@
-import {createTextileCostDashboard} from '/textile-cost-dashboard-v1.mjs?v=3';
+import {createTextileCostDashboard} from '/textile-cost-dashboard-v1.mjs?v=4';
 import {groupPurchaseCards,supplierCards} from '/fabric-purchase-cards-v1.mjs?v=1';
 import { purchaseReportStatuses, renderPurchaseReport, formatPurchasePaymentDays } from '/fabric-purchase-report-v1.mjs?v=5';
 import { openReport as openPurchaseReportWindow } from '/relave-report-export-v1.mjs?v=1';
@@ -514,7 +514,7 @@ function openPurchaseOrder(id,root){
  if(order&&root)purchasePopup(root,'order',id,purchaseLabel(order),purchaseOrderBody(order));
 }
 function refreshPurchaseWindows(root){
- if(!root?.isConnected){render();return;}
+ if(!root?.isConnected||!root.matches('.fw-purchase-orders')){render();return;}
  const stage=root.dataset.purchaseStage,search=root.querySelector('[data-fw-purchase-search]').value;
  const metadata=root.querySelector('[data-fw-purchase-meta]');
  const allowed=metadata.querySelector('[data-fw-purchase-excluded]')
@@ -1237,6 +1237,8 @@ document.addEventListener('click',async e=>{
  }
  const poClose=e.target.closest('[data-fw-po-close]');if(poClose){const dialog=poClose.closest('dialog');if(dialog.dataset.saving!=='true')dialog.close();return;}
  const supplierCard=e.target.closest('[data-fw-purchase-supplier]');if(supplierCard){openPurchaseSupplier(supplierCard);return;}
+ const spendPurchase=e.target.closest('[data-fw-spend-purchase]');
+ if(spendPurchase){openPurchaseOrder(spendPurchase.dataset.fwSpendPurchase,spendPurchase.closest('[data-spend-dashboard]'));return;}
  const purchaseView=e.target.closest('[data-fw-view-purchase]');if(purchaseView){openPurchaseOrder(purchaseView.dataset.fwViewPurchase,purchaseRoot(purchaseView));return;}
  const purchaseEdit=e.target.closest('[data-fw-edit-purchase]');if(purchaseEdit){openPurchaseEdit(purchaseEdit.dataset.fwEditPurchase,purchaseRoot(purchaseEdit));return;}
  const exclude=e.target.closest('[data-fw-exclude-po]');if(exclude){e.preventDefault();await excludePurchase(exclude);return;}

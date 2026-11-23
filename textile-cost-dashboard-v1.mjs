@@ -1,5 +1,5 @@
-import {buildTextileCosts,costCategories,shiftMonth} from './textile-cost-rules-v1.mjs?v=2';
-import {renderTextileCosts,renderTextileCostReport,renderSpendingDetails} from './textile-cost-view-v1.mjs?v=3';
+import {buildTextileCosts,costCategories,shiftMonth} from './textile-cost-rules-v1.mjs?v=3';
+import {renderTextileCosts,renderTextileCostReport,renderSpendingDetails,renderSpendingRow,spendingDetails} from './textile-cost-view-v1.mjs?v=4';
 import {openReport} from './relave-report-export-v1.mjs?v=2';
 const csv=v=>{let t=String(v??'');if(/^[=+@\-\t\r]/.test(t))t="'"+t;return '"'+t.replace(/"/g,'""')+'"';};
 const decimal=(v,d=2)=>Number(v).toLocaleString('pt-BR',{useGrouping:false,minimumFractionDigits:d,maximumFractionDigits:d});
@@ -26,10 +26,14 @@ export function createTextileCostDashboard({state,render}){
    if(!dashboard)return;
    const dialog=dashboard.querySelector('[data-spend-dialog]');
    if(!dialog)return;
-   let opener;
+   const rowDialog=dashboard.querySelector('[data-spend-row-dialog]');
+   let opener,rowOpener,visibleRows=[];
+   rowDialog?.addEventListener('close',()=>rowOpener?.focus({preventScroll:true}));
    function showDetails(target,view,selectedCategory='',month){
     opener=target;
-    dialog.innerHTML=renderSpendingDetails(model(month),view,selectedCategory);
+    const selection=model(month);
+    visibleRows=spendingDetails(selection,view==='ceiling'?'orders':view,selectedCategory).rows;
+    dialog.innerHTML=renderSpendingDetails(selection,view,selectedCategory);
     dialog.showModal();
    }
    dialog.addEventListener('close',()=>opener?.focus({preventScroll:true}));
@@ -38,6 +42,17 @@ export function createTextileCostDashboard({state,render}){
     if(event.target.matches('[data-spend-filter]')){category=event.target.value;render();}
    });
    dashboard.addEventListener('click',event=>{
+    const rowButton=event.target.closest('[data-spend-row]');
+    if(rowButton?.hasAttribute?.('data-spend-row')){
+     const row=visibleRows[Number(rowButton.dataset.spendRow)];
+     if(!row||!rowDialog)return;
+     rowOpener=rowButton;
+     const ready=state.pieceOrders?.find(order=>order.id===row.orderId);
+     rowDialog.innerHTML=renderSpendingRow(row,{canManage:state.canManagePurchases,
+      readyEditable:ready&&ready.status!=='CANCELADA',factionEditable:Boolean(row.orderItemId)});
+     rowDialog.showModal();
+     return;
+    }
     const target=event.target.closest('[data-spend-drill],[data-spend-month],[data-spend-category],[data-spend-prev],[data-spend-next],[data-spend-report],[data-spend-csv]');
     if(!target)return;
     const {spendDrill,spendDrillCategory,spendDrillMonth,spendMonth,spendCategory}=target.dataset;

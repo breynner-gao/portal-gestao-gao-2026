@@ -23,12 +23,12 @@ export function buildTextileCosts(state,{month,today}={}){
   const quantity=n(lot.quantity_received_m);const price=lot.effective_price_per_m!=null?n(lot.effective_price_per_m):n(lot.purchase_price_per_m)+(quantity?(n(lot.freight_cost)+n(lot.other_cost))/quantity:0);
   // Opening stock without an invoice is not a new purchase in the dashboard.
   if(!source&&!String(lot.invoice_number||'').trim()){warnings.push({kind:'opening',name:lot.lot_code||lot.id});continue;}
-  push(actual,{id:'fabric:'+lot.id,...invoicePayment('fabric:'+lot.id,order,lot.supplier_id,lot.invoice_number||source?.invoice_number),category:'fabric',date:localDay(lot.received_date),description:fabricName(lot.fabric_id),document:'NF '+(lot.invoice_number||source?.invoice_number||'a informar')+' · lote '+lot.lot_code,order:order?'OC '+order.order_number:'Entrada direta',supplier:supplier(lot.supplier_id),quantity,unit:'m',price,amount:cents(quantity*price),basis:'Quantidade recebida × custo efetivo do lote'});
+  push(actual,{id:'fabric:'+lot.id,lotId:lot.id,...invoicePayment('fabric:'+lot.id,order,lot.supplier_id,lot.invoice_number||source?.invoice_number),category:'fabric',date:localDay(lot.received_date),description:fabricName(lot.fabric_id),document:'NF '+(lot.invoice_number||source?.invoice_number||'a informar')+' · lote '+lot.lot_code,order:order?'OC '+order.order_number:'Entrada direta',supplier:supplier(lot.supplier_id),quantity,unit:'m',price,amount:cents(quantity*price),basis:'Quantidade recebida × custo efetivo do lote'});
  }
  // Canceled orders retain genuine historical receipts. Only their future balance is canceled.
  for(const receipt of readyReceipts){const order=ready.find(o=>o.id===receipt.order_id);if(!order){warnings.push({kind:'orphan',name:receipt.id});continue;}const quantity=n(receipt.accepted_pieces),price=n(receipt.unit_price);push(actual,{id:'ready:'+receipt.id,...invoicePayment('ready:'+receipt.id,order,order.supplier_id,receipt.invoice_number),category:'ready',date:localDay(receipt.received_date),description:order.product_name,document:'NF '+(receipt.invoice_number||'a informar'),order:'OC '+order.order_number,supplier:supplier(order.supplier_id),quantity,unit:'pç',price,amount:cents(quantity*price),basis:'Peças aceitas × preço registrado no recebimento'});}
  for(const record of returns){const item=items.find(i=>i.id===record.order_item_id),order=orders.find(o=>o.id===item?.order_id);const date=localDay(record.returned_at);for(const [category,field] of [['faction','faction_cost_amount'],['extras','extras_cost_amount']]){
-  const amount=cents(record[field]);if(!amount)continue;push(actual,{id:category+':'+record.id,orderId:order?.id,paymentKey:'faction-return:'+record.id,category,date,description:item?.product_name||'Produto a identificar',document:'Entrega '+record.id.slice(0,8),order:'OS '+(order?.order_number||'a informar'),supplier:category==='faction'?'Facção':'Aviamentos / insumos',quantity:n(record.accepted_pieces)+n(record.rejected_pieces),unit:'pç',price:null,amount,basis:'Custo efetivamente informado na entrega da facção'});
+  const amount=cents(record[field]);if(!amount)continue;push(actual,{id:category+':'+record.id,orderId:order?.id,orderItemId:item?.id,paymentKey:'faction-return:'+record.id,category,date,description:item?.product_name||'Produto a identificar',document:'Entrega '+record.id.slice(0,8),order:'OS '+(order?.order_number||'a informar'),supplier:category==='faction'?'Facção':'Aviamentos / insumos',quantity:n(record.accepted_pieces)+n(record.rejected_pieces),unit:'pç',price:null,amount,basis:'Custo efetivamente informado na entrega da facção'});
  }}
  for(const order of po.filter(o=>!['CANCELADA','CONCLUIDA','RECEBIDA','ENCERRADA'].includes(o.status)&&o.logistics_stage!=='COTACAO'))for(const line of lines.filter(l=>l.purchase_order_id===order.id)){
   const detailed=receipts.filter(r=>r.purchase_order_item_id===line.id).reduce((s,r)=>s+n(r.quantity_received_m),0),received=Math.max(n(line.received_m),detailed),quantity=Math.max(0,n(line.ordered_m)-received);if(!quantity)continue;
@@ -47,20 +47,20 @@ export function buildTextileCosts(state,{month,today}={}){
   for(const bucket of buckets)for(const [category,field] of [['faction','faction_cost_per_piece'],['extras','extras_cost_per_piece']]){
    if(item[field]==null||item[field]===''){warnings.push({kind:'price',name:item.product_name,category});continue;}
    const price=n(item[field]);if(price===0){if(category==='faction')warnings.push({kind:'zero',name:item.product_name,category});continue;}
-   push(planned,{id:category+':'+item.id+':'+bucket.key,orderId:order.id,category,date:bucket.date,description:item.product_name,document:bucket.key==='unplanned'?'Saldo da OS sem lote programado':'Lote '+bucket.key.slice(0,8),order:'OS '+order.order_number,supplier:category==='faction'?'Facção':'Aviamentos / insumos',quantity:bucket.quantity,unit:'pç',price,amount:cents(bucket.quantity*price),basis:'Peças pendentes × custo unitário gravado na OS'});
+   push(planned,{id:category+':'+item.id+':'+bucket.key,orderId:order.id,orderItemId:item.id,category,date:bucket.date,description:item.product_name,document:bucket.key==='unplanned'?'Saldo da OS sem lote programado':'Lote '+bucket.key.slice(0,8),order:'OS '+order.order_number,supplier:category==='faction'?'Facção':'Aviamentos / insumos',quantity:bucket.quantity,unit:'pç',price,amount:cents(bucket.quantity*price),basis:'Peças pendentes × custo unitário gravado na OS'});
   }
  }
  for(const order of po.filter(o=>o.status!=='CANCELADA'&&o.logistics_stage!=='COTACAO')){
   for(const line of lines.filter(l=>l.purchase_order_id===order.id)){
    const quantity=n(line.ordered_m),price=n(line.purchase_price_per_m);
-   push(commitments,{id:'ordered-fabric:'+line.id,category:'fabric',date:localDay(order.ordered_date),
+   push(commitments,{id:'ordered-fabric:'+line.id,orderId:order.id,category:'fabric',date:localDay(order.ordered_date),
     description:fabricName(line.fabric_id),order:'OC '+order.order_number,supplier:supplier(order.supplier_id),
     quantity,unit:'m',price,amount:cents(quantity*price),basis:'Valor integral do item na ordem de compra'});
   }
  }
  for(const order of ready.filter(o=>o.status!=='CANCELADA')){
   const quantity=n(order.ordered_pieces),price=n(order.unit_price);
-  push(commitments,{id:'ordered-ready:'+order.id,category:'ready',date:localDay(order.ordered_date),
+  push(commitments,{id:'ordered-ready:'+order.id,orderId:order.id,category:'ready',date:localDay(order.ordered_date),
    description:order.product_name,order:'OC '+order.order_number,supplier:supplier(order.supplier_id),
    quantity,unit:'pç',price,amount:cents(quantity*price),basis:'Valor integral da ordem de compra'});
  }
@@ -70,7 +70,7 @@ export function buildTextileCosts(state,{month,today}={}){
   for(const [category,field] of [['faction','faction_cost_per_piece'],['extras','extras_cost_per_piece']]){
    const quantity=n(item.ordered_pieces),price=n(item[field]);
    if(!price)continue;
-   push(commitments,{id:'ordered-'+category+':'+item.id,category,date:localDay(order.created_at),
+   push(commitments,{id:'ordered-'+category+':'+item.id,orderId:order.id,orderItemId:item.id,category,date:localDay(order.created_at),
     description:item.product_name,order:'OS '+order.order_number,supplier:category==='faction'?'Facção':'Aviamentos / insumos',
     quantity,unit:'pç',price,amount:cents(quantity*price),basis:'Peças previstas × custo unitário da OS'});
   }

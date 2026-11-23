@@ -81,3 +81,7 @@
 .fw-spend-dialog-body {
  padding:16px;
 }
+
+.fw-spend-dialog-body .fw-spend-tools {
+ margin-top:16px;
+}
