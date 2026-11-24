@@ -1479,13 +1479,15 @@ function mount(){
 const buying=createBuyingController({state,buyingSnapshot,esc,n,br,rpc,reload,render,uid,fabricBuyingBalances,liveBalances,fabricMatches,openRecipeDialog,productionView,trackingView,ordersTable,purchaseOrderView,openPurchaseOrder,stockPanels,qualityView,costView,forecastProductMatrix,standardsManagementView,recipeView,openFabricPurchaseDraft,submit,saveQualityBatch,returnForm,orderStats,syncOrderStatuses,refreshPurchaseReferences});
 const inventoryStyle=document.createElement('style');
 inventoryStyle.textContent=`
-.fw-recipe-dialog.fw-inventory-dialog{width:min(860px,calc(100% - 20px));max-height:calc(100dvh - 24px);overflow:hidden}
-.fw-inventory-dialog .fw-panel{display:flex;flex-direction:column;max-height:calc(100dvh - 106px);overflow:hidden;box-sizing:border-box}
-.fw-inventory-dialog [data-faction-form]{display:flex;flex-direction:column;gap:12px;min-height:0;margin:0}
+.fw-recipe-dialog.fw-inventory-dialog[open]{display:flex;flex-direction:column;box-sizing:border-box;width:min(860px,calc(100% - 20px));max-height:calc(100dvh - 24px);overflow:hidden}
+.fw-inventory-dialog > .fw-modal-head{flex:none}
+.fw-inventory-dialog > .fw-panel{display:flex;flex-direction:column;min-height:0;overflow:hidden;box-sizing:border-box}
+.fw-inventory-dialog .fw-panel > form[data-faction-form="factionInventory"]{display:flex;flex-flow:column nowrap;align-items:stretch;gap:12px;min-width:0;min-height:0;margin:0}
 .fw-inventory-meta{display:grid;grid-template-columns:minmax(130px,180px) minmax(0,1fr);gap:12px}
-.fw-inventory-meta label{display:grid;gap:5px;min-width:0}
+.fw-inventory-dialog .fw-panel form .fw-inventory-meta label{display:grid;gap:5px;min-width:0}
 .fw-inventory-dialog input:not([type=hidden]){box-sizing:border-box;width:100%;min-width:0}
 .fw-inventory-help{margin:0;color:#39566e}
+.fw-inventory-meta,.fw-inventory-help,.fw-inventory-actions{flex:none}
 .fw-inventory-table{overflow:auto;min-height:0;border:1px solid #d7e4ef;border-radius:8px}
 .fw-inventory-dialog .fw-inventory-table table{width:100%;min-width:0;table-layout:fixed;border-collapse:collapse}
 .fw-inventory-table thead th{position:sticky;top:0;background:#eef6fc;z-index:1}
