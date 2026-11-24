@@ -17,7 +17,7 @@ export function formatPurchasePaymentDays(days){
  return days.join(' / ')+(days.length===1&&days[0]===1?' dia':' dias');
 }
 
-export function renderPurchaseReport(data,{supplierId,orderId,statusFilter='',logo,issuedAt=new Date()}={}){
+export function renderPurchaseReport(data,{supplierId,orderId,orderIds,statusFilter='',logo,issuedAt=new Date()}={}){
  const e=value=>String(value??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const qty=value=>new Intl.NumberFormat('pt-BR',{maximumFractionDigits:3}).format(value)+' m';
  const money=(value,digits=2)=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:digits}).format(value);
@@ -25,7 +25,9 @@ export function renderPurchaseReport(data,{supplierId,orderId,statusFilter='',lo
  const name=s=>s?.trade_name||s?.legal_name||'Fornecedor não identificado';
  const table=(headers,rows)=>rows.length?`<table><thead><tr>${headers.map(x=>`<th scope="col">${e(x)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map(x=>`<td>${e(x===''?'—':x)}</td>`).join('')}</tr>`).join('')}</tbody></table>`:'<p>Nenhum registro.</p>';
  const totals=rows=>Object.fromEntries(['ordered','received','pending','planned','balance'].map(key=>[key,rows.reduce((sum,row)=>sum+row[key],0)]));
- const rows=data.purchaseOrders.filter(o=>(!supplierId||o.supplier_id===supplierId)&&(!orderId||o.id===orderId)).map(o=>{
+ const selectedOrders=orderIds==null?null:new Set(orderIds);
+ const rows=data.purchaseOrders.filter(o=>(!supplierId||o.supplier_id===supplierId)&&
+  (!orderId||o.id===orderId)&&(!selectedOrders||selectedOrders.has(o.id))).map(o=>{
   const items=data.purchaseItems.filter(i=>i.purchase_order_id===o.id);
   const summary=summarizeFabricPurchaseOrder({orderStatus:o.status,items,receipts:data.purchaseReceipts,lots:data.lots});
   const confirmed=o.status!=='CANCELADA'&&o.logistics_stage!=='COTACAO';
@@ -47,7 +49,7 @@ export function renderPurchaseReport(data,{supplierId,orderId,statusFilter='',lo
   groups.get(id).push(row);
  }
  const general=!supplierId&&!orderId;
- const title=orderId?'Ordem de compra de tecido':supplierId?'Relatório de compras por fornecedor':'Resumo geral de compras de tecido';
+ const title=orderId?'Ordem de compra de tecido':selectedOrders?'Ordens de compra selecionadas':supplierId?'Relatório de compras por fornecedor':'Resumo geral de compras de tecido';
  const stamp=new Intl.DateTimeFormat('pt-BR',{dateStyle:'short',timeStyle:'short',timeZone:'America/Sao_Paulo'}).format(issuedAt);
  const safeLogo=/^data:image\/(?:png|webp);base64,[A-Za-z0-9+/=]+$/.test(logo||'')?`<img src="${logo}" alt="GAO Lavanderia">`:'<strong>GAO Lavanderia</strong>';
  const card=(label,value,caption)=>`<div><strong>${label}</strong><b>${value}</b><small>${caption}</small></div>`;
@@ -94,7 +96,7 @@ export function renderPurchaseReport(data,{supplierId,orderId,statusFilter='',lo
  <p class="order-total"><b>Total previsto da ordem</b> ${money(planned/100)} · <b>Saldo a receber</b> ${qty(pending)} (${money(balance/100)})</p></section>`).join('');
  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GAO · ${title}</title><style>${reportCss}
  h3,h4{break-after:avoid;margin:10px 0 4px}h3{font-size:13px}h4{font-size:11px}.order{border-top:2px solid #dbe5ed;margin-top:14px}.order-total{background:#eef5f9;padding:8px}.order p{overflow-wrap:anywhere}.cards{margin-bottom:10px}.technical{margin-top:18px;padding-top:4px;border-top:2px solid #dbe5ed}.technical th:nth-child(-n+3){width:17%}.technical th:nth-child(4){width:10%}.technical th:nth-child(n+5){width:13%}.technical .order-total{break-inside:avoid}
- </style></head><body><div class="print"></div><main><header><div class="brand">${safeLogo}<span>GESTÃO DE COMPRAS</span></div><h1>${title}</h1><p>Emissão ${e(stamp)}${general?'':' · '+e(name(selected))}</p>${!orderId?`<p>Status do pedido · ${e(purchaseReportStatuses[statusFilter]||statusFilter)}</p>`:''}</header>
+ </style></head><body><div class="print"></div><main><header><div class="brand">${safeLogo}<span>GESTÃO DE COMPRAS</span></div><h1>${title}</h1><p>Emissão ${e(stamp)}${general?'':' · '+e(name(selected))}</p>${selectedOrders?`<p>Ordens selecionadas · ${e(rows.map(row=>row.o.order_number).join(', ')||'—')}</p>`:!orderId?`<p>Status do pedido · ${e(purchaseReportStatuses[statusFilter]||statusFilter)}</p>`:''}</header>
  ${selected&&!general?`<h2>Fornecedor</h2>${table(['Razão social','CNPJ','Contato','Condição de pagamento cadastrada','Prazo de entrega (dias)'],[[selected.legal_name,selected.cnpj,selected.contact,selected.payment_terms,selected.lead_days]])}`:''}
  ${!orderId?`<div class="cards">${card('Ordens registradas',rows.length,confirmed.length+' confirmadas')}${card('Volume confirmado',qty(sum.ordered),qty(sum.received)+' recebidos · '+qty(sum.pending)+' a receber')}${card('Valor previsto confirmado',money(sum.planned/100),money(sum.balance/100)+' referente ao saldo a receber')}</div><p class="note">Os totais confirmados excluem cotações e cancelamentos.</p>`:''}
  ${general?`<h2>Resumo por fornecedor</h2>${!rows.length?'<p>Nenhuma ordem de compra encontrada para os filtros selecionados.</p>':''}${table(['Fornecedor','OC registradas','Pedido','Recebido','A receber','Valor previsto'],[...groups.values()].map(group=>{

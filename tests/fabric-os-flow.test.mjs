@@ -216,3 +216,29 @@ test('matriz em Cadastros mostra a preferência salva por referência, inclusive
  assert.doesNotMatch(html,/data-fw-forecast-setting="2625"[^>]*checked/);
  assert.match(html,/data-fw-forecast-setting="3219"[^>]*checked/);
 });
+
+test('emissão por fornecedor inclui apenas as OCs selecionadas e soma os seus valores',()=>{
+ const data={
+  purchaseOrders:[
+   {id:'a',order_number:'OC-ALFA',supplier_id:'s',status:'ABERTA'},
+   {id:'b',order_number:'OC-BETA',supplier_id:'s',status:'ABERTA'},
+   {id:'c',order_number:'OC-GAMA',supplier_id:'other',status:'ABERTA'},
+   {id:'d',order_number:'OC-DELTA',supplier_id:'s',status:'ABERTA'}
+  ],
+  purchaseItems:[
+   {id:'i',purchase_order_id:'a',ordered_m:10,purchase_price_per_m:5},
+   {id:'j',purchase_order_id:'b',ordered_m:100,purchase_price_per_m:5},
+   {id:'k',purchase_order_id:'c',ordered_m:1000,purchase_price_per_m:5},
+   {id:'l',purchase_order_id:'d',ordered_m:20,purchase_price_per_m:5}
+  ],
+  suppliers:[{id:'s',legal_name:'Fornecedor A'},{id:'other',legal_name:'Fornecedor B'}],
+  purchaseReceipts:[],lots:[],fabric:[],standards:[]
+ };
+ const report=renderPurchaseReport(data,{supplierId:'s',orderIds:['a','c','d','a']});
+ assert.match(report,/Ordens de compra selecionadas/);
+ assert.match(report,/OC-ALFA/);
+ assert.match(report,/OC-DELTA/);
+ assert.doesNotMatch(report,/OC-BETA|OC-GAMA|Fornecedor B/);
+ assert.match(report,/Valor previsto confirmado<\/strong><b>R\$\s*150,00/);
+ assert.doesNotMatch(renderPurchaseReport(data,{supplierId:'s',orderIds:[]}),/OC-ALFA|OC-BETA|OC-DELTA/);
+});

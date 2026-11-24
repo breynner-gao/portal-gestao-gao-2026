@@ -1,7 +1,7 @@
 import {invoicePaymentKey,localDay} from '/textile-cost-rules-v1.mjs?v=4';
 import {createTextileCostDashboard} from '/textile-cost-dashboard-v1.mjs?v=5';
 import {groupPurchaseCards,supplierCards} from '/fabric-purchase-cards-v1.mjs?v=1';
-import { purchaseReportStatuses, renderPurchaseReport, formatPurchasePaymentDays } from '/fabric-purchase-report-v1.mjs?v=5';
+import { purchaseReportStatuses, renderPurchaseReport, formatPurchasePaymentDays } from '/fabric-purchase-report-v1.mjs?v=6';
 import { openReport as openPurchaseReportWindow } from '/relave-report-export-v1.mjs?v=1';
 import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=12';
 import {createFactionDesk} from '/fabric-faction-portal-v1.mjs?v=2';
@@ -58,6 +58,11 @@ style.textContent+=`
 .fw-po-popup .fw-po-notes{grid-column:1/-1}
 .fw-po-popup .fw-po-product{margin:16px 0;padding:12px 0;border-top:1px solid #d5e2ef}
 .fw-po-order-list{display:grid;gap:10px}
+.fw-po-selection{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px}
+.fw-po-selection label,.fw-po-pick{display:flex;align-items:center;gap:8px;color:#123b60;font-weight:750}
+.fw-po-popup .fw-panel input[type=checkbox]{width:18px;height:18px;margin:0;accent-color:#0879c9;flex:none}
+.fw-po-pick{margin-bottom:5px}
+.fw-po-selection button:disabled{opacity:.55;cursor:default}
 .fw-po-order-entry{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;padding:12px;border:1px solid #d5e2ef;border-radius:9px}
 .fw-po-order-entry h3{margin:0 0 4px}
 .fw-po-order-entry p{margin:6px 0 0}
@@ -398,22 +403,25 @@ async function excludePurchase(button){
  }finally{state.busy=false;button.disabled=false;if(dialog)dialog.dataset.saving='false';}
 }
 function openPurchaseReport(button){
- const panel=purchaseRoot(button);
- const error=button.closest('[data-fw-po-dialog]')?.querySelector('[data-fw-po-error]')||panel.querySelector('[data-fw-purchase-report-error]');
+ const panel=purchaseRoot(button),dialog=button.closest('[data-fw-po-dialog]');
+ const error=dialog?.querySelector('[data-fw-po-error]')||panel.querySelector('[data-fw-purchase-report-error]');
  error.hidden=true;
  const orderId=button.dataset.fwPurchaseReportOrder;
- const statusFilter=orderId?'':panel.querySelector('[data-fw-report-status]').value;
+ const bySelection=button.hasAttribute('data-fw-issue-selected');
+ const orderIds=bySelection?selectedSupplierOrders(dialog):undefined;
+ const statusFilter=orderId||bySelection?'':panel.querySelector('[data-fw-report-status]').value;
  const bySupplier=button.dataset.fwPurchaseReport==='supplier';
- const supplierId=bySupplier?panel.querySelector('[data-fw-report-supplier]').value:undefined;
+ const supplierId=bySelection?dialog.dataset.recordId:bySupplier?panel.querySelector('[data-fw-report-supplier]').value:undefined;
  try{
   if(!state.loaded)throw Error('Aguarde o carregamento dos pedidos.');
   if(bySupplier&&!supplierId)throw Error('Selecione um fornecedor.');
+  if(bySelection&&!orderIds.length)throw Error('Marque ao menos uma ordem de compra.');
   const logo=getComputedStyle(document.documentElement).getPropertyValue('--liquid-logo').match(/data:image\/(?:png|webp);base64,[A-Za-z0-9+/=]+/)?.[0];
   const order=state.purchaseOrders.find(item=>item.id===orderId);
   const supplier=state.suppliers.find(item=>item.id===supplierId);
   const name=order?'oc-'+order.order_number:supplier?'fornecedor-'+(supplier.trade_name||supplier.legal_name):'resumo-geral';
   const filename='gao-compras-'+name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9-]+/g,'-');
-  openPurchaseReportWindow(renderPurchaseReport(state,{supplierId,orderId,statusFilter,logo}),filename);
+  openPurchaseReportWindow(renderPurchaseReport(state,{supplierId,orderId,orderIds,statusFilter,logo}),filename);
  }catch(err){error.textContent=err.message;error.hidden=false;}
 }
 
@@ -500,7 +508,7 @@ function purchasePopup(root,kind,id,title,body){
  dialog.showModal();
  return dialog;
 }
-function purchaseSupplierBody(group){
+function purchaseSupplierBody(group,selected=new Set()){
  if(!group)return '<p>Nenhum pedido nesta seleção.</p>';
  const rows=group.orders.map(({id})=>{
   const order=state.purchaseOrders.find(row=>row.id===id);
@@ -508,9 +516,22 @@ function purchaseSupplierBody(group){
   const summary=purchaseSummary(order);
   const logistics=purchaseLogistics[order.logistics_stage];
   const status=order.status!=='CANCELADA'&&order.logistics_stage==='COTACAO'?logistics:summary.label;
-  return '<article class="fw-po-order-entry"><div><h3>'+esc(purchaseLabel(order))+'</h3><span class="fw-status">'+esc(status)+'</span><p>'+br(summary.orderedMeters,3)+' m pedidos · '+br(summary.receivedMeters,3)+' m recebidos</p><p>Previsão de entrega '+purchaseDate(order.expected_date)+'</p></div><div class="fw-po-actions">'+purchaseButton('data-fw-view-purchase',id,'Visualizar')+(state.canManagePurchases&&order.status!=='CANCELADA'?purchaseButton('data-fw-edit-purchase',id,'Editar pedido'):'')+'</div></article>';
+  return '<article class="fw-po-order-entry"><div><label class="fw-po-pick"><input type="checkbox" data-fw-select-po value="'+esc(id)+'"'+(selected.has(id)?' checked':'')+'>'+esc(purchaseLabel(order))+'</label><span class="fw-status">'+esc(status)+'</span><p>'+br(summary.orderedMeters,3)+' m pedidos · '+br(summary.receivedMeters,3)+' m recebidos</p><p>Previsão de entrega '+purchaseDate(order.expected_date)+'</p></div><div class="fw-po-actions">'+purchaseButton('data-fw-view-purchase',id,'Visualizar')+(state.canManagePurchases&&order.status!=='CANCELADA'?purchaseButton('data-fw-edit-purchase',id,'Editar pedido'):'')+'</div></article>';
  }).join('');
- return '<div class="fw-po-order-list">'+rows+'</div>';
+ if(!rows)return '<p>Nenhum pedido nesta seleção.</p>';
+ return '<div class="fw-po-selection"><label><input type="checkbox" data-fw-select-all-po>Selecionar todas</label><span data-fw-po-count role="status">0 OCs selecionadas</span><button type="button" data-fw-issue-selected disabled>Emitir OCs selecionadas</button></div>'+purchasePopupError+'<div class="fw-po-order-list">'+rows+'</div>';
+}
+function selectedSupplierOrders(dialog){
+ return [...dialog.querySelectorAll('[data-fw-select-po]:checked')].map(input=>input.value);
+}
+function updateSupplierSelection(dialog){
+ const count=selectedSupplierOrders(dialog).length,total=dialog.querySelectorAll('[data-fw-select-po]').length;
+ const selectAll=dialog.querySelector('[data-fw-select-all-po]');
+ if(!selectAll)return;
+ selectAll.checked=count===total;
+ selectAll.indeterminate=count>0&&count<total;
+ dialog.querySelector('[data-fw-po-count]').textContent=count===1?'1 OC selecionada':count+' OCs selecionadas';
+ dialog.querySelector('[data-fw-issue-selected]').disabled=count===0;
 }
 function openPurchaseSupplier(button){
  const root=purchaseRoot(button);
@@ -608,7 +629,11 @@ function refreshPurchaseWindows(root,newOrderId){
   if(dialog.purchaseRoot!==root)continue;
   const id=dialog.dataset.recordId;
   const body=dialog.querySelector('[data-fw-po-body]');
-  if(dialog.dataset.fwPoDialog==='supplier')body.innerHTML=purchaseSupplierBody(purchaseGroups(root).find(group=>group.id===id));
+  if(dialog.dataset.fwPoDialog==='supplier'){
+   const selected=new Set(selectedSupplierOrders(dialog));
+   body.innerHTML=purchaseSupplierBody(purchaseGroups(root).find(group=>group.id===id),selected);
+   updateSupplierSelection(dialog);
+  }
   if(dialog.dataset.fwPoDialog==='order'){
    const order=state.purchaseOrders.find(item=>item.id===id);
    if(!order)continue;
@@ -1434,7 +1459,7 @@ document.addEventListener('click',async e=>{
  const purchaseView=e.target.closest('[data-fw-view-purchase]');if(purchaseView){openPurchaseOrder(purchaseView.dataset.fwViewPurchase,purchaseRoot(purchaseView));return;}
  const purchaseEdit=e.target.closest('[data-fw-edit-purchase]');if(purchaseEdit){openPurchaseEdit(purchaseEdit.dataset.fwEditPurchase,purchaseRoot(purchaseEdit));return;}
  const exclude=e.target.closest('[data-fw-exclude-po]');if(exclude){e.preventDefault();await excludePurchase(exclude);return;}
- const purchaseReport=e.target.closest('[data-fw-purchase-report],[data-fw-purchase-report-order]');if(purchaseReport){openPurchaseReport(purchaseReport);return;}
+ const purchaseReport=e.target.closest('[data-fw-purchase-report],[data-fw-purchase-report-order],[data-fw-issue-selected]');if(purchaseReport){openPurchaseReport(purchaseReport);return;}
  const stage=e.target.closest('[data-fw-purchase-stage]');
  if(stage){purchaseStage(stage.closest('.fw-purchase-orders'),stage.dataset.fwPurchaseStage);return;}
  const newPurchase=e.target.closest('[data-fw-new-purchase]');
@@ -1522,6 +1547,16 @@ document.addEventListener('change',async e=>{
    const history=row.source_history||[];
    form.querySelector('[data-fw-consumption-note]').textContent='Controle de Tecido • Pedido Produção • linha '+row.source_row+' • '+(row.source_date||'data sem registro')+' • tamanho '+(row.size||'não informado')+' • '+(row.fabric_description||'tecido não informado')+' • cor '+(row.color_description||'não informada')+(history.length>1?' • histórico: '+history.map(x=>br(x.consumption_m_per_piece,4)+' m em '+(x.source_date||'sem data')).join(' → '):'');
   }
+});
+document.addEventListener('change',event=>{
+ const input=event.target;
+ if(!input.matches('[data-fw-select-all-po],[data-fw-select-po]'))return;
+ const dialog=input.closest('[data-fw-po-dialog="supplier"]');
+ if(!dialog)return;
+ if(input.hasAttribute('data-fw-select-all-po')){
+  for(const order of dialog.querySelectorAll('[data-fw-select-po]'))order.checked=input.checked;
+ }
+ updateSupplierSelection(dialog);
 });
 document.addEventListener('change',e=>{if(e.target.matches('[data-fw-budget-month]')&&e.target.value){state.budgetMonth=e.target.value;render();document.querySelector('[data-fw-budget-month]')?.focus();}});
 document.addEventListener('submit',async e=>{const form=e.target.closest('[data-fw-form]');if(!form)return;e.preventDefault();const standardDialog=form.closest('[data-fw-standard-dialog]');if(standardDialog){if(standardDialog.dataset.saving==='true')return;standardDialog.dataset.saving='true';const buttons=[...standardDialog.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);try{await submit(form);await reload();render();const supplierId=standardDialog.dataset.fwSupplierEditor;standardDialog.close();standardDialog.remove();if(supplierId){for(const list of document.querySelectorAll('[data-fw-buy-dialog] [data-fw-supplier-list]'))list.outerHTML=supplierListView();openStandardWindow('supplier',supplierId);}}catch(err){const box=standardDialog.querySelector('[data-fw-standard-error]');box.textContent=err.message||String(err);box.hidden=false;}finally{standardDialog.dataset.saving='false';buttons.forEach(b=>b.disabled=false);}return;}if(form.closest('[data-fw-recipe-dialog]')){await saveRecipeDialog(form);return;}await run(async()=>{if(form.dataset.fwForm==='qualityBatch')await saveQualityBatch(form);else await submit(form);form.reset();await reload()})});
