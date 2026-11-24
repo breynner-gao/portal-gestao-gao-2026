@@ -68,7 +68,7 @@ export function dailyReportData(records, date) {
   return { date, iso: weekLabel(weekStart), daily, weekdays, weeks, months };
 }
 
-function regression(points) {
+export function regression(points) {
   if (points.length < 2) return null;
   const x = points.reduce((sum, p) => sum + p[0], 0) / points.length;
   const y = points.reduce((sum, p) => sum + p[1], 0) / points.length;
@@ -93,7 +93,7 @@ function chart(buckets, projection = false, customerOnly = false) {
   });
   const max = Math.max(4, Math.ceil(Math.max(...series.flatMap(s => [...s.observed,...s.derived].map(p=>p[1])), 0)/4)*4);
   const x = i => 47 + (i+.5)*510/buckets.length;
-  const y = v => 123 - v*108/max;
+  const y = v => 141 - v*108/max;
   const grid = Array.from({length:5}, (_, i) => {
     const v = max*i/4;
     return `<line x1="47" x2="557" y1="${y(v)}" y2="${y(v)}" stroke="#dbe5ed"/><text x="39" y="${y(v)+3}" text-anchor="end">${v}%</text>`;
@@ -103,12 +103,20 @@ function chart(buckets, projection = false, customerOnly = false) {
     const path = (points,dash='') => `<polyline fill="none" stroke="${color}" stroke-width="2" ${dash} points="${points.map(([i,v])=>x(i)+','+y(v)).join(' ')}"/>`;
     const dot = ([i,v],open) => `<circle cx="${x(i)}" cy="${y(v)}" r="3" stroke="${color}" fill="${open?'white':color}"/>`;
     const actual = observed.map((point, i) => (i && observed[i-1][0] === point[0]-1 ? path([observed[i-1],point]) : '') + dot(point,buckets[point[0]].partial)).join('');
-    return actual + path(derived,'stroke-dasharray="5 4"') + (projection ? derived.slice(1).map(p=>dot(p,true)).join('') : '');
+    const projected = projection ? derived.slice(1) : [];
+    const labels = [...observed, ...projected].map(([i,v]) => {
+      const other = series[j === 0 ? 1 : 0];
+      const nearby = [...(other?.observed || []), ...(projection ? other?.derived || [] : [])]
+        .some(([index,value]) => i === index && Math.abs(y(v) - y(value)) < 22);
+      const offset = j === 0 && nearby ? 13 : -7;
+      return `<text class="point-rate" x="${x(i)}" y="${y(v)+offset}" text-anchor="middle" style="fill:${color};font-weight:700;font-size:9px;paint-order:stroke;stroke:white;stroke-width:2px;stroke-linejoin:round">${percent(v)}</text>`;
+    }).join('');
+    return actual + path(derived,'stroke-dasharray="5 4"') + projected.map(p=>dot(p,true)).join('') + labels;
   }).join('');
-  return `<svg viewBox="0 0 570 149" role="img" aria-label="Evolução percentual do relave">${grid}
+  return `<svg viewBox="0 0 570 172" role="img" aria-label="Evolução percentual do relave">${grid}
     ${customerOnly ? "" : `<line x1="47" x2="557" y1="${y(2.5)}" y2="${y(2.5)}" stroke="#99611a" stroke-dasharray="2 3"/>`}
     <line x1="47" x2="557" y1="${y(customerOccurrenceTarget)}" y2="${y(customerOccurrenceTarget)}" stroke="#a64450" stroke-dasharray="6 3"/>
-    ${marks}${buckets.map((b,i)=>`<text x="${x(i)}" y="140" text-anchor="middle">${html(b.label)}${b.partial?'*':''}</text>`).join('')}</svg>`;
+    ${marks}${buckets.map((b,i)=>`<text x="${x(i)}" y="166" text-anchor="middle">${html(b.label)}${b.partial?'*':''}</text>`).join('')}</svg>`;
 }
 
 function table(headings, rows, widths) {
