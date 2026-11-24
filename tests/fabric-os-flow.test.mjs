@@ -14,7 +14,7 @@ import {createFabricWorkbookImport} from '../fabric-workbook-import-v1.mjs';
 const source=await readFile(new URL('../fabric-workflow-ui-v1.js',import.meta.url),'utf8');
 function harness(){
  const calls=[];const context={invoicePaymentKey,localDay,createTextileCostDashboard,purchaseReportStatuses,formatPurchasePaymentDays,...linenRules,...rules,...standards,createFactionWorkflow,createFactionDesk,createFabricWorkbookImport,createBuyingController:()=>({view:()=>'',restore(){}}),console,Event:class{},crypto:{randomUUID:()=> 'test-key'},window:{GAO_LINEN_NEED_SNAPSHOT:[],dispatchEvent(){}},document:{createElement:()=>({textContent:''}),head:{appendChild(){}},addEventListener(){},querySelector:()=>null,documentElement:{}},MutationObserver:class{observe(){}},setInterval(){},FormData:class{constructor(form){this.form=form}entries(){return Object.entries(this.form.values)}},fetch:async(url,options)=>{calls.push({url,body:options.body?JSON.parse(options.body):null});return{ok:true,text:async()=> '[]'}}};
- vm.createContext(context);vm.runInContext(source.replace(/^(?:import[^\n]+\n)+/,'').replace(/\}\)\(\);\s*$/,'window.test={state,submit,forecastProductMatrix,orderStats,trackingView,createOrder,catalogModelValues,catalogAction,catalogManagementView,stockPanelGroup,stockLotsView,purchaseOrderView,purchaseOrderBody,purchaseSupplierBody,qualityView,demandDrafts,demandQuantity,demandRequestedPieces,materialPurchasePlan,materialCoverageView,materialLinkInfo,trackingReconciled,reconciliationLine,reconciliationStockPlan,recipeSourceChoices,recipeCostValues,applyRecipeCost,internalFabricOptions,planningFabrics,standardsManagementView,recipeView};})();'),context);
+ vm.createContext(context);vm.runInContext(source.replace(/^(?:import[^\n]+\n)+/,'').replace(/\}\)\(\);\s*$/,'window.test={state,submit,forecastProductMatrix,orderStats,trackingView,createOrder,catalogModelValues,catalogAction,catalogManagementView,stockPanelGroup,stockLotsView,purchaseOrderView,purchaseOrderBody,purchaseSupplierBody,qualityView,purchaseCreateForm,demandDrafts,demandQuantity,demandRequestedPieces,materialPurchasePlan,materialCoverageView,materialLinkInfo,trackingReconciled,reconciliationLine,reconciliationStockPlan,recipeSourceChoices,recipeCostValues,applyRecipeCost,internalFabricOptions,planningFabrics,standardsManagementView,recipeView};})();'),context);
  context.window.test.state.org='org';context.window.test.state.session={access_token:'session',user:{id:'user'}};return{...context.window.test,calls,document:context.document,window:context.window};
 }
 test('envio de lote calcula prazo de 21 dias e envia dados para persistência',async()=>{const h=harness();await h.submit({dataset:{fwForm:'dispatch'},values:{id:'cut',sent_date:'2026-11-09',expected_date:'',supplier_id:'supplier',notes:''}});assert.equal(h.calls[0].body.expected_date,'2026-11-30');assert.equal(h.calls[0].body.sent_date,'2026-11-09');assert.equal(h.calls[0].body.supplier_id,'supplier');});
@@ -31,13 +31,40 @@ test('lista mostra editar, duplicar, inativar e excluir sem abrir formulário',(
 
 test('estoque, pedidos, recebimento e lotes pertencem a telas distintas',()=>{const h=harness();for(const [heading,mode] of [['Saldo e valor por tecido','stock'],['Acompanhamento geral dos pedidos de tecido','purchases'],['Registrar compra recebida / lote','receipt'],['Lotes recebidos e aprovação','lots']])assert.equal(h.stockPanelGroup(heading),mode);});
 test('lotes agrupam por NF e fornecedor sem confundir notas de mesmo número',()=>{const h=harness();h.state.lots=[{id:'l1',invoice_number:'10',supplier_id:'s1',lot_code:'A',quantity_received_m:1,quality_status:'APROVADO'},{id:'l2',invoice_number:'10',supplier_id:'s1',lot_code:'B',quantity_received_m:2,quality_status:'PENDENTE'},{id:'l3',invoice_number:'10',supplier_id:'s2',lot_code:'C',quantity_received_m:3,quality_status:'APROVADO'}];const html=h.stockLotsView();assert.equal((html.match(/data-fw-lots-row/g)||[]).length,2);assert.match(html,/2 lote\(s\)/);assert.match(html,/data-fw-open-lot-quality="l2"/);});
-test('novo pedido fica antes dos cards e não exibe a OC em lista expansível',()=>{
+test('novo pedido direto fica disponível fora dos filtros de estágio para quem pode registrar',()=>{
  const h=harness();h.state.purchaseOrders=[{id:'p1',supplier_id:'s1',order_number:'TESTE',status:'ABERTA'}];
  const html=h.purchaseOrderView();
  assert.match(html,/data-fw-purchase-meta hidden/);
  assert.match(html,/data-order-id="p1" data-supplier-id="s1"/);
- assert.ok(html.indexOf('+ Novo pedido de compra')<html.indexOf('data-fw-purchase-cards'));
+ assert.doesNotMatch(html,/data-fw-new-purchase/);
+ h.state.canManagePurchases=true;
+ const allowed=h.purchaseOrderView();
+ assert.match(allowed,/<button type="button" data-fw-new-purchase>\+ Novo pedido de compra<\/button>/);
+ assert.ok(allowed.indexOf('data-fw-new-purchase')<allowed.indexOf('class="fw-purchase-stages"'));
+ assert.doesNotMatch(allowed,/<form data-fw-form="purchaseOrder"/);
  assert.doesNotMatch(html,/<details class="fw-po-order"/);
+});
+test('pedido direto aceita itens sem demanda e reutiliza a chave em caso de nova tentativa',async()=>{
+ const h=harness();
+ h.state.fabric=[{id:'f1',standard_id:'s1',supplier_id:'sup',active:true,homologated:true,standard_link_approved:true}];
+ const fields={fabric_id:'f1',ordered_m:'15.125',purchase_price_per_m:'25.50'};
+ const form={
+  dataset:{fwForm:'purchaseOrder'},
+  values:{supplier_id:'sup',order_number:'OC 91',ordered_date:'2026-11-24',expected_date:'2026-12-10',payment_days:'30/60',notes:''},
+  querySelectorAll:()=>[{querySelector:selector=>({value:fields[selector.slice(6,-1)]})}],
+ };
+ await h.submit(form);
+ await h.submit(form);
+ const [first,retry]=h.calls;
+ assert.match(first.url,/fabric_create_purchase_order_with_payment$/);
+ assert.equal(first.body.p_order_number,'OC 91');
+ assert.deepEqual(first.body.p_lines,[{fabric_id:'f1',ordered_m:15.125,purchase_price_per_m:25.5}]);
+ assert.deepEqual(first.body.p_payment_days,[30,60]);
+ assert.equal(first.body.p_idempotency_key,retry.body.p_idempotency_key);
+ const html=h.purchaseCreateForm([{id:'sup',trade_name:'Fornecedor'}]);
+ assert.match(html,/name="supplier_id"/);
+ assert.match(html,/data-fw-add-po-line/);
+ assert.doesNotMatch(html,/Preparar pedido/);
 });
 test('abrir avaliação de lote aprovado mostra somente seu histórico',()=>{const h=harness();h.state.lots=[{id:'l1',lot_code:'A',quality_status:'APROVADO',quantity_received_m:1}];h.state.qualityLot='l1';h.state.inspections=[{lot_id:'l1',inspection_status:'APROVADO',notes:'Parecer do lote A'},{lot_id:'l2',notes:'Outro lote'}];const html=h.qualityView();assert.match(html,/Parecer do lote A/);assert.doesNotMatch(html,/Outro lote/);});
 
@@ -134,8 +161,8 @@ test('pedido novo envia condição e parcelamento sem confundir prazo de entrega
  h.state.fabric=[{id:'fabric',standard_id:'standard',supplier_id:'supplier',active:true,homologated:true,standard_link_approved:true}];
  const row={querySelector:selector=>({value:{'[name=fabric_id]':'fabric','[name=ordered_m]':'200','[name=purchase_price_per_m]':'10'}[selector]})};
  const form={dataset:{fwForm:'purchaseOrder'},values:{supplier_id:'supplier',order_number:'OC-1',ordered_date:'2026-11-17',expected_date:'2026-12-08',payment_terms:' Boleto parcelado ',payment_days:'30 / 60, 90'},querySelectorAll:()=>[row]};
- assert.match(h.purchaseOrderView(),/name="payment_terms"/);
- assert.match(h.purchaseOrderView(),/name="payment_days"/);
+ assert.match(h.purchaseCreateForm([]),/name="payment_terms"/);
+ assert.match(h.purchaseCreateForm([]),/name="payment_days"/);
  await h.submit(form);
  assert.match(h.calls[0].url,/fabric_create_purchase_order_with_payment$/);
  assert.equal(h.calls[0].body.p_payment_terms,'Boleto parcelado');

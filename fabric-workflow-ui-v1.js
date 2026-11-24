@@ -48,7 +48,9 @@ style.textContent+=`
 .fw-po-popup .fw-po-facts div{border-radius:8px;background:#eef5fb;padding:10px 12px;overflow-wrap:anywhere}
 .fw-po-popup .fw-po-facts dt{font-size:.8rem;font-weight:750;color:#40698b}
 .fw-po-popup .fw-po-facts dd{margin:3px 0 0}
-.fw-po-popup .fw-panel form.fw-po-edit-form{display:block}
+.fw-po-popup .fw-panel form.fw-po-edit-form,.fw-po-popup .fw-panel form[data-fw-form="purchaseOrder"]{display:block}
+.fw-po-popup .fw-po-line{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,10rem),1fr));gap:10px;align-items:end;padding:12px 0;border-top:1px solid #d5e2ef}
+.fw-po-popup [data-fw-po-lines]{margin-bottom:12px}
 .fw-po-popup .fw-panel .fw-field{display:grid;min-width:0;color:#123b60;font-weight:750}
 .fw-po-popup .fw-field input,.fw-po-popup .fw-field select,.fw-po-popup .fw-field textarea{box-sizing:border-box;min-width:0;width:100%;background:#fff;color:#082d52}
 .fw-po-popup .fw-field textarea{border:1px solid #b9d1e8;border-radius:8px;padding:9px;resize:vertical}
@@ -354,7 +356,6 @@ function purchaseStage(root,stage){
  root.querySelectorAll('[data-fw-purchase-stage]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.fwPurchaseStage===stage)));
  root.querySelector('[data-fw-shortages]').hidden=stage!=='need';
  root.querySelector('[data-fw-ordered]').hidden=stage==='need';
- root.querySelector('.fw-new-order').hidden=stage!=='ordered';
  root.querySelector('[data-fw-order-summary]').hidden=stage!=='ordered';
  const readyOrders=root.querySelector('[data-fw-ready-orders]');
  if(readyOrders)readyOrders.hidden=stage!=='history';
@@ -463,7 +464,8 @@ function purchaseOrderView(readyOrders=''){
  const suppliersWithOrders=new Set(state.purchaseOrders.map(order=>order.supplier_id));
  const statusOptions=Object.entries(purchaseReportStatuses).map(([key,label])=>'<option value="'+esc(key)+'">'+esc(label)+'</option>').join('');
  const reportControls='<div class="fw-tabs" aria-label="Relatórios de compra"><label class="fw-field">Status do pedido<select data-fw-report-status>'+statusOptions+'</select></label><button type="button" data-fw-purchase-report="general">Resumo geral</button><label class="fw-field">Fornecedor do relatório<select data-fw-report-supplier><option value="">Selecione um fornecedor</option>'+state.suppliers.filter(supplier=>suppliersWithOrders.has(supplier.id)).map(supplier=>'<option value="'+esc(supplier.id)+'">'+esc(supplier.trade_name||supplier.legal_name)+'</option>').join('')+'</select></label><button type="button" data-fw-purchase-report="supplier">Relatório por fornecedor</button></div><p class="fw-error" data-fw-purchase-report-error role="alert" hidden></p>';
- return '<div class="fw-panel fw-purchase-orders"><h3>Ordens de compra de tecido</h3><p class="fw-error" data-fw-exclude-error role="alert" hidden></p>'+reportControls+stages+(readyOrders?'<div data-fw-ready-orders hidden>'+readyOrders+'</div>':'')+'<div data-fw-shortages hidden>'+materialCoverageView(true,plan)+'</div><div data-fw-ordered hidden><details class="fw-catalog-edit" data-fw-order-summary><summary>Resumo dos pedidos</summary>'+cards+'</details><details class="fw-new-order"><summary>+ Novo pedido de compra</summary><form data-fw-form="purchaseOrder"><input name="order_number" placeholder="Número do pedido / OC" required><select name="supplier_id" required><option value="">Fornecedor</option>'+state.suppliers.map(x=>'<option value="'+x.id+'">'+esc(x.trade_name||x.legal_name)+'</option>').join('')+'</select><input name="ordered_date" type="date" value="'+new Date().toISOString().slice(0,10)+'" required><input name="expected_date" type="date" aria-label="Previsão de entrega">'+purchasePaymentFields()+'<input name="notes" placeholder="Observação (opcional)"><div data-fw-po-lines>'+poLineHtml()+'</div><button type="button" data-fw-add-po-line>Adicionar tecido/cor</button><button type="submit">Registrar pedido de tecido</button></form></details><label>Buscar pedido<input type="search" data-fw-purchase-search placeholder="Pedido, fornecedor, tecido ou cor"></label><div data-fw-purchase-meta hidden>'+rows+'</div><div class="fw-po-supplier-grid" data-fw-purchase-cards></div><p data-fw-purchase-empty hidden>Nenhum pedido para esta seleção.</p></div></div>';
+ const newOrder=state.canManagePurchases?'<div class="fw-tabs"><button type="button" data-fw-new-purchase>+ Novo pedido de compra</button></div>':'';
+ return '<div class="fw-panel fw-purchase-orders"><h3>Ordens de compra de tecido</h3>'+newOrder+'<p data-fw-purchase-notice role="status" hidden></p><p class="fw-error" data-fw-exclude-error role="alert" hidden></p>'+reportControls+stages+(readyOrders?'<div data-fw-ready-orders hidden>'+readyOrders+'</div>':'')+'<div data-fw-shortages hidden>'+materialCoverageView(true,plan)+'</div><div data-fw-ordered hidden><details class="fw-catalog-edit" data-fw-order-summary><summary>Resumo dos pedidos</summary>'+cards+'</details><label>Buscar pedido<input type="search" data-fw-purchase-search placeholder="Pedido, fornecedor, tecido ou cor"></label><div data-fw-purchase-meta hidden>'+rows+'</div><div class="fw-po-supplier-grid" data-fw-purchase-cards></div><p data-fw-purchase-empty hidden>Nenhum pedido para esta seleção.</p></div></div>';
 }
 const purchaseLogistics={COTACAO:'Cotação',CONFIRMADO:'Confirmado',EM_TRANSPORTE:'Em transporte'};
 const purchaseDate=date=>date?String(date).slice(0,10).split('-').reverse().join('/'):'—';
@@ -583,19 +585,23 @@ function openPurchaseOrder(id,root){
   finally{dialog.dataset.saving='false';button.disabled=false;}
  });
 }
-function refreshPurchaseWindows(root){
+function refreshPurchaseWindows(root,newOrderId){
  if(!root?.isConnected||!root.matches('.fw-purchase-orders')){render();return;}
- const stage=root.dataset.purchaseStage,search=root.querySelector('[data-fw-purchase-search]').value;
+ const stage=newOrderId?'ordered':root.dataset.purchaseStage,search=newOrderId?'':root.querySelector('[data-fw-purchase-search]').value;
+ const reportSupplier=root.querySelector('[data-fw-report-supplier]').value;
  const metadata=root.querySelector('[data-fw-purchase-meta]');
  const allowed=metadata.querySelector('[data-fw-purchase-excluded]')
   ?new Set([...metadata.querySelectorAll('[data-fw-purchase-row]:not([data-fw-purchase-excluded])')].map(row=>row.dataset.orderId)):null;
+ if(allowed&&newOrderId)allowed.add(newOrderId);
  const template=document.createElement('template');
  template.innerHTML=purchaseOrderView();
  const fresh=template.content.querySelector('.fw-purchase-orders');
- for(const selector of ['[data-fw-purchase-meta]','.fw-purchase-stages','[data-fw-order-summary]','[data-fw-shortages]']){
+ for(const selector of ['[data-fw-purchase-meta]','.fw-purchase-stages','[data-fw-order-summary]','[data-fw-shortages]','[data-fw-report-supplier]']){
   root.querySelector(selector).replaceWith(fresh.querySelector(selector));
  }
  if(allowed)root.querySelectorAll('[data-fw-purchase-row]').forEach(row=>row.toggleAttribute('data-fw-purchase-excluded',!allowed.has(row.dataset.orderId)));
+ const supplierSelect=root.querySelector('[data-fw-report-supplier]');
+ if([...supplierSelect.options].some(option=>option.value===reportSupplier))supplierSelect.value=reportSupplier;
  root.querySelector('[data-fw-purchase-search]').value=search;
  purchaseStage(root,stage||'ordered');
  for(const dialog of document.querySelectorAll('[data-fw-po-dialog][open]')){
@@ -1003,17 +1009,71 @@ function openShortageOrder(origin){
  const row=state.tracking.find(r=>r.id===origin.dataset.fwReconciliation),values=Object.fromEntries(['reserved_m','consumed_m','returned_m'].map(k=>[k,origin.querySelector('[name="'+k+'"]').value])),plan=reconciliationStockPlan(row,values);if(!plan||plan.missing<=0)return;
  return openFabricPurchaseDraft(plan,row,origin);
 }
+function purchaseCreateForm(suppliers){
+ const options=suppliers.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.trade_name||s.legal_name)+'</option>').join('');
+ return '<form data-fw-form="purchaseOrder"><div class="fw-po-fields">'+
+  '<label class="fw-field">Fornecedor<select name="supplier_id" required><option value="">Selecione o fornecedor</option>'+options+'</select></label>'+
+  '<label class="fw-field">Número do pedido / OC<input name="order_number" maxlength="100" required></label>'+
+  '<label class="fw-field">Data do pedido<input name="ordered_date" type="date" value="'+localDay(new Date().toISOString())+'" required></label>'+
+  '<label class="fw-field">Previsão de entrega<input name="expected_date" type="date"></label>'+
+  purchasePaymentFields()+'<label class="fw-field fw-po-notes">Observação (opcional)<textarea name="notes" rows="2"></textarea></label></div>'+
+  '<div data-fw-po-lines>'+poLineHtml()+'</div>'+purchasePopupError+
+  '<div class="fw-po-actions"><button type="button" data-fw-add-po-line>Adicionar tecido/cor</button><button type="submit">Registrar pedido de tecido</button><button type="button" data-fw-po-close>Cancelar</button></div></form>';
+}
 function openFabricPurchaseDraft(plan,row,origin=null){
- const template=document.createElement('template');template.innerHTML=purchaseOrderView();const source=template.content.querySelector('[data-fw-form="purchaseOrder"]');
- const manual=plan.missing==null;
- const dialog=document.createElement('dialog');dialog.className='fw-recipe-dialog';dialog.setAttribute('data-fw-shortage-dialog','');dialog.innerHTML='<header class="fw-modal-head"><h2>Pedido de tecido</h2><button type="button" data-fw-shortage-close aria-label="Fechar">×</button></header><div class="fw-panel"><p>'+esc(internalName(plan.fabric))+(manual?'. Informe a quantidade em metros do pedido.':' • Sugestão: '+br(plan.missing,3)+' m. Confira fornecedor, quantidade e preço antes de registrar.')+'</p><div data-fw-shortage-error class="fw-error" role="alert" hidden></div>'+source.outerHTML+'</div>';
- const form=dialog.querySelector('form'),standard=form.querySelector('[data-fw-purchase-standard]');standard.value=plan.fabric.standard_id||'';
- form.querySelector('[name="ordered_m"]').value=plan.missing??'';form.querySelector('[name="notes"]').value=manual?(row.product_name||''):'Necessidade estimada da programação '+(row.source_item||'')+' • '+row.product_name;
- const allowed=state.suppliers.filter(s=>purchaseReferenceChoices(state.fabric,plan.fabric.standard_id,s.id).length>0),supplier=form.querySelector('[name="supplier_id"]');supplier.innerHTML='<option value="">Escolher fornecedor</option>'+allowed.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.trade_name||s.legal_name)+'</option>').join('');if(allowed.length===1)supplier.value=allowed[0].id;
- refreshPurchaseReferences(form);document.body.appendChild(dialog);dialog.showModal();dialog.addEventListener('cancel',e=>{if(dialog.dataset.saving==='true')e.preventDefault();else dialog.remove();});
- form.addEventListener('submit',async e=>{e.preventDefault();e.stopPropagation();if(dialog.dataset.saving==='true')return;dialog.dataset.saving='true';const buttons=[...dialog.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);const error=dialog.querySelector('[data-fw-shortage-error]');error.hidden=true;
- try{await submit(form);await reload();render();if(origin?.isConnected)updateReconciliationPlan(origin);dialog.close();dialog.remove();}
- catch(err){error.textContent=err.message||String(err);error.hidden=false;}finally{dialog.dataset.saving='false';buttons.forEach(b=>b.disabled=false);}
+ return openPurchaseCreate({plan,row,origin});
+}
+function openPurchaseCreate({root,plan,row,origin}){
+ if(!state.canManagePurchases)return;
+ const suppliers=state.suppliers.filter(s=>s.active!==false&&(!plan||
+  purchaseReferenceChoices(state.fabric,plan.fabric.standard_id,s.id).length>0));
+ const hint=plan?(plan.missing==null?internalName(plan.fabric)+' · Informe a quantidade do pedido.':
+  internalName(plan.fabric)+' · Sugestão de '+br(plan.missing,3)+' m. Confira os dados antes de registrar.'):'O pedido será registrado como confirmado em Já pedido.';
+ const dialog=purchasePopup(root,'create','','Novo pedido de compra','<p>'+esc(hint)+'</p>'+purchaseCreateForm(suppliers));
+ const form=dialog.querySelector('form');
+ if(plan){
+  form.querySelector('[data-fw-purchase-standard]').value=plan.fabric.standard_id||'';
+  form.querySelector('[name="ordered_m"]').value=plan.missing??'';
+  form.querySelector('[name="notes"]').value=plan.missing==null?(row.product_name||''):
+   'Necessidade estimada da programação '+(row.source_item||'')+' • '+row.product_name;
+  if(suppliers.length===1)form.querySelector('[name="supplier_id"]').value=suppliers[0].id;
+ }
+ refreshPurchaseReferences(form);
+ form.querySelector('[name="supplier_id"]').focus();
+ let saved;
+ form.addEventListener('submit',async event=>{
+  event.preventDefault();
+  event.stopPropagation();
+  if(dialog.dataset.saving==='true')return;
+  const buttons=[...dialog.querySelectorAll('button')],action=form.querySelector('[type="submit"]');
+  const error=form.querySelector('[data-fw-po-error]'),number=form.querySelector('[name="order_number"]').value.trim();
+  dialog.dataset.saving='true';
+  buttons.forEach(button=>button.disabled=true);
+  error.hidden=true;
+  try{
+   saved??=await submit(form);
+   await reload();
+   const panel=dialog.purchaseRoot;
+   if(panel?.isConnected){
+    refreshPurchaseWindows(panel,saved.purchase_order_id);
+    const notice=panel.querySelector('[data-fw-purchase-notice]');
+    notice.textContent='Pedido '+number+' registrado.';
+    notice.hidden=false;
+   }else render();
+   if(origin?.isConnected)updateReconciliationPlan(origin);
+   dialog.close();
+   window.dispatchEvent(new Event('gao-production-updated'));
+  }catch(err){
+   error.textContent=saved?'Pedido '+number+' registrado. A lista ainda precisa ser atualizada.':err.message||String(err);
+   error.hidden=false;
+   if(saved){
+    for(const control of form.elements)control.disabled=true;
+    action.textContent='Atualizar lista de pedidos';
+   }
+  }finally{
+   dialog.dataset.saving='false';
+   for(const button of buttons)button.disabled=Boolean(saved&&button.matches('[data-fw-add-po-line],[data-fw-remove-po-line]'));
+  }
  });
 }
 function reconciliationLine(row,allocation={}){
@@ -1198,7 +1258,8 @@ async function submit(form){
   for(const line of lines){const f=state.fabric.find(f=>f.id===line.fabric_id);if(!f||!purchaseReferenceChoices(state.fabric,f.standard_id,d.supplier_id).some(x=>x.id===line.fabric_id))throw Error('A referência precisa estar homologada para o padrão GAO e para o fornecedor selecionado.');}
 
   const open=state.purchaseItems.filter(i=>lines.some(l=>fabricMatches(l.fabric_id,i.fabric_id))&&n(i.ordered_m)>n(i.received_m)&&state.purchaseOrders.some(o=>o.id===i.purchase_order_id&&o.status!=='CANCELADA'));if(open.length&&!confirm('Já há '+open.length+' item(ns) de compra desse tecido com saldo a receber. Consulte pedidos e transporte para evitar duplicidade. Confirma um pedido adicional?'))throw Error('Novo pedido cancelado para conferir compras existentes.');
-  return rpc('fabric_create_purchase_order_with_payment',{p_organization_id:state.org,p_supplier_id:d.supplier_id,p_order_number:d.order_number.trim(),p_ordered_date:d.ordered_date||null,p_expected_date:d.expected_date||null,p_lines:lines.map(x=>({fabric_id:x.fabric_id,ordered_m:n(x.ordered_m),purchase_price_per_m:n(x.purchase_price_per_m)})),p_notes:d.notes||null,p_idempotency_key:'fabric-po-'+uid(),...purchasePaymentArgs(d)});
+  form.dataset.request ||= uid();
+  return rpc('fabric_create_purchase_order_with_payment',{p_organization_id:state.org,p_supplier_id:d.supplier_id,p_order_number:d.order_number.trim(),p_ordered_date:d.ordered_date||null,p_expected_date:d.expected_date||null,p_lines:lines.map(x=>({fabric_id:x.fabric_id,ordered_m:n(x.ordered_m),purchase_price_per_m:n(x.purchase_price_per_m)})),p_notes:d.notes||null,p_idempotency_key:'fabric-po-'+form.dataset.request,...purchasePaymentArgs(d)});
  }
  if(table==='fabric'){
   const payload={...d,organization_id:state.org,code:d.code.trim(),name:d.name.trim(),color_reference:d.color_reference.trim().toUpperCase(),quality_code:d.quality_code.trim().toUpperCase().replace(/^Q/,''),width_m:val(d,'width_m'),homologated:d.homologated==='on',standard_link_approved:table==='fabric'&&d.homologated==='on',homologated_at:d.homologated==='on'?new Date().toISOString():null,homologated_by:d.homologated==='on'?state.session.user.id:null};
@@ -1376,8 +1437,9 @@ document.addEventListener('click',async e=>{
  const purchaseReport=e.target.closest('[data-fw-purchase-report],[data-fw-purchase-report-order]');if(purchaseReport){openPurchaseReport(purchaseReport);return;}
  const stage=e.target.closest('[data-fw-purchase-stage]');
  if(stage){purchaseStage(stage.closest('.fw-purchase-orders'),stage.dataset.fwPurchaseStage);return;}
+ const newPurchase=e.target.closest('[data-fw-new-purchase]');
+ if(newPurchase){openPurchaseCreate({root:purchaseRoot(newPurchase)});return;}
  const planPurchase=e.target.closest('[data-fw-plan-purchase]');if(planPurchase){const plan=materialPurchasePlan().fabrics.find(r=>r.fabric.id===planPurchase.dataset.fwPlanPurchase);if(plan?.buy>0)openFabricPurchaseDraft({fabric:plan.fabric,missing:plan.buy},{source_item:'Planejamento geral',product_name:plan.fabric.name});return;}
- const shortageClose=e.target.closest('[data-fw-shortage-close]');if(shortageClose){const d=shortageClose.closest('dialog');if(d.dataset.saving!=='true'){d.close();d.remove();}return;}
  if(e.target.closest('[data-fw-shortage-order]')){openShortageOrder(e.target.closest('[data-fw-reconciliation]'));return;}
  const reconcileRecipe=e.target.closest('[data-fw-reconcile-recipe]');if(reconcileRecipe){const d=reconcileRecipe.closest('dialog');d.close();d.remove();openRecipeDialog(reconcileRecipe.dataset.fwReconcileRecipe);return;}
  const receiveClose=e.target.closest('[data-fw-receive-close]');if(receiveClose){const d=receiveClose.closest('dialog');if(d.dataset.saving!=='true'){d.close();d.remove();}return;}
