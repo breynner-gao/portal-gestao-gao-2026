@@ -3,7 +3,7 @@ import {createTextileCostDashboard} from '/textile-cost-dashboard-v1.mjs?v=5';
 import {groupPurchaseCards,supplierCards} from '/fabric-purchase-cards-v1.mjs?v=1';
 import { purchaseReportStatuses, renderPurchaseReport, formatPurchasePaymentDays } from '/fabric-purchase-report-v1.mjs?v=6';
 import { openReport as openPurchaseReportWindow } from '/relave-report-export-v1.mjs?v=1';
-import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=13';
+import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=14';
 import {createFactionDesk} from '/fabric-faction-portal-v1.mjs?v=2';
 import {createFabricWorkbookImport} from '/fabric-workbook-import-v1.mjs?v=1';
 import {buildPendingProductionCoverage,applyPendingProductionCoverage,compactDimensionKey} from '/linen-risk-rules-v150.mjs?v=230';
@@ -84,6 +84,8 @@ async function init(){
  state.org=org.organization_id;
  state.canViewInventory=await rpc('fabric_user_has_permission',{p_organization_id:state.org,p_permission_code:'textiles.inventory.view'});
  state.canOperateFaction=await rpc('fabric_user_has_permission',{p_organization_id:state.org,p_permission_code:'textiles.production.manage'});
+ state.canReserveFaction=state.canOperateFaction&&!state.canViewInventory&&
+  await rpc('fabric_user_has_permission',{p_organization_id:state.org,p_permission_code:'textiles.production.reserve'}).catch(()=>false);
  state.canManagePurchases=await rpc('fabric_user_has_permission',{p_organization_id:state.org,p_permission_code:'textiles.inventory.manage'}).catch(()=>false);
  await reload();
 }
@@ -130,6 +132,12 @@ async function reload(){
  }
  try{state.factionInventories=await loadTable('fabric_faction_inventories','recorded_at');state.factionInventoryError=false;}
  catch{state.factionInventories=[];state.factionInventoryError=true;}
+ state.factionReservationStock=null;
+ if(state.canReserveFaction){
+  state.factionReservationStock=await rpc('fabric_faction_reservation_stock',{p_org:state.org});
+  state.lots=state.factionReservationStock.lots;
+  state.moves=state.factionReservationStock.moves;
+ }
  state.loaded=true;
 }
 async function loadTable(table,order,hasId=true){
@@ -175,8 +183,9 @@ function physicalFactionMeters(fabric,inventoryLines){
  return inventoryLines&&!rows.length?null:rows.reduce((sum,row)=>sum+n(row.physical_m),0);
 }
 function liveBalances(){
- const cutoff=state.factionCounts[0]?.counted_on||state.factionCounts[0]?.reported_on;
- if(state.factionCountsError)return [];
+ const cutoff=state.factionReservationStock?state.factionReservationStock.cutoff:
+  state.factionCounts[0]?.counted_on||state.factionCounts[0]?.reported_on;
+ if(!state.factionReservationStock&&state.factionCountsError)return [];
  return state.lots.filter(l=>!cutoff||l.received_date>cutoff).map(l=>{const ms=state.moves.filter(m=>m.lot_id===l.id);return {...l,onhand:ms.reduce((a,m)=>a+n(m.stock_delta_m),0),reserved:ms.reduce((a,m)=>a+n(m.reserved_delta_m),0)}})
 }
 function orderStats(item){
@@ -1301,6 +1310,9 @@ async function submit(form){
  if(table==='aliasCreate'||table==='aliasEdit')return saveAliasMapping({...d,homologated:d.homologated==='on',active:table==='aliasCreate'||d.active==='on'},table==='aliasEdit'?d.id:null);
  if(table==='tracking'){const row=state.tracking.find(x=>x.id===d.id);const delivered=d.delivery_status==='CONCLUIDO'?row.quantity:n(d.delivered);if(delivered>row.quantity)throw Error('Entrega excede a quantidade do pedido');await api('/rest/v1/fabric_faction_tracking?id=eq.'+d.id+'&organization_id=eq.'+state.org,{method:'PATCH',body:JSON.stringify({product_reference:d.product_reference?.trim()||null,cut_status:d.cut_status,delivery_status:delivered===row.quantity?'CONCLUIDO':delivered>0?'PARCIAL':'PENDENTE',delivered,expected_date:d.expected_date||null,received_date:d.received_date||null,updated_at:new Date().toISOString()})});window.dispatchEvent(new Event('gao-production-updated'));return;}
  if(table==='cut'){if(!Number.isInteger(n(d.produced_pieces)))throw Error('Informe peças inteiras');return rpc('fabric_record_cut',{p_organization_id:state.org,p_order_item_id:d.order_item_id,p_lot_id:d.lot_id,p_consumed_m:n(d.consumed_m),p_produced_pieces:n(d.produced_pieces),p_key:uid()});}
+ if(table==='release'&&state.canReserveFaction)return rpc('fabric_faction_reservation',{
+  p_org:state.org,p_lot:d.lot_id,p_item:d.order_item_id,p_action:'LIBERA_RESERVA',p_meters:n(d.quantity_m),p_key:'release:'+uid()
+ });
  if(table==='release')return rpc('fabric_post_stock_movement',{p_organization_id:state.org,p_lot_id:d.lot_id,p_movement_type:'LIBERA_RESERVA',p_quantity_m:n(d.quantity_m),p_order_item_id:d.order_item_id,p_idempotency_key:'release:'+uid(),p_notes:'Liberação de saldo reservado da OS'});
  if(table==='reserve')return rpc('fabric_post_stock_movement',{p_organization_id:state.org,p_lot_id:d.lot_id,p_movement_type:'RESERVA',p_quantity_m:n(d.quantity_m),p_order_item_id:d.order_item_id,p_idempotency_key:'reserve:'+uid(),p_notes:'Reserva de tecido para OS'});
  if(table==='dispatch'){const date=d.sent_date,expected=d.expected_date||addDays(date,21);if(expected!==addDays(date,21)&&!d.notes.trim())throw Error('Justifique a alteração do prazo de 21 dias');return api('/rest/v1/fabric_cut_batches?id=eq.'+d.id+'&organization_id=eq.'+state.org,{method:'PATCH',body:JSON.stringify({sent_date:date,expected_date:expected,supplier_id:d.supplier_id,notes:d.notes||null})});}

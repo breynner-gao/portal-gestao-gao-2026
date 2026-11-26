@@ -402,9 +402,13 @@ export function createFactionWorkflow({
             const qty=round(Math.min(remaining,free.get(lot.id)));
             if(qty<=0)continue;
             const revision=state.moves.filter(move=>move.order_item_id===row.item.id&&move.lot_id===lot.id).length;
-            const result=await rpc('fabric_post_stock_movement',{p_organization_id:state.org,p_lot_id:lot.id,p_movement_type:'RESERVA',
-              p_quantity_m:qty,p_order_item_id:row.item.id,p_idempotency_key:'faction-reserve:'+row.item.id+':'+lot.id+':'+revision+':'+qty,
-              p_notes:'Reserva para corte no Portal da Facção'});
+            const key='faction-reserve:'+row.item.id+':'+lot.id+':'+revision+':'+qty;
+            const result=state.canReserveFaction?await rpc('fabric_faction_reservation',{
+              p_org:state.org,p_lot:lot.id,p_item:row.item.id,p_action:'RESERVA',p_meters:qty,p_key:key
+            }):await rpc('fabric_post_stock_movement',{
+              p_organization_id:state.org,p_lot_id:lot.id,p_movement_type:'RESERVA',p_quantity_m:qty,
+              p_order_item_id:row.item.id,p_idempotency_key:key,p_notes:'Reserva para corte no Portal da Facção'
+            });
             remaining=round(remaining-qty);
             free.set(lot.id,round(free.get(lot.id)-qty));
             if(result?.created!==false)posted=round(posted+qty);
