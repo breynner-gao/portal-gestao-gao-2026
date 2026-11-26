@@ -51,6 +51,7 @@ export function createFactionWorkflow({
 
   function getOrders() {
     const stock = liveBalances().filter(lot => lot.quality_status === 'APROVADO');
+    const inventory = state.factionInventories?.[0];
     const openPurchases = new Set(state.purchaseOrders.filter(row=>row.status!=='CANCELADA'&&row.logistics_stage!=='COTACAO').map(row=>row.id));
     return state.items.flatMap(item => {
       const order = state.orders.find(row => row.id === item.order_id);
@@ -76,7 +77,8 @@ export function createFactionWorkflow({
       const available = round(sum(lots,lot=>lot.free));
       const receivedByOrder = returns.accepted + returns.rejected;
       return [{item,order,fabric,lots,cuts,cut,cutting,remaining,reserved,committed,unit,needed,available,returns,receivedByOrder,
-        physical:sum(lots,lot=>lot.onhand)+(fabric?physicalFactionMeters(fabric):0),
+        physical:inventory?(fabric?physicalFactionMeters(fabric,inventory.lines):null):
+          sum(lots,lot=>lot.onhand)+(fabric?physicalFactionMeters(fabric):0),
         incoming,shortage:Math.max(0,round(needed-reserved-available-incoming))}];
     });
   }
@@ -101,14 +103,14 @@ export function createFactionWorkflow({
         <td>${product(row)}<div class="fw-tabs">${isManual(row.order)?'<small>Lançado manualmente</small>':'<button type="button" data-fw-buy-map>Mapa de trocas</button>'}${button('Ficha técnica','recipe',item.id,!item.recipe_id)}</div></td>
         <td><input type="number" data-provision-quantity="${esc(item.id)}" min="1" max="2147483647" step="1" value="${n(item.ordered_pieces)}" aria-label="Quantidade da ordem de ${esc(item.product_name)}" required></td><td>${esc(fabric?internalName(fabric):'Tecido a vincular')}<small>${esc([fabric?.color||fabric?.color_reference,supplier?.trade_name||supplier?.legal_name].filter(Boolean).join(' · '))}</small></td>
         <td>${br(unit,4)}</td><td data-provision-estimate data-unit="${unit}">${meters(n(item.ordered_pieces)*unit)}</td>
-        <td>${meters(physical)}<small>${meters(available)} disponíveis para reserva</small></td>
+        <td>${physical===null?'Sem contagem vinculada':meters(physical)}<small>${meters(available)} livres em lotes para reserva</small></td>
         <td>${meters(reserved)}<small>${meters(reserved-row.committed)} livres para novos lotes</small>${reserved>row.committed?button('Liberar reserva','release',item.id):''}</td>
         <td>${meters(Math.max(0,needed-reserved))}<small>${meters(row.incoming)} a receber por tecido</small><small>${meters(shortage)} estimados a solicitar</small></td>
         <td>${row.remaining===0?'Corte atendido':reserved>=needed?'Reservado':reserved>0?'Reserva parcial':'Aguardando reserva'}
         ${shortage>0?button('Solicitar faltante','request',item.id,!fabric):''}
         ${state.canOperateFaction&&!hasProductionHistory(item.id)?button('Excluir item','remove-item',item.id):''}</td></tr>`;
     }).join('');
-    const ordersTable = table(['<input type="checkbox" data-faction-select-all aria-label="Selecionar todas as ordens">','Produto / origem','Peças','Tecido','m/peça','Estimado total','Físico do tecido','Reserva da ordem','Falta reservar','Situação'],rows,'Adicione um produto manualmente ou gere a ordem pelo mapa de necessidades.');
+    const ordersTable = table(['<input type="checkbox" data-faction-select-all aria-label="Selecionar todas as ordens">','Produto / origem','Peças','Tecido','m/peça','Estimado total',state.factionInventories?.[0]?'Inventário físico':'Físico do tecido','Reserva da ordem','Falta reservar','Situação'],rows,'Adicione um produto manualmente ou gere a ordem pelo mapa de necessidades.');
     const requests = table(['Pedido / tecido','Solicitado','A receber','Situação'],state.purchaseItems.flatMap(item=>{
       const order=state.purchaseOrders.find(row=>row.id===item.purchase_order_id);
       if(!order||order.status==='CANCELADA'||n(item.received_m)>=n(item.ordered_m))return [];

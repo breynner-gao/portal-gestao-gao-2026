@@ -14,7 +14,7 @@ import {createFabricWorkbookImport} from '../fabric-workbook-import-v1.mjs';
 const source=await readFile(new URL('../fabric-workflow-ui-v1.js',import.meta.url),'utf8');
 function harness(){
  const calls=[];const context={invoicePaymentKey,localDay,createTextileCostDashboard,purchaseReportStatuses,formatPurchasePaymentDays,...linenRules,...rules,...standards,createFactionWorkflow,createFactionDesk,createFabricWorkbookImport,createBuyingController:()=>({view:()=>'',restore(){}}),console,Event:class{},crypto:{randomUUID:()=> 'test-key'},window:{GAO_LINEN_NEED_SNAPSHOT:[],dispatchEvent(){}},document:{createElement:()=>({textContent:''}),head:{appendChild(){}},addEventListener(){},querySelector:()=>null,documentElement:{}},MutationObserver:class{observe(){}},setInterval(){},FormData:class{constructor(form){this.form=form}entries(){return Object.entries(this.form.values)}},fetch:async(url,options)=>{calls.push({url,body:options.body?JSON.parse(options.body):null});return{ok:true,text:async()=> '[]'}}};
- vm.createContext(context);vm.runInContext(source.replace(/^(?:import[^\n]+\n)+/,'').replace(/\}\)\(\);\s*$/,'window.test={state,submit,forecastProductMatrix,orderStats,trackingView,createOrder,catalogModelValues,catalogAction,catalogManagementView,stockPanelGroup,stockLotsView,purchaseOrderView,purchaseOrderBody,purchaseSupplierBody,qualityView,purchaseCreateForm,demandDrafts,demandQuantity,demandRequestedPieces,materialPurchasePlan,materialCoverageView,materialLinkInfo,trackingReconciled,reconciliationLine,reconciliationStockPlan,recipeSourceChoices,recipeCostValues,applyRecipeCost,internalFabricOptions,planningFabrics,standardsManagementView,recipeView};})();'),context);
+ vm.createContext(context);vm.runInContext(source.replace(/^(?:import[^\n]+\n)+/,'').replace(/\}\)\(\);\s*$/,'window.test={state,submit,forecastProductMatrix,orderStats,trackingView,createOrder,catalogModelValues,catalogAction,catalogManagementView,stockPanelGroup,stockLotsView,purchaseOrderView,purchaseOrderBody,purchaseSupplierBody,qualityView,purchaseCreateForm,demandDrafts,demandQuantity,demandRequestedPieces,materialPurchasePlan,materialCoverageView,physicalFactionMeters,materialLinkInfo,trackingReconciled,reconciliationLine,reconciliationStockPlan,recipeSourceChoices,recipeCostValues,applyRecipeCost,internalFabricOptions,planningFabrics,standardsManagementView,recipeView};})();'),context);
  context.window.test.state.org='org';context.window.test.state.session={access_token:'session',user:{id:'user'}};return{...context.window.test,calls,document:context.document,window:context.window};
 }
 test('envio de lote calcula prazo de 21 dias e envia dados para persistência',async()=>{const h=harness();await h.submit({dataset:{fwForm:'dispatch'},values:{id:'cut',sent_date:'2026-11-09',expected_date:'',supplier_id:'supplier',notes:''}});assert.equal(h.calls[0].body.expected_date,'2026-11-30');assert.equal(h.calls[0].body.sent_date,'2026-11-09');assert.equal(h.calls[0].body.supplier_id,'supplier');});
@@ -241,4 +241,15 @@ test('emissão por fornecedor inclui apenas as OCs selecionadas e soma os seus v
  assert.doesNotMatch(report,/OC-BETA|OC-GAMA|Fornecedor B/);
  assert.match(report,/Valor previsto confirmado<\/strong><b>R\$\s*150,00/);
  assert.doesNotMatch(renderPurchaseReport(data,{supplierId:'s',orderIds:[]}),/OC-ALFA|OC-BETA|OC-DELTA/);
+});
+
+test('contagem da facção prefere o inventário informado na Provisão para tecido vinculado',()=>{
+ const h=harness();
+ const fabric={standard_id:'azul',standard_link_approved:true};
+ h.state.standards=[{id:'azul',code:'GAO-TEC-001'}];
+ h.state.factionCounts=[{source_key:'importado',material:'Azul claro',supplier_or_brand:'Santista',physical_m:138}];
+ assert.equal(h.physicalFactionMeters(fabric),138);
+ assert.equal(h.physicalFactionMeters(fabric,[{material:'Azul claro',supplier_or_brand:'santista',physical_m:2992}]),2992);
+ assert.equal(h.physicalFactionMeters(fabric,[{material:'Azul claro',supplier_or_brand:'Santista',physical_m:0}]),0);
+ assert.equal(h.physicalFactionMeters(fabric,[{material:'Azul claro',supplier_or_brand:'Outro',physical_m:80}]),null);
 });

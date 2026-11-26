@@ -3,7 +3,7 @@ import {createTextileCostDashboard} from '/textile-cost-dashboard-v1.mjs?v=5';
 import {groupPurchaseCards,supplierCards} from '/fabric-purchase-cards-v1.mjs?v=1';
 import { purchaseReportStatuses, renderPurchaseReport, formatPurchasePaymentDays } from '/fabric-purchase-report-v1.mjs?v=6';
 import { openReport as openPurchaseReportWindow } from '/relave-report-export-v1.mjs?v=1';
-import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=12';
+import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=13';
 import {createFactionDesk} from '/fabric-faction-portal-v1.mjs?v=2';
 import {createFabricWorkbookImport} from '/fabric-workbook-import-v1.mjs?v=1';
 import {buildPendingProductionCoverage,applyPendingProductionCoverage,compactDimensionKey} from '/linen-risk-rules-v150.mjs?v=230';
@@ -160,7 +160,7 @@ function currentFactionCount(){
  const latest=state.factionCounts[0];
  return latest?state.factionCounts.filter(row=>row.source_key===latest.source_key):[];
 }
-function physicalFactionMeters(fabric){
+function physicalFactionMeters(fabric,inventoryLines){
  const approvedCode=fabric.standard_link_approved?state.standards.find(row=>row.id===fabric.standard_id)?.code:null;
  const match={
   'GAO-TEC-001':['Santista','Azul claro'],
@@ -168,7 +168,11 @@ function physicalFactionMeters(fabric){
   'GAO-TEC-004':['Santista','Azul P53'],
   'GAO-TEC-006':['Cedro','Amarelo']
  }[approvedCode];
- return match?currentFactionCount().filter(row=>row.physical_m!=null&&row.supplier_or_brand===match[0]&&row.material===match[1]).reduce((sum,row)=>sum+n(row.physical_m),0):0;
+ const normalize=value=>String(value??'').trim().toLocaleLowerCase('pt-BR');
+ const counts=inventoryLines??currentFactionCount();
+ const rows=match?counts.filter(row=>row.physical_m!=null&&
+  normalize(row.supplier_or_brand)===normalize(match[0])&&normalize(row.material)===normalize(match[1])):[];
+ return inventoryLines&&!rows.length?null:rows.reduce((sum,row)=>sum+n(row.physical_m),0);
 }
 function liveBalances(){
  const cutoff=state.factionCounts[0]?.counted_on||state.factionCounts[0]?.reported_on;
