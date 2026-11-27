@@ -1,7 +1,6 @@
 const companies=['INDCOM','BIOREVERSE'];
 const colors=['#79baff','#54d9b1','#f7c66a'];
 const sources={
-  forms:{label:'Forms · peso coletado',indices:[1,2]},
   semand:{label:'SEMAND · peso considerado',indices:[3,4]},
   pdf:{label:'Documentos · peso apurado',indices:[6,10]},
 };
@@ -122,7 +121,7 @@ function button(label,onClick){
 }
 
 export function mountWasteChart(root,records){
-  let scoped=records,month=null,week=null,source='forms',observer;
+  let scoped=records,month=null,week=null,source='pdf',observer;
   root.innerHTML=`<div class="wa-chart-head"><div><h3>Lixo triado e volume por coletora · kg</h3><p class="waste-sub" data-wa-chart-path></p></div>
     <label>Fonte <select data-wa-chart-source></select></label></div>
     <div class="wa-chart-legend"><span>INDCOM</span><span>BIOREVERSE</span><span class="wa-chart-triage">Lixo triado</span><small>Linha tracejada · tendência</small></div>
@@ -172,7 +171,7 @@ export function mountWasteChart(root,records){
     const title=document.createElement('h4');title.textContent='Projeção por '+units[level];forecast.append(title);
     const note=document.createElement('p');note.className='waste-sub';
     if(!estimate){
-      note.textContent=source==='pdf'?'Tendência dos pesos documentados. Selecione Forms ou SEMAND para projetar com períodos completos.':'Dados insuficientes para projetar este período.';
+      note.textContent=source==='pdf'?'Tendência dos pesos documentados. Selecione SEMAND para projetar com períodos completos.':'Dados insuficientes para projetar este período.';
       forecast.append(note);return;
     }
     note.textContent='Base até '+shortDate.format(asDate(estimate.cutoff))+'. Média dos últimos 3 a 4 períodos completos por coletora. * Período parcial.';

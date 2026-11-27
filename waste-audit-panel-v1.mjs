@@ -1,4 +1,4 @@
-import { mountWasteChart } from './waste-audit-chart-v1.mjs?v=4';
+import { mountWasteChart } from './waste-audit-chart-v1.mjs?v=5';
 
 const references = {
   workbook:'Planilha de auditoria',
@@ -38,7 +38,7 @@ export function mountAudit(root,history,downloadDocument,loadSource){
   <details class="waste-section"><summary id="wa-pdfTitle">Manifestos</summary><div class="waste-audit-scroll" id="wa-pdf"></div></details>
   <section class="waste-section"><h3 id="wa-refsTitle">Documentos de referência</h3><ul id="wa-references"></ul>
     <p id="wa-downloadStatus" role="status"></p>
-    <p class="waste-sub">Os manifestos abrem o pacote da coletora. Use o identificador da linha para localizar o PDF. As fontes podem registrar a mesma coleta. Os PDFs usam a data do manifesto, o Forms usa a data da coleta e o SEMAND usa a data do transporte ou da emissão.</p>
+    <p class="waste-sub">Os links disponíveis abrem os pacotes de documentos da coletora. As fontes podem registrar a mesma coleta. Os manifestos usam a data do documento e o SEMAND usa a data do transporte ou da emissão. A coluna de arquivo identifica os PDFs do lote auditado.</p>
   </section>`;
   const el=id=>root.querySelector('#wa-'+id);
   const updateChart=mountWasteChart(el('chart'),data);
@@ -76,9 +76,10 @@ export function mountAudit(root,history,downloadDocument,loadSource){
   const date=s=>s.split('-').reverse().join('/');
   const monthName=s=>new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(s+'-01T12:00:00Z'));
   const months=[...new Set(data.map(r=>r.d.slice(0,7)))];
-  const columns=['Triagem','Forms INDCOM','Forms BIOREVERSE','Forms total','SEMAND INDCOM','SEMAND BIOREVERSE','SEMAND total','MTR cancelado','PDFs INDCOM','Triagem − Forms','Documentos BIOREVERSE','Documentos total'];
+  const columns=['Triagem','SEMAND INDCOM','SEMAND BIOREVERSE','SEMAND total','MTR cancelado','PDFs INDCOM','Documentos BIOREVERSE','Documentos total'];
+  const visibleMetrics=[0,4,5,6,7,8,10,11];
   const options=(node,items)=>node.replaceChildren(...items.map(([val,label])=>new Option(label,val)));
-  options(el('month'),[['all','Todos os meses · junho a novembro de 2026'],...months.map(m=>[m,monthName(m)+(m<'2026-08'?' · histórico':'')])]);
+  options(el('month'),[['all','Todos os meses'],...months.map(m=>[m,monthName(m)+(m<'2026-08'?' · histórico':'')])]);
   let mode='monthly';
   function group(rows,key){
     const groups=new Map();
@@ -94,12 +95,12 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     return values.length?values.reduce((a,b)=>a+b,0):null;
   }
   function values(rows){
-    const [t,fi,fb,si,sb,c,p,f]=Array.from({length:8},(_,i)=>sum(rows,i));
+    const [t,si,sb,c,p]=[0,3,4,5,6].map(i=>sum(rows,i));
     const st=si===null&&sb===null?null:(si||0)+(sb||0);
     const bio=rows.filter(r=>r.bio).map(r=>r.bio[1]);
     const bp=bio.length?bio.reduce((a,b)=>a+b,0):null;
     const pdfTotal=p===null&&bp===null?null:(p||0)+(bp||0);
-    return [t,fi,fb,f,si,sb,st,c,p,t===null||f===null?null:t-f,bp,pdfTotal];
+    return [t,null,null,null,si,sb,st,c,p,null,bp,pdfTotal];
   }
   const inMonth=()=>data.filter(r=>el('month').value==='all'||r.d.startsWith(el('month').value));
   const interval=rows=>date(rows[0].d)+' a '+date(rows.at(-1).d);
@@ -135,10 +136,10 @@ export function mountAudit(root,history,downloadDocument,loadSource){
       const diff=est===null||doc===null?null:est-doc;
       const sourceKey=m==='2026-10'?'indcomInvoice':m==='2026-11'?'workbook':'indcom';
       return [monthName(m)+(m==='2026-11'?' · parcial':''),evidence('indcomFinance',kg(est)),kg(doc),diff>0?'+'+kg(diff):kg(diff),
-        evidence(sourceKey,source),evidence('indcom',kg(v[8])),evidence('workbook',kg(v[1])),evidence('workbook',kg(v[4])),status];
+        evidence(sourceKey,source),evidence('indcom',kg(v[8])),evidence('workbook',kg(v[4])),status];
     });
     if(!lines.length){el('indcom').textContent='Sem conciliação INDCOM neste mês.';return}
-    const body=table(el('indcom'),['Mês da coleta','Estimado pelo valor','Apurado','Diferença','Fonte da apuração','PDFs','Forms','SEMAND','Resultado'],lines);
+    const body=table(el('indcom'),['Mês da coleta','Estimado pelo valor','Apurado','Diferença','Fonte da apuração','PDFs','SEMAND','Resultado'],lines);
     for(const row of body.rows){
       const delta=row.cells[3];
       delta.className=delta.textContent.startsWith('+')?'pos':delta.textContent.startsWith('-')?'neg':'';
@@ -175,8 +176,6 @@ export function mountAudit(root,history,downloadDocument,loadSource){
   const sourceDetails={
     0:{name:'triagem',headers:['Data','Comanda','Cliente','Sequência','Hora da triagem','Equipe','Bruto (kg)','Líquido (kg)','Linha original'],
       row:r=>[date(r[0]),r[1],r[2],r[3],r[4],r[5],kg(r[6]),kg(r[7]),r[8]]},
-    3:{name:'forms',headers:['Data da coleta','Coletora','Linha original','Registro no Forms','Carrinhos','Peso (kg)','Foto referenciada'],
-      row:r=>[date(r[0]),r[1],r[2],r[3],r[4]??'—',kg(r[5]),r[6]]},
     6:{name:'semand',headers:['Data de referência','MTR','Transportadora','Fluxo','Situação','CDF','Indicado (kg)','Recebido (kg)','Considerado (kg)'],
       include:r=>r[4]==='Recebido'||r[4]==='Salvo',
       row:r=>[date(r[0]),r[1],r[2],r[3],r[4],r[5]??'—',kg(r[6]),kg(r[7]),kg(r[4]==='Recebido'?r[7]:r[6])]},
@@ -201,15 +200,9 @@ export function mountAudit(root,history,downloadDocument,loadSource){
         const dates=new Set(selected.map(r=>r.d));
         headers=source.headers;
         lines=(await sourceRecords(source.name)).filter(r=>dates.has(r[0])&&(!source.include||source.include(r))).map(source.row);
-      }else if(id===8||id===10){
+      }else if(id===8||id===10||id===11){
         headers=['Data','Semana ISO','Empresa','Manifesto ou arquivo','OS','Peso (kg)'];
-        lines=pdfs().filter(row=>row[2]===(id===8?'INDCOM':'BIOREVERSE'));
-      }else{
-        headers=['Data','Semana ISO','Triagem (kg)','Forms (kg)','Diferença (kg)'];
-        lines=selected.filter(r=>r.v[0]!==null||r.v[7]!==null).map(r=>{
-          const v=values([r]);
-          return [date(r.d),r.w,kg(v[0]),kg(v[3]),kg(v[9])];
-        });
+        lines=pdfs().filter(row=>id===11||row[2]===(id===8?'INDCOM':'BIOREVERSE'));
       }
       if(!dialog.open||request!==detailRequest) return;
       const searchable=lines.map(row=>row.map(value=>value?.textContent??String(value)).join(' ').toLocaleLowerCase('pt-BR'));
@@ -257,23 +250,24 @@ export function mountAudit(root,history,downloadDocument,loadSource){
       return cell;
     };
     const pdfs=()=>selected.flatMap(r=>[
-      ...r.pdf.map(([n,os,p])=>[date(r.d),r.w,'INDCOM',evidence('indcom',n),os,kg(p)]),
+      ...r.pdf.map(([n,os,p,archive])=>[date(r.d),r.w,'INDCOM',archive?n+' · '+archive:evidence('indcom',n),os,kg(p)]),
       ...(r.bio?[[date(r.d),r.w,'BIOREVERSE',bioEvidence(r),'—',kg(r.bio[1])]]:[])
     ]);
-    el('cards').replaceChildren(...[0,3,6,8,10,9].map(i=>{
+    el('cards').replaceChildren(...[0,6,8,10,11].map(i=>{
       const card=document.createElement('button');
       card.className='waste-kpi'+([3,6].includes(i)?' waste-audit-emphasis':'');
       const title=document.createElement('span'), value=document.createElement('strong');
-      title.textContent=columns[i];value.textContent=totals[i]===null?'Sem dados':kg(totals[i])+' kg';
+      title.textContent=columns[visibleMetrics.indexOf(i)];value.textContent=totals[i]===null?'Sem dados':kg(totals[i])+' kg';
       card.append(title,value);
       return detailCard(card,i,title.textContent,value.textContent,selected,pdfs);
     }));
     const weekly=mode==='weekly';
     el('title').textContent=(weekly?'Resumo por semana ISO':'Resumo mensal')+' · kg';
     const groups=group(selected,r=>weekly?r.w:r.d.slice(0,7));
-    const lines=groups.map(([k,rs])=>[weekly?k:monthName(k),interval(rs),...values(rs).map(kg)]);
-    const linkedColumns=columns.map((label,index)=>{
-      if(index===8) return evidence('indcom',label);
+    const lines=groups.map(([k,rs])=>[weekly?k:monthName(k),interval(rs),...visibleMetrics.map(i=>kg(values(rs)[i]))]);
+    const linkedColumns=columns.map((label,column)=>{
+      const index=visibleMetrics[column];
+      if(index===8) return label;
       if(index===10||index===11) {
         const link=document.createElement('a');
         link.href='#wa-refsTitle';
@@ -282,12 +276,12 @@ export function mountAudit(root,history,downloadDocument,loadSource){
       }
       return evidence('workbook',label);
     });
-    const body=table(el('summary'),[weekly?'Semana ISO':'Mês','Datas no recorte',...linkedColumns],[...lines,['Total','',...totals.map(kg)]]);
+    const body=table(el('summary'),[weekly?'Semana ISO':'Mês','Datas no recorte',...linkedColumns],[...lines,['Total','',...visibleMetrics.map(i=>kg(totals[i]))]]);
     body.lastElementChild.className='total';
-    table(el('daily'),['Data','Semana ISO',...linkedColumns.map(link=>link.cloneNode(true))],selected.map(r=>[date(r.d),r.w,...values([r]).map(kg)]));
+    table(el('daily'),['Data','Semana ISO',...linkedColumns.map(link=>typeof link==='string'?link:link.cloneNode(true))],selected.map(r=>[date(r.d),r.w,...visibleMetrics.map(i=>kg(values([r])[i]))]));
     el('dailyTitle').textContent='Conferência por data · '+selected.length+' dias';
     const manifests=pdfs();
-    el('pdfTitle').textContent='Manifestos INDCOM e BIOREVERSE · '+manifests.length+' PDFs únicos';
+    el('pdfTitle').textContent='Manifestos INDCOM e BIOREVERSE · '+manifests.length+' documentos';
     if(manifests.length) table(el('pdf'),['Data','Semana ISO','Empresa','Manifesto ou arquivo','OS','Peso (kg)'],manifests);
     else el('pdf').textContent='Nenhum manifesto no recorte.';
   }
