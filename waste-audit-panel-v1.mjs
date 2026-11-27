@@ -1,4 +1,4 @@
-import { mountWasteChart } from './waste-audit-chart-v1.mjs?v=5';
+import { mountWasteChart } from './waste-audit-chart-v1.mjs?v=6';
 
 const references = {
   workbook:'Planilha de auditoria',
@@ -49,7 +49,7 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     <p class="waste-sub">Os links disponíveis abrem os pacotes de documentos da coletora. As fontes podem registrar a mesma coleta. Os manifestos usam a data do documento e o SEMAND usa a data do transporte ou da emissão. A coluna de arquivo identifica os PDFs do lote auditado.</p>
   </section>`;
   const el=id=>root.querySelector('#wa-'+id);
-  const updateChart=mountWasteChart(el('chart'),data);
+  const updateChart=mountWasteChart(el('chart'),data,annual);
   function referenceLink(key,label){
     const link=document.createElement('a');
     link.href='#wa-refsTitle';
@@ -268,7 +268,7 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     );
     const bioCents = bioPeriod.reduce((total,[,,cents]) => total + cents,0);
     el('bioTitle').textContent='Títulos BIOREVERSE · '+(bioPeriod.length?kg(bioCents/1.70)+' kg estimados':'sem título no mês');
-    updateChart(selected);
+    updateChart(selected,el('month').value,el('week').value);
     const bioEvidence=r=>{
       const link=evidence(bioArchiveByMonth[r.d.slice(0,7)],r.bio[0]);
       if(!r.bio_correction)return link;

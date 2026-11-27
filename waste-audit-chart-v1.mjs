@@ -1,5 +1,5 @@
 const companies=['INDCOM','BIOREVERSE'];
-const colors=['#79baff','#54d9b1','#f7c66a'];
+const colors=['#79baff','#54d9b1','#bc9cff','#f7c66a'];
 const sources={
   semand:{label:'SEMAND · peso considerado',indices:[3,4]},
   pdf:{label:'Documentos · peso apurado',indices:[6,10]},
@@ -22,6 +22,25 @@ function periodKey(row,level){
   if(level==='month') return row.d.slice(0,7);
   return level==='week'?row.w:row.d;
 }
+export function annualChartRows(records,annual){
+  const byDate=new Map();
+  const add=(day,week,weight,company)=>{
+    if(!day||!week||weight==null) return;
+    if(!byDate.has(day)) byDate.set(day,{d:day,w:week,v:Array(8).fill(null),documentWeights:[null,null]});
+    const amounts=byDate.get(day).documentWeights;
+    amounts[company]=(amounts[company]??0)+weight;
+  };
+  for(const [day,week,, ,weight] of annual.indicom) add(day,week,weight,0);
+  for(const [day,week,,weight] of annual.bioreverse) add(day,week,weight,1);
+  for(const row of records) {
+    if(!row.d.startsWith('2026-')) continue;
+    const documented=byDate.get(row.d);
+    byDate.set(row.d,{...row,documentWeights:documented?.documentWeights??[null,null]});
+  }
+  return [...byDate.values()].sort((a,b)=>a.d.localeCompare(b.d));
+}
+const totalCollected=weights=>weights.some(value=>value!==null)?weights.reduce((sum,value)=>sum+(value??0),0):null;
+
 export function seriesFor(records,source,level){
   const groups=new Map();
   for(const record of records){
@@ -31,7 +50,7 @@ export function seriesFor(records,source,level){
   }
   return [...groups].map(([key,rows])=>{
     const expected=level==='month'?new Date(Date.UTC(+key.slice(0,4),+key.slice(5,7),0)).getUTCDate():level==='week'?7:1;
-    const values=sources[source].indices.map(index=>rows.map(r=>index===10?r.bio?.[1]??null:r.v[index]));
+    const values=sources[source].indices.map((index,company)=>rows.map(r=>source==='pdf'&&r.documentWeights?r.documentWeights[company]:index===10?r.bio?.[1]??null:r.v[index]));
     const triage=rows.map(row=>row.v[0]).filter(value=>value!==null);
     return {
       triaged:triage.length?triage.reduce((sum,value)=>sum+value,0):null,
@@ -83,8 +102,8 @@ function draw(canvas,points,source){
   const x=index=>left+(index+.5)*span;
   const plotted=points.map(point=>({
     ...point,
-    weights:[...point.weights,point.triaged],
-    complete:[...(source==='pdf'?point.weights.map(value=>value!==null):point.complete),point.triageComplete],
+    weights:[...point.weights,totalCollected(point.weights),point.triaged],
+    complete:[...(source==='pdf'?point.weights.map(value=>value!==null):point.complete),point.weights.every(value=>value!==null),point.triageComplete],
   }));
   const trends=colors.map((_,series)=>trendFor(plotted,series));
   const max=Math.max(100,...plotted.flatMap(point=>point.weights.map(value=>value??0)),...trends.flatMap(trend=>trend.map(p=>p.value)));
@@ -97,13 +116,13 @@ function draw(canvas,points,source){
     ctx.strokeStyle='#344255';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(left,row);ctx.lineTo(width-right,row);ctx.stroke();
     ctx.fillStyle='#b1c1d4';ctx.fillText(money.format(value/100),left-7,row+4);
   }
-  const bar=Math.max(2,Math.min(18,span*.20));
+  const bar=Math.max(2,Math.min(18,span*.17));
   colors.forEach((color,series)=>{
     ctx.fillStyle=color;
     for(const [index,point] of plotted.entries()){
       const value=point.weights[series];
       if(value===null) continue;
-      const center=x(index)+(series-1)*1.25*bar;
+      const center=x(index)+(series-1.5)*1.25*bar;
       ctx.globalAlpha=point.partial ? .48 : .85;
       ctx.fillRect(center-bar/2,y(value),bar,Math.max(1,bottom-y(value)));
     }
@@ -120,11 +139,11 @@ function button(label,onClick){
   const node=document.createElement('button');node.type='button';node.textContent=label;node.onclick=onClick;return node;
 }
 
-export function mountWasteChart(root,records){
-  let scoped=records,month=null,week=null,source='pdf',observer;
+export function mountWasteChart(root,records,annual){
+  let scoped=records,documented=annual?annualChartRows(records,annual):records,month=null,week=null,source='pdf',observer;
   root.innerHTML=`<div class="wa-chart-head"><div><h3>Lixo triado e volume por coletora · kg</h3><p class="waste-sub" data-wa-chart-path></p></div>
     <label>Fonte <select data-wa-chart-source></select></label></div>
-    <div class="wa-chart-legend"><span>INDCOM</span><span>BIOREVERSE</span><span class="wa-chart-triage">Lixo triado</span><small>Linha tracejada · tendência</small></div>
+    <div class="wa-chart-legend"><span>INDCOM</span><span>BIOREVERSE</span><span class="wa-chart-total">Total das coletoras</span><span class="wa-chart-triage">Lixo triado</span><small>Linha tracejada · tendência</small></div>
     <div data-wa-chart-content></div><div data-wa-chart-forecast></div>`;
   const get=name=>root.querySelector('[data-wa-chart-'+name+']');
   const sourceInput=get('source');
@@ -133,7 +152,7 @@ export function mountWasteChart(root,records){
   function render(){
     observer?.disconnect();
     const level=week?'day':month?'week':'month';
-    const view=scoped.filter(row=>(!month||row.d.startsWith(month))&&(!week||row.w===week));
+    const view=(source==='pdf'?documented:scoped).filter(row=>(!month||row.d.startsWith(month))&&(!week||row.w===week));
     const points=seriesFor(view,source,level),path=get('path'),content=get('content');
     path.replaceChildren();
     if(month) path.append(button('Todos os meses',()=>{month=null;week=null;render();}),document.createTextNode(' › '));
@@ -151,7 +170,7 @@ export function mountWasteChart(root,records){
       const details=document.createElement('p');details.className='waste-sub';details.setAttribute('role','status');
       details.textContent=level==='week'?'Clique na semana para ver os dias.':'Selecione um período para conferir os pesos.';
       for(const point of points){
-        const summary=point.label+' · '+companies.map((name,i)=>name+': '+formatKg(point.weights[i])).join(' · ')+' · Lixo triado: '+formatKg(point.triaged)+(point.partial?' · período parcial':'');
+        const summary=point.label+' · '+companies.map((name,i)=>name+': '+formatKg(point.weights[i])).join(' · ')+' · Total das coletoras: '+formatKg(totalCollected(point.weights))+(point.weights.filter(value=>value!==null).length===1?' (uma coletora com dados)':'')+' · Lixo triado: '+formatKg(point.triaged)+(point.partial?' · período parcial':'');
         const action=button('',()=>{
           if(level==='month'){month=point.key;render();}
           else if(level==='week'){week=point.key;render();}
@@ -186,5 +205,11 @@ export function mountWasteChart(root,records){
     }
     forecast.append(note,list);
   }
-  return selected=>{scoped=selected;month=null;week=null;render();};
+  return (selected,monthFilter='all',weekFilter='all')=>{
+    scoped=selected;
+    documented=annual&&(monthFilter==='all'||monthFilter.startsWith('2026-'))
+      ?annualChartRows(selected,annual).filter(row=>(monthFilter==='all'||row.d.startsWith(monthFilter))&&(weekFilter==='all'||row.w===weekFilter))
+      :selected;
+    month=null;week=null;render();
+  };
 }
