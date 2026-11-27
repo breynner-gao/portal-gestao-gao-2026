@@ -352,46 +352,66 @@ function render(){
  const graphPanel=$('graph').closest('section');
  graphPanel.querySelector('h2').textContent='Evolução do '+(occurrence?'relave por ocorrência do cliente':'relave interno GAO');
  graphPanel.querySelector('.key.target').parentElement.innerHTML='<i class="key target"></i>'+(occurrence?'Meta de ocorrência do cliente até 2%':'Meta interna 2,50%');
- const historical=customerHistory?historicalTotals(customerHistory,inPeriod):null;
+ const historical=occurrence&&customerHistory?historicalTotals(customerHistory,inPeriod):null;
  const useHistory=historical?.rate!=null||historical?.waste>0;
  const ct=useHistory?historical:totals(customer);
  const company=totals(entries.filter(r=>kindOf(r)==='internal'&&inPeriod(r.date)));
- const companyWaste=occurrence?t.waste:ct.waste;
+ const companyWaste=t.waste;
  const companyRate=company.sorted>0?100*companyWaste/company.sorted:null;
  const customerNote=ct.rate!==null?kg(ct.waste)+' de relave / '+kg(ct.sorted)+' triados · '+(useHistory?'Histórico importado':'Lançamentos do portal'):useHistory?'Histórico sem peso triado no recorte':customerHistoryError?'Histórico indisponível · clique para tentar novamente':customerHistory?'Sem peso triado no recorte':'Carregando histórico…';
  $('scope').textContent=[month&&monthLabel(month),week&&weekLabel(week),day&&dayLabel(day)].filter(Boolean).join(' › ');
  $('back').hidden=!month;
- const kpis=occurrence?[[kinds.customer,t.rate===null?'—':pct(t.rate),customerOccurrenceStatus(t.rate),t.rate===null?'':t.rate<=customerOccurrenceTarget?'good':'bad'],['Peso de relave do cliente',kg(t.waste),'Relave por ocorrência do cliente',''],['Peso triado do cliente',kg(t.sorted),'Base das comandas do cliente',''],['Comandas pendentes do cliente',pending.size,'Relave por ocorrência do cliente','']]:[['Relave interno GAO',t.rate===null?'—':pct(t.rate),t.rate===null?'Sem base':t.rate<=2.5?'Dentro da meta':'Acima da meta',t.rate===null?'':t.rate<=2.5?'good':'bad'],['Peso de relave',kg(t.waste),'Inclui privativos',''],['Peso triado conferido',kg(t.sorted),'Uma vez por comanda',''],['Diferença para a meta',t.rate===null?'—':(t.rate>=2.5?'+':'')+num.format(t.rate-2.5)+' p.p.','Meta de 2,50%',''],['Comandas pendentes',pending.size,'Relave a conferir, pesagem ou tratativa',''],[kinds.customer,ct.rate===null?'—':pct(ct.rate),customerNote+' · '+customerOccurrenceStatus(ct.rate),ct.rate===null?'':ct.rate<=customerOccurrenceTarget?'good':'bad']];
- kpis.push(['Relave por ocorrência do cliente · Visão da empresa',companyRate===null?'—':pct(companyRate),kg(companyWaste)+' de relave do cliente / '+kg(company.sorted)+' triados na empresa · '+customerOccurrenceStatus(companyRate),companyRate===null?'':companyRate<=customerOccurrenceTarget?'good':'bad']);
+ $('open-customer-history').hidden=!occurrence;
+ const kpis=occurrence?[[kinds.customer,t.rate===null?'—':pct(t.rate),customerOccurrenceStatus(t.rate),t.rate===null?'':t.rate<=customerOccurrenceTarget?'good':'bad'],['Peso de relave do cliente',kg(t.waste),'Relave por ocorrência do cliente',''],['Peso triado do cliente',kg(t.sorted),'Base das comandas do cliente',''],['Comandas pendentes do cliente',pending.size,'Relave por ocorrência do cliente','']]:[['Relave interno GAO',t.rate===null?'—':pct(t.rate),t.rate===null?'Sem base':t.rate<=2.5?'Dentro da meta':'Acima da meta',t.rate===null?'':t.rate<=2.5?'good':'bad'],['Peso de relave',kg(t.waste),'Inclui privativos',''],['Peso triado conferido',kg(t.sorted),'Uma vez por comanda',''],['Diferença para a meta',t.rate===null?'—':(t.rate>=2.5?'+':'')+num.format(t.rate-2.5)+' p.p.','Meta de 2,50%',''],['Comandas pendentes',pending.size,'Relave a conferir, pesagem ou tratativa','']];
+ if(occurrence)kpis.push(
+  ['Relave por ocorrência · Histórico',ct.rate===null?'—':pct(ct.rate),customerNote+' · '+customerOccurrenceStatus(ct.rate),ct.rate===null?'':ct.rate<=customerOccurrenceTarget?'good':'bad'],
+  ['Relave por ocorrência do cliente · Visão da empresa',companyRate===null?'—':pct(companyRate),kg(companyWaste)+' de relave do cliente / '+kg(company.sorted)+' triados na empresa · '+customerOccurrenceStatus(companyRate),companyRate===null?'':companyRate<=customerOccurrenceTarget?'good':'bad']);
  $('cards').innerHTML=kpis.map(([label,value,note,cls])=>'<button class="card" data-command-list><span>'+label+'</span><strong class="'+cls+'">'+value+'</strong><small>'+note+'</small></button>').join('');
- view.querySelectorAll('[data-command-list]').forEach((b,i)=>b.onclick=()=>{if(i===kpis.length-1){if(useHistory&&!occurrence)openCustomerHistory(true).finally(()=>{if(host.isConnected)render()});else showList(customer,'Relave por ocorrência do cliente · Visão da empresa');return}if(i===5){if(!customerHistory||useHistory||!customer.length)openCustomerHistory(true).finally(()=>{if(host.isConnected)render()});else showList(customer,kinds.customer);return}if(i===(occurrence?3:4)){showList([...pending.keys()],'Comandas pendentes',pending);return}$('commands').scrollIntoView({behavior:'smooth'})});
- let companyPanel=$('company-occurrences');
- if(!companyPanel){
-  companyPanel=document.createElement('section');
-  companyPanel.id='company-occurrences';
-  companyPanel.className='panel';
-  $('relave-rankings').after(companyPanel);
+ view.querySelectorAll('[data-command-list]').forEach((button,index)=>button.onclick=()=>{
+  if(occurrence&&index===4){
+   if(!customerHistory||useHistory||!customer.length)openCustomerHistory(true).finally(()=>{if(host.isConnected)render()});
+   else showList(customer,kinds.customer);
+   return;
+  }
+  if(occurrence&&index===5){showList(customer,'Relave por ocorrência do cliente · Visão da empresa');return;}
+  if(index===(occurrence?3:4)){showList([...pending.keys()],'Comandas pendentes',pending);return;}
+  $('commands').scrollIntoView({behavior:'smooth'});
+ });
+ if(occurrence){
+  let companyPanel=$('company-occurrences');
+  if(!companyPanel){
+   companyPanel=document.createElement('section');
+   companyPanel.id='company-occurrences';
+   companyPanel.className='panel';
+   $('relave-rankings').after(companyPanel);
+  }
+  const clientsInPeriod=new Map();
+  for(const row of customer){
+   const key=row.clientId||row.client||'Cliente não informado';
+   if(!clientsInPeriod.has(key))clientsInPeriod.set(key,{name:row.client||'Cliente não informado',rows:[]});
+   clientsInPeriod.get(key).rows.push(row);
+  }
+  const clientRows=[...clientsInPeriod.values()].map(group=>{
+   const total=totals(group.rows);
+   const companyPercent=company.sorted>0?pct(100*total.waste/company.sorted):'—';
+   return '<tr><td>'+esc(group.name)+'</td><td>'+kg(total.waste)+'</td><td>'+kg(total.sorted)+
+    '</td><td>'+(total.rate===null?'—':pct(total.rate))+'</td><td>'+companyPercent+'</td><td>Cliente · '+customerOccurrenceStatus(total.rate)+'<br>Empresa · '+customerOccurrenceStatus(company.sorted>0?100*total.waste/company.sorted:null)+'</td></tr>';
+  }).join('');
+  companyPanel.innerHTML='<h2>Relave por ocorrência do cliente · Visão da empresa</h2>'+
+   '<p class="muted">Kg de ocorrências de cada cliente ÷ '+kg(company.sorted)+
+   ' triados do relave interno GAO no período selecionado. Meta de ocorrência do cliente até 2% nas duas visões.</p>'+
+   '<div class="table"><table><thead><tr><th>Cliente</th><th>Relave do cliente</th>'+
+   '<th>Triado do cliente</th><th>% no cliente</th><th>% na empresa</th><th>Meta até 2%</th></tr></thead>'+
+   '<tbody>'+clientRows+'</tbody></table></div>';
+  companyPanel.hidden=!customer.length;
+  renderMonthlyClients(companyPanel);
+  $('monthly-client-occurrences').hidden=false;
+ }else{
+  for(const id of ['company-occurrences','monthly-client-occurrences']){
+   const panel=$(id);
+   if(panel)panel.hidden=true;
+  }
  }
- const clientsInPeriod=new Map();
- for(const row of customer){
-  const key=row.clientId||row.client||'Cliente não informado';
-  if(!clientsInPeriod.has(key))clientsInPeriod.set(key,{name:row.client||'Cliente não informado',rows:[]});
-  clientsInPeriod.get(key).rows.push(row);
- }
- const clientRows=[...clientsInPeriod.values()].map(group=>{
-  const total=totals(group.rows);
-  const companyPercent=company.sorted>0?pct(100*total.waste/company.sorted):'—';
-  return '<tr><td>'+esc(group.name)+'</td><td>'+kg(total.waste)+'</td><td>'+kg(total.sorted)+
-   '</td><td>'+(total.rate===null?'—':pct(total.rate))+'</td><td>'+companyPercent+'</td><td>Cliente · '+customerOccurrenceStatus(total.rate)+'<br>Empresa · '+customerOccurrenceStatus(company.sorted>0?100*total.waste/company.sorted:null)+'</td></tr>';
- }).join('');
- companyPanel.innerHTML='<h2>Relave por ocorrência do cliente · Visão da empresa</h2>'+
-  '<p class="muted">Kg de ocorrências de cada cliente ÷ '+kg(company.sorted)+
-  ' triados do relave interno GAO no período selecionado. Meta de ocorrência do cliente até 2% nas duas visões.</p>'+
-  '<div class="table"><table><thead><tr><th>Cliente</th><th>Relave do cliente</th>'+
-  '<th>Triado do cliente</th><th>% no cliente</th><th>% na empresa</th><th>Meta até 2%</th></tr></thead>'+
-  '<tbody>'+clientRows+'</tbody></table></div>';
- companyPanel.hidden=!customer.length;
- renderMonthlyClients(companyPanel);
  $('chart-filter').hidden=!chartFilter;
  $('chart-filter-label').textContent=chartFilter?(chartFilter.key==='reason'?'Motivo · ':'Tipo de enxoval · ')+chartFilter.label+' · % sobre todo o peso triado':'';
  const base=day?entries.filter(r=>kindOf(r)===scopeKind&&r.date.startsWith(month)&&weekOf(r.date)===week):rows;
