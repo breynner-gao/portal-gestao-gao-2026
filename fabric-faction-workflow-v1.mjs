@@ -570,7 +570,10 @@ export function createFactionWorkflow({
     const choices=state.fabric.filter(f=>f.active&&f.homologated&&f.standard_link_approved&&!f.internal_only);
     const options=choices.map(f=>{
       const supplier=state.suppliers.find(row=>row.id===f.supplier_id);
-      const label=[internalName(f),f.code,f.color_reference,supplier?.trade_name||supplier?.legal_name].filter(Boolean).join(' · ');
+      const quality=String(f.quality_code??'').trim();
+      const qualityLabel=quality&&quality!=='N/D'?'Q'+quality.replace(/^Q/i,''):'Qualidade não informada';
+      const width=n(f.width_m)>0?br(f.width_m,3)+' m de largura':'';
+      const label=[internalName(f),qualityLabel,width,f.code,f.color_reference,supplier?.trade_name||supplier?.legal_name].filter(Boolean).join(' · ');
       return `<option value="${esc(f.id)}">${esc(label)}</option>`;
     }).join('');
     openDialog('Vincular saldo de abertura',`<p><strong>${esc(line.material)}</strong> · ${esc(line.supplier_or_brand||'—')} · ${meters(line.physical_m)}</p>
