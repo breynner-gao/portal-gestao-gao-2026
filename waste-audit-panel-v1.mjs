@@ -1,4 +1,4 @@
-import { mountWasteChart } from './waste-audit-chart-v1.mjs?v=6';
+import { mountWasteChart } from './waste-audit-chart-v1.mjs?v=7';
 
 const references = {
   workbook:'Planilha de auditoria',
@@ -18,6 +18,7 @@ export function mountAudit(root,history,downloadDocument,loadSource){
   root.innerHTML=`${annual?`<section class="waste-section" aria-labelledby="wa-annualTitle">
     <h3 id="wa-annualTitle">Auditoria de resíduos de 2026</h3>
     <p id="wa-annualCutoff" class="waste-sub"></p>
+    <p id="wa-annualTriage" class="waste-sub"></p>
     <div class="waste-audit-scroll" id="wa-annualMonths"></div>
     <details><summary>Detalhar por semana ISO</summary><div class="waste-audit-scroll" id="wa-annualWeeks"></div></details>
     <details><summary>Conferência dos MTRs da Indicom</summary><div class="waste-audit-scroll" id="wa-annualIndicom"></div></details>
@@ -84,7 +85,7 @@ export function mountAudit(root,history,downloadDocument,loadSource){
   const date=s=>s.split('-').reverse().join('/');
   const monthName=s=>new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(s+'-01T12:00:00Z'));
   const months=[...new Set(data.map(r=>r.d.slice(0,7)))];
-  const columns=['Triagem','SEMAND INDCOM','SEMAND BIOREVERSE','SEMAND total','MTR cancelado','PDFs INDCOM','Documentos BIOREVERSE','Documentos total'];
+  const columns=['Triagem GAO','SEMAND INDCOM','SEMAND BIOREVERSE','SEMAND total','MTR cancelado','PDFs INDCOM','Documentos BIOREVERSE','Documentos total'];
   const visibleMetrics=[0,4,5,6,7,8,10,11];
   const options=(node,items)=>node.replaceChildren(...items.map(([val,label])=>new Option(label,val)));
   options(el('month'),[['all','Todos os meses'],...months.map(m=>[m,monthName(m)+(m<'2026-08'?' · histórico':'')])]);
@@ -140,17 +141,23 @@ export function mountAudit(root,history,downloadDocument,loadSource){
   function renderAnnual(){
     if(!annual) return;
     el('annualCutoff').textContent='Documentos disponíveis até '+date(annual.cutoff)+'. Os pesos em conferência aparecem nas colunas de pendências.';
-    const labels=['PDFs Indicom (kg)','Indicom · lote validado (kg)','Indicom · histórico anterior (kg)',
+    const triaged=data.filter(row=>row.d.startsWith('2026-')&&row.v[0]!=null);
+    const totalTriaged=sum(triaged,0);
+    el('annualTriage').textContent=triaged.length
+      ?'Triagem GAO: '+kg(totalTriaged)+' kg registrados de '+date(triaged[0].d)+' a '+date(triaged.at(-1).d)+'.'
+      :'Sem dados de triagem GAO no ano.';
+    const monthWeight=key=>sum(triaged.filter(row=>row.d.startsWith(key)),0);
+    const labels=['Triagem GAO (kg)','PDFs Indicom (kg)','Indicom · lote validado (kg)','Indicom · histórico anterior (kg)',
       'Indicom · possível duplicidade (kg)','Bioreverse · fornecedor (kg)','Bioreverse · histórico ou MTR-GO recebido (kg)',
       'Bioreverse · sem comprovante por coleta (kg)','PDFs Indicom indisponíveis','Registros somente GAO'];
     const metrics=row=>[...row.slice(0,7).map(kg),...row.slice(7,9).map(String)];
     const total=Array.from({length:9},(_,i)=>annual.months.reduce((sum,row)=>sum+(row[i+1]??0),0));
     const monthly=table(el('annualMonths'),['Mês',...labels,'Cobertura'],[
-      ...annual.months.map(([month,...row])=>[monthName(month),...metrics(row),row[9]??'—']),
-      ['Acumulado',...metrics(total),'Até '+date(annual.cutoff)]
+      ...annual.months.map(([month,...row])=>[monthName(month),kg(monthWeight(month)),...metrics(row),row[9]??'—']),
+      ['Acumulado',kg(totalTriaged),...metrics(total),'Até '+date(annual.cutoff)]
     ]);
     monthly.lastElementChild.className='total';
-    table(el('annualWeeks'),['Mês','Semana ISO',...labels],annual.weeks.map(([month,week,...row])=>[monthName(month),week,...metrics(row)]));
+    table(el('annualWeeks'),['Mês','Semana ISO',...labels],annual.weeks.map(([month,week,...row])=>[monthName(month),week,kg(sum(triaged.filter(record=>record.d.startsWith(month)&&record.w===week),0)),...metrics(row)]));
     table(el('annualIndicom'),['Data','Semana ISO','MTR','OS','Peso (kg)','Conferência','PDF de origem'],
       annual.indicom.map(([day,week,mtr,os,weight,status,file])=>[date(day),week,mtr,os??'—',kg(weight),status,file??'—']));
     table(el('annualBio'),['Data','Semana ISO','NF','Peso do fornecedor (kg)','Conferência','Linha na planilha'],

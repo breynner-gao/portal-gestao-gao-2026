@@ -1,6 +1,7 @@
 const companies=['INDCOM','BIOREVERSE'];
 const colors=['#79baff','#54d9b1','#bc9cff','#f7c66a'];
 const sources={
+  triage:{label:'GAO · triagem de resíduos',indices:[]},
   semand:{label:'SEMAND · peso considerado',indices:[3,4]},
   pdf:{label:'Documentos · peso apurado',indices:[6,10]},
 };
@@ -50,7 +51,7 @@ export function seriesFor(records,source,level){
   }
   return [...groups].map(([key,rows])=>{
     const expected=level==='month'?new Date(Date.UTC(+key.slice(0,4),+key.slice(5,7),0)).getUTCDate():level==='week'?7:1;
-    const values=sources[source].indices.map((index,company)=>rows.map(r=>source==='pdf'&&r.documentWeights?r.documentWeights[company]:index===10?r.bio?.[1]??null:r.v[index]));
+    const values=source==='triage'?[[],[]]:sources[source].indices.map((index,company)=>rows.map(r=>source==='pdf'&&r.documentWeights?r.documentWeights[company]:index===10?r.bio?.[1]??null:r.v[index]));
     const triage=rows.map(row=>row.v[0]).filter(value=>value!==null);
     return {
       triaged:triage.length?triage.reduce((sum,value)=>sum+value,0):null,
@@ -81,7 +82,7 @@ function projectionDates(last,level){
   return [1,2,3].map(n=>shortDate.format(shift(cutoff,n)));
 }
 export function forecastFor(records,source,level){
-  if(!records.length||source==='pdf') return null;
+  if(!records.length||source==='pdf'||source==='triage') return null;
   const periods=seriesFor(records,source,level);
   const averages=companies.map((_,company)=>{
     const complete=periods.filter(period=>period.complete[company]).slice(-4);
@@ -122,7 +123,7 @@ function draw(canvas,points,source){
     for(const [index,point] of plotted.entries()){
       const value=point.weights[series];
       if(value===null) continue;
-      const center=x(index)+(series-1.5)*1.25*bar;
+      const center=x(index)+(source==='triage'?0:(series-1.5)*1.25*bar);
       ctx.globalAlpha=point.partial ? .48 : .85;
       ctx.fillRect(center-bar/2,y(value),bar,Math.max(1,bottom-y(value)));
     }
@@ -151,8 +152,10 @@ export function mountWasteChart(root,records,annual){
   sourceInput.onchange=()=>{source=sourceInput.value;render();};
   function render(){
     observer?.disconnect();
+    const triageOnly=source==='triage';
+    root.querySelectorAll('.wa-chart-legend span:not(.wa-chart-triage)').forEach(label=>{label.hidden=triageOnly;});
     const level=week?'day':month?'week':'month';
-    const view=(source==='pdf'?documented:scoped).filter(row=>(!month||row.d.startsWith(month))&&(!week||row.w===week));
+    const view=(source==='pdf'?documented:scoped).filter(row=>(!triageOnly||row.v[0]!=null)&&(!month||row.d.startsWith(month))&&(!week||row.w===week));
     const points=seriesFor(view,source,level),path=get('path'),content=get('content');
     path.replaceChildren();
     if(month) path.append(button('Todos os meses',()=>{month=null;week=null;render();}),document.createTextNode(' › '));
@@ -170,7 +173,7 @@ export function mountWasteChart(root,records,annual){
       const details=document.createElement('p');details.className='waste-sub';details.setAttribute('role','status');
       details.textContent=level==='week'?'Clique na semana para ver os dias.':'Selecione um período para conferir os pesos.';
       for(const point of points){
-        const summary=point.label+' · '+companies.map((name,i)=>name+': '+formatKg(point.weights[i])).join(' · ')+' · Total das coletoras: '+formatKg(totalCollected(point.weights))+(point.weights.filter(value=>value!==null).length===1?' (uma coletora com dados)':'')+' · Lixo triado: '+formatKg(point.triaged)+(point.partial?' · período parcial':'');
+        const summary=triageOnly?point.label+' · Triagem GAO: '+formatKg(point.triaged):point.label+' · '+companies.map((name,i)=>name+': '+formatKg(point.weights[i])).join(' · ')+' · Total das coletoras: '+formatKg(totalCollected(point.weights))+(point.weights.filter(value=>value!==null).length===1?' (uma coletora com dados)':'')+' · Lixo triado: '+formatKg(point.triaged)+(point.partial?' · período parcial':'');
         const action=button('',()=>{
           if(level==='month'){month=point.key;render();}
           else if(level==='week'){week=point.key;render();}
@@ -187,6 +190,7 @@ export function mountWasteChart(root,records,annual){
     }
     const forecast=get('forecast'),estimate=forecastFor(records,source,level);
     forecast.replaceChildren();
+    if(triageOnly) return;
     const title=document.createElement('h4');title.textContent='Projeção por '+units[level];forecast.append(title);
     const note=document.createElement('p');note.className='waste-sub';
     if(!estimate){
