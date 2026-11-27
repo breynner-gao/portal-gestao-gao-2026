@@ -3,7 +3,7 @@ import {createTextileCostDashboard} from '/textile-cost-dashboard-v1.mjs?v=5';
 import {groupPurchaseCards,supplierCards} from '/fabric-purchase-cards-v1.mjs?v=1';
 import { purchaseReportStatuses, renderPurchaseReport, formatPurchasePaymentDays } from '/fabric-purchase-report-v1.mjs?v=6';
 import { openReport as openPurchaseReportWindow } from '/relave-report-export-v1.mjs?v=1';
-import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=14';
+import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=15';
 import {createFactionDesk} from '/fabric-faction-portal-v1.mjs?v=2';
 import {createFabricWorkbookImport} from '/fabric-workbook-import-v1.mjs?v=1';
 import {buildPendingProductionCoverage,applyPendingProductionCoverage,compactDimensionKey} from '/linen-risk-rules-v150.mjs?v=230';
@@ -138,6 +138,11 @@ async function reload(){
   state.lots=state.factionReservationStock.lots;
   state.moves=state.factionReservationStock.moves;
  }
+ state.factionReconciledLots=new Set();
+ if(state.canOperateFaction&&(state.canReserveFaction||state.canViewInventory)){
+  const confirmations=await loadTable('fabric_faction_reconciled_lots','confirmed_at');
+  state.factionReconciledLots=new Set(confirmations.map(row=>row.lot_id));
+ }
  state.loaded=true;
 }
 async function loadTable(table,order,hasId=true){
@@ -182,11 +187,16 @@ function physicalFactionMeters(fabric,inventoryLines){
   normalize(row.supplier_or_brand)===normalize(match[0])&&normalize(row.material)===normalize(match[1])):[];
  return inventoryLines&&!rows.length?null:rows.reduce((sum,row)=>sum+n(row.physical_m),0);
 }
-function liveBalances(){
+function liveBalances(mode='planning'){
  const cutoff=state.factionReservationStock?state.factionReservationStock.cutoff:
   state.factionCounts[0]?.counted_on||state.factionCounts[0]?.reported_on;
  if(!state.factionReservationStock&&state.factionCountsError)return [];
- return state.lots.filter(l=>!cutoff||l.received_date>cutoff).map(l=>{const ms=state.moves.filter(m=>m.lot_id===l.id);return {...l,onhand:ms.reduce((a,m)=>a+n(m.stock_delta_m),0),reserved:ms.reduce((a,m)=>a+n(m.reserved_delta_m),0)}})
+ return state.lots.filter(l=>{
+  const included=!cutoff||l.received_date>cutoff;
+  const confirmed=state.factionReconciledLots?.has(l.id);
+  if(mode==='confirm')return !included&&!confirmed;
+  return included||mode==='cut'&&confirmed;
+ }).map(l=>{const ms=state.moves.filter(m=>m.lot_id===l.id);return {...l,onhand:ms.reduce((a,m)=>a+n(m.stock_delta_m),0),reserved:ms.reduce((a,m)=>a+n(m.reserved_delta_m),0)}})
 }
 function orderStats(item){
  const ms=state.moves.filter(m=>m.order_item_id===item.id&&m.movement_type==='ENVIO_FACCAO');
@@ -1674,7 +1684,7 @@ function factionAvailableStock(){
  if(!state.loaded)return '<p role="status">Carregando estoque de tecidos…</p>';
  if(state.factionStockError||(!state.factionStock&&state.factionCountsError))
   return '<p role="alert">Estoque indisponível. Clique em Atualizar dados para tentar novamente.</p>';
- const lots=state.factionStock?.lots||liveBalances().filter(lot=>lot.quality_status==='APROVADO'&&lot.onhand>0)
+ const lots=(!state.canReserveFaction&&state.factionStock?.lots)||liveBalances('cut').filter(lot=>lot.quality_status==='APROVADO'&&lot.onhand>0)
   .map(lot=>({...lot,fabric_label:internalName(state.fabric.find(fabric=>fabric.id===lot.fabric_id))}));
  const rows=lots.map(lot=>'<tr><td>'+esc(lot.fabric_label)+'</td><td>'+esc(lot.lot_code)+'</td><td>'+br(lot.onhand,3)+
   ' m</td><td>'+br(lot.reserved,3)+' m</td><td><strong>'+br(Math.max(0,n(lot.onhand)-n(lot.reserved)),3)+' m</strong></td></tr>').join('');
@@ -1687,7 +1697,7 @@ function factionAvailableStock(){
  return (state.canOperateFaction&&!state.factionInventoryError?'<div class="fw-tabs"><button type="button" data-faction-action="inventory">Lançar inventário</button></div>':'')+
   current+lotsView+factionInventoryHistory();
 }
-const factionWorkflow=createFactionWorkflow({state,esc,n,br,liveBalances,fabricMatches,internalName,physicalFactionMeters,orderStats,demandView,factionDesk,factionAvailableStock,factionInventoryForm,render,run,rpc,reload,uid,supplierOptionList,openFabricPurchaseDraft,submit,returnForm,syncOrderStatuses});
+const factionWorkflow=createFactionWorkflow({state,esc,n,br,liveBalances:()=>liveBalances('cut'),historicalBalances:()=>liveBalances('confirm'),fabricMatches,internalName,physicalFactionMeters,orderStats,demandView,factionDesk,factionAvailableStock,factionInventoryForm,render,run,rpc,reload,uid,supplierOptionList,openFabricPurchaseDraft,submit,returnForm,syncOrderStatuses});
 new MutationObserver(mount).observe(document.documentElement,{childList:true,subtree:true});
 setInterval(mount,900);
 })();

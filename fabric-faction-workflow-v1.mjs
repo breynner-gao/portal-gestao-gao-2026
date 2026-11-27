@@ -1,5 +1,5 @@
 export function createFactionWorkflow({
-  state, esc, n, br, liveBalances, fabricMatches, internalName, physicalFactionMeters,
+  state, esc, n, br, liveBalances, historicalBalances, fabricMatches, internalName, physicalFactionMeters,
   orderStats, demandView, factionDesk, factionAvailableStock, factionInventoryForm, render, run, rpc, reload, uid,
   supplierOptionList, openFabricPurchaseDraft, submit, returnForm, syncOrderStatuses
 }) {
@@ -107,6 +107,7 @@ export function createFactionWorkflow({
         <td>${meters(reserved)}<small>${meters(reserved-row.committed)} livres para novos lotes</small>${reserved>row.committed?button('Liberar reserva','release',item.id):''}</td>
         <td>${meters(Math.max(0,needed-reserved))}<small>${meters(row.incoming)} a receber por tecido</small><small>${meters(shortage)} estimados a solicitar</small></td>
         <td>${row.remaining===0?'Corte atendido':reserved>=needed?'Reservado':reserved>0?'Reserva parcial':'Aguardando reserva'}
+        ${needed>reserved&&state.canOperateFaction&&(state.canReserveFaction||state.canViewInventory)?button('Conferir rolo','confirm-lot',item.id):''}
         ${shortage>0?button('Solicitar faltante','request',item.id,!fabric):''}
         ${state.canOperateFaction&&!hasProductionHistory(item.id)?button('Excluir item','remove-item',item.id):''}</td></tr>`;
     }).join('');
@@ -277,7 +278,13 @@ export function createFactionWorkflow({
         try {
           const values=Object.fromEntries(new FormData(form));
           const kind=form.dataset.factionForm;
-          if(kind==='manual-item') {
+          if(kind==='confirm-lot') {
+            const lot=form.elements.lot.selectedOptions[0];
+            await rpc('fabric_faction_confirm_lot',{
+              p_org:state.org,p_lot:values.lot,p_item:values.item,p_previous:Number(lot.dataset.onhand),
+              p_counted:Number(values.meters),p_request:values.request
+            });
+          } else if(kind==='manual-item') {
             await rpc('fabric_faction_manual_item',{p_org:state.org,p_recipe:values.recipe,p_pieces:Number(values.quantity),p_request:values.request});
           } else if(kind==='remove-item') {
             await rpc('fabric_faction_remove_item',{p_org:state.org,p_item:values.id});
@@ -418,7 +425,11 @@ export function createFactionWorkflow({
         await reload();
         throw Error(posted?`${meters(posted)} processados antes da interrupção. ${error.message}`:error.message);
       }
-      if(!posted)throw Error('As ordens selecionadas já estão cobertas ou não há tecido livre para reservar.');
+      if(!posted){
+        if(rows.some(row=>row.needed>row.reserved))
+          throw Error('As ordens selecionadas estão sem saldo livre em rolos. Use Conferir rolo na ordem para liberar um saldo físico de lote antigo.');
+        throw Error('As ordens selecionadas já estão cobertas.');
+      }
       selected.clear();
       state.notice='Reserva processada. Confira os saldos por ordem.';
     });
@@ -524,6 +535,28 @@ export function createFactionWorkflow({
     }
   }
 
+  function confirmLot(row) {
+    const candidates=historicalBalances().filter(lot=>lot.quality_status==='APROVADO'&&lot.onhand>0&&fabricMatches(lot.fabric_id,row.item.fabric_id));
+    if(!candidates.length)return openDialog('Conferir rolo','<p>Nenhum lote antigo aprovado e compatível foi encontrado para este tecido. Se o rolo ainda não está no cadastro, registre o recebimento antes de reservar.</p>');
+    const options=candidates.map(lot=>`<option value="${esc(lot.id)}" data-onhand="${lot.onhand}" data-reserved="${lot.reserved}">${esc(lot.lot_code)} · ${meters(lot.onhand)} registrados</option>`).join('');
+    const dialog=openDialog('Conferir rolo para corte',`<p>${product(row)}</p>
+      <form data-faction-form="confirm-lot">
+      <input type="hidden" name="item" value="${esc(row.item.id)}">
+      <input type="hidden" name="request" value="${esc(uid())}">
+      <label class="fw-field">Lote cadastrado<select name="lot" required><option value="">Selecione o lote da etiqueta</option>${options}</select></label>
+      <label class="fw-field">Saldo físico do rolo em metros<input name="meters" type="number" min="0" step=".001" required></label>
+      <label class="fw-field"><input type="checkbox" required> Conferi a etiqueta, a cor e a metragem deste rolo na facção.</label>
+      <p>O saldo conferido ficará disponível para reserva, descontadas as reservas já feitas. A diferença para o cadastro será registrada no histórico do lote.</p>
+      <button type="submit">Confirmar saldo do rolo</button></form>`);
+    const fields=dialog.querySelector('form').elements;
+    fields.lot.onchange=()=>{
+      const lot=fields.lot.selectedOptions[0];
+      fields.meters.value='';
+      fields.meters.min=lot.dataset.reserved||'0';
+      fields.meters.max=lot.dataset.onhand||'';
+    };
+  }
+
   function handleAction(trigger) {
     const {factionAction:action,factionId:id}=trigger.dataset;
     if(action==='reserve')return reserve();
@@ -562,6 +595,11 @@ export function createFactionWorkflow({
         <button type="submit">Criar OS manual</button></form>`);
     }
     const orders=getOrders();
+    if(action==='confirm-lot'&&state.canOperateFaction&&(state.canReserveFaction||state.canViewInventory)){
+      const row=orders.find(({item})=>item.id===id);
+      if(row)return confirmLot(row);
+      return;
+    }
     if(action==='request-selected') {
       const rows=activeOrders(orders).filter(row=>selected.has(row.item.id)&&row.fabric);
       if(!rows.length)return openDialog('Solicitar faltantes','<p>Selecione as ordens de produção na Provisão.</p>');
