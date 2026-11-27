@@ -1,5 +1,5 @@
 export function createFactionWorkflow({
-  state, esc, n, br, liveBalances, historicalBalances, fabricMatches, internalName, physicalFactionMeters,
+  state, esc, n, br, liveBalances, historicalBalances, factionOpeningInventory, fabricMatches, internalName, physicalFactionMeters,
   orderStats, demandView, factionDesk, factionAvailableStock, factionInventoryForm, render, run, rpc, reload, uid,
   supplierOptionList, openFabricPurchaseDraft, submit, returnForm, syncOrderStatuses
 }) {
@@ -77,7 +77,8 @@ export function createFactionWorkflow({
       const available = round(sum(lots,lot=>lot.free));
       const receivedByOrder = returns.accepted + returns.rejected;
       return [{item,order,fabric,lots,cuts,cut,cutting,remaining,reserved,committed,unit,needed,available,returns,receivedByOrder,
-        physical:inventory?(fabric?physicalFactionMeters(fabric,inventory.lines):null):
+        physical:state.factionOpeningLots?.some(line=>fabricMatches(line.fabric_id,item.fabric_id))?
+          sum(lots,lot=>lot.onhand):inventory?(fabric?physicalFactionMeters(fabric,inventory.lines):null):
           sum(lots,lot=>lot.onhand)+(fabric?physicalFactionMeters(fabric):0),
         incoming,shortage:Math.max(0,round(needed-reserved-available-incoming))}];
     });
@@ -107,7 +108,7 @@ export function createFactionWorkflow({
         <td>${meters(reserved)}<small>${meters(reserved-row.committed)} livres para novos lotes</small>${reserved>row.committed?button('Liberar reserva','release',item.id):''}</td>
         <td>${meters(Math.max(0,needed-reserved))}<small>${meters(row.incoming)} a receber por tecido</small><small>${meters(shortage)} estimados a solicitar</small></td>
         <td>${row.remaining===0?'Corte atendido':reserved>=needed?'Reservado':reserved>0?'Reserva parcial':'Aguardando reserva'}
-        ${needed>reserved&&state.canOperateFaction&&(state.canReserveFaction||state.canViewInventory)?button('Conferir rolo','confirm-lot',item.id):''}
+        ${needed>reserved&&!state.factionInventories?.length&&state.canOperateFaction&&(state.canReserveFaction||state.canViewInventory)?button('Conferir rolo','confirm-lot',item.id):''}
         ${shortage>0?button('Solicitar faltante','request',item.id,!fabric):''}
         ${state.canOperateFaction&&!hasProductionHistory(item.id)?button('Excluir item','remove-item',item.id):''}</td></tr>`;
     }).join('');
@@ -278,7 +279,11 @@ export function createFactionWorkflow({
         try {
           const values=Object.fromEntries(new FormData(form));
           const kind=form.dataset.factionForm;
-          if(kind==='confirm-lot') {
+          if(kind==='open-inventory') {
+            await rpc('fabric_faction_open_inventory',{
+              p_org:state.org,p_inventory:values.inventory,p_line:Number(values.line),p_fabric:values.fabric
+            });
+          } else if(kind==='confirm-lot') {
             const lot=form.elements.lot.selectedOptions[0];
             await rpc('fabric_faction_confirm_lot',{
               p_org:state.org,p_lot:values.lot,p_item:values.item,p_previous:Number(lot.dataset.onhand),
@@ -427,7 +432,9 @@ export function createFactionWorkflow({
       }
       if(!posted){
         if(rows.some(row=>row.needed>row.reserved))
-          throw Error('As ordens selecionadas estão sem saldo livre em rolos. Use Conferir rolo na ordem para liberar um saldo físico de lote antigo.');
+          throw Error(state.factionInventories?.length?
+            'Sem saldo livre. Em Estoque de tecido disponível, vincule o saldo de abertura ao tecido da ordem ou confira o recebimento da NF.':
+            'Sem saldo livre em rolos. Use Conferir rolo para conferir um lote antigo.');
         throw Error('As ordens selecionadas já estão cobertas.');
       }
       selected.clear();
@@ -557,9 +564,29 @@ export function createFactionWorkflow({
     };
   }
 
+  function openInventoryLine(index) {
+    const inventory=factionOpeningInventory(),line=inventory?.lines[index];
+    if(!line||!(n(line.physical_m)>0))return;
+    const choices=state.fabric.filter(f=>f.active&&f.homologated&&f.standard_link_approved&&!f.internal_only);
+    const options=choices.map(f=>{
+      const supplier=state.suppliers.find(row=>row.id===f.supplier_id);
+      const label=[internalName(f),f.code,f.color_reference,supplier?.trade_name||supplier?.legal_name].filter(Boolean).join(' · ');
+      return `<option value="${esc(f.id)}">${esc(label)}</option>`;
+    }).join('');
+    openDialog('Vincular saldo de abertura',`<p><strong>${esc(line.material)}</strong> · ${esc(line.supplier_or_brand||'—')} · ${meters(line.physical_m)}</p>
+      <form data-faction-form="open-inventory">
+       <input type="hidden" name="inventory" value="${esc(inventory.id)}">
+       <input type="hidden" name="line" value="${index}">
+       <label class="fw-field">Referência homologada<select name="fabric" required><option value="">Selecione o tecido correspondente</option>${options}</select></label>
+       <label class="fw-field"><input type="checkbox" required> Confirmo que a referência corresponde ao tecido contado.</label>
+       <button type="submit">Liberar saldo de abertura</button>
+      </form>`);
+  }
+
   function handleAction(trigger) {
     const {factionAction:action,factionId:id}=trigger.dataset;
     if(action==='reserve')return reserve();
+    if(action==='open-inventory'&&state.canOperateFaction&&(state.canManagePurchases||state.canReserveFaction))return openInventoryLine(Number(id));
     if(action==='inventory'&&state.canOperateFaction&&!state.factionInventoryError){
       const dialog=openDialog('Lançar inventário de tecidos',factionInventoryForm(),'fw-inventory-dialog');
       const lines=dialog.querySelector('[data-inventory-lines]');

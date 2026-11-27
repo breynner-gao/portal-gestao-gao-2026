@@ -3,7 +3,7 @@ import {createTextileCostDashboard} from '/textile-cost-dashboard-v1.mjs?v=5';
 import {groupPurchaseCards,supplierCards} from '/fabric-purchase-cards-v1.mjs?v=1';
 import { purchaseReportStatuses, renderPurchaseReport, formatPurchasePaymentDays } from '/fabric-purchase-report-v1.mjs?v=6';
 import { openReport as openPurchaseReportWindow } from '/relave-report-export-v1.mjs?v=1';
-import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=15';
+import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=16';
 import {createFactionDesk} from '/fabric-faction-portal-v1.mjs?v=2';
 import {createFabricWorkbookImport} from '/fabric-workbook-import-v1.mjs?v=1';
 import {buildPendingProductionCoverage,applyPendingProductionCoverage,compactDimensionKey} from '/linen-risk-rules-v150.mjs?v=230';
@@ -143,6 +143,8 @@ async function reload(){
   const confirmations=await loadTable('fabric_faction_reconciled_lots','confirmed_at');
   state.factionReconciledLots=new Set(confirmations.map(row=>row.lot_id));
  }
+ state.factionOpeningLots=state.canViewInventory||state.canReserveFaction?
+  await loadTable('fabric_faction_opening_lots','activated_at',false):[];
  state.loaded=true;
 }
 async function loadTable(table,order,hasId=true){
@@ -182,20 +184,22 @@ function physicalFactionMeters(fabric,inventoryLines){
   'GAO-TEC-006':['Cedro','Amarelo']
  }[approvedCode];
  const normalize=value=>String(value??'').trim().toLocaleLowerCase('pt-BR');
- const counts=inventoryLines??currentFactionCount();
+ if(!inventoryLines&&state.factionOpeningLots?.some(line=>fabricMatches(line.fabric_id,fabric.id)))return 0;
+ const counts=inventoryLines??state.factionInventories?.[0]?.lines??currentFactionCount();
  const rows=match?counts.filter(row=>row.physical_m!=null&&
   normalize(row.supplier_or_brand)===normalize(match[0])&&normalize(row.material)===normalize(match[1])):[];
  return inventoryLines&&!rows.length?null:rows.reduce((sum,row)=>sum+n(row.physical_m),0);
 }
 function liveBalances(mode='planning'){
- const cutoff=state.factionReservationStock?state.factionReservationStock.cutoff:
-  state.factionCounts[0]?.counted_on||state.factionCounts[0]?.reported_on;
- if(!state.factionReservationStock&&state.factionCountsError)return [];
+ const opening=state.factionOpeningLots||[];
+ const cutoff=opening[0]?.counted_on||(state.factionReservationStock?state.factionReservationStock.cutoff:
+  state.factionCounts[0]?.counted_on||state.factionCounts[0]?.reported_on);
+ if(!opening.length&&!state.factionReservationStock&&state.factionCountsError)return [];
  return state.lots.filter(l=>{
   const included=!cutoff||l.received_date>cutoff;
-  const confirmed=state.factionReconciledLots?.has(l.id);
-  if(mode==='confirm')return !included&&!confirmed;
-  return included||mode==='cut'&&confirmed;
+  const confirmed=!state.factionInventories?.length&&state.factionReconciledLots?.has(l.id);
+  if(mode==='confirm')return !state.factionInventories?.length&&!included&&!confirmed;
+  return included||opening.some(row=>row.lot_id===l.id)||mode==='cut'&&confirmed;
  }).map(l=>{const ms=state.moves.filter(m=>m.lot_id===l.id);return {...l,onhand:ms.reduce((a,m)=>a+n(m.stock_delta_m),0),reserved:ms.reduce((a,m)=>a+n(m.reserved_delta_m),0)}})
 }
 function orderStats(item){
@@ -1010,7 +1014,7 @@ function factionStockPosition(counts=state.factionCounts,error=state.factionCoun
  const rows=counts.filter(row=>row.source_key===latest.source_key);
  const total=rows.reduce((sum,row)=>sum+n(row.physical_m),0);
  const date=latest.reported_on.split('-').reverse().join('/');
- return wrap('<p>Posição informada em '+esc(date)+' · '+br(total,3)+' m informados como saldo físico.</p><p>'+(manual?'Contagem registrada para conferência física. Os lotes e reservas são acompanhados separadamente.':'A posição física substitui os lotes antigos como referência de estoque. Na previsão de compra, só entram os tecidos vinculados a um padrão GAO.')+'</p><div class="fw-scroll" style="overflow:auto"><table><thead><tr><th>Tecido</th><th>Fornecedor ou marca</th><th>Largura</th><th>Saldo físico informado</th><th>Situação</th></tr></thead><tbody>'+rows.map(row=>'<tr><td>'+esc(row.material)+'</td><td>'+esc(row.supplier_or_brand||'—')+'</td><td>'+(row.width_m==null?'—':br(row.width_m,3)+' m')+'</td><td>'+(row.physical_m==null?'Pendente':br(row.physical_m,3)+' m')+'</td><td>'+(row.physical_m==null?'Conferir valor informado ('+br(row.reported_m,3)+' m)':'Informado')+'</td></tr>').join('')+'</tbody></table></div>');
+ return wrap('<p>Posição informada em '+esc(date)+' · '+br(total,3)+' m informados como saldo físico.</p><p>'+(manual?'Contagem física registrada. Consulte o saldo atual nos lotes abaixo, após vincular o saldo de abertura.':'A posição física substitui os lotes antigos como referência de estoque. Na previsão de compra, só entram os tecidos vinculados a um padrão GAO.')+'</p><div class="fw-scroll" style="overflow:auto"><table><thead><tr><th>Tecido</th><th>Fornecedor ou marca</th><th>Largura</th><th>Saldo físico informado</th><th>Situação</th></tr></thead><tbody>'+rows.map(row=>'<tr><td>'+esc(row.material)+'</td><td>'+esc(row.supplier_or_brand||'—')+'</td><td>'+(row.width_m==null?'—':br(row.width_m,3)+' m')+'</td><td>'+(row.physical_m==null?'Pendente':br(row.physical_m,3)+' m')+'</td><td>'+(row.physical_m==null?'Conferir valor informado ('+br(row.reported_m,3)+' m)':'Informado')+'</td></tr>').join('')+'</tbody></table></div>');
 }
 function stockPanels(mode){
  if(mode==='lots')return stockLotsView();
@@ -1680,6 +1684,25 @@ function factionInventoryHistory(){
     (rows?purchaseTable(['Tecido','Antes','Depois'],rows):'<p>Nenhuma alteração de metragem.</p>')+'</details>';
   }).join('')+(!records.length&&!state.factionInventoryError?'<p>Nenhum inventário lançado pelo portal.</p>':'')+'</section>';
 }
+function factionOpeningInventory(){
+ const opening=state.factionOpeningLots||[];
+ return opening.length?state.factionInventories?.find(inventory=>inventory.id===opening[0].inventory_id):state.factionInventories?.[0];
+}
+function factionOpeningView(){
+ const inventory=factionOpeningInventory();
+ if(!inventory||!state.canOperateFaction||!(state.canManagePurchases||state.canReserveFaction))return '';
+ const opening=state.factionOpeningLots||[];
+ const rows=inventory.lines.map((line,index)=>{
+  if(!(n(line.physical_m)>0))return '';
+  const linked=opening.find(row=>row.inventory_id===inventory.id&&row.line_index===index);
+  const name=internalName(state.fabric.find(f=>f.id===linked?.fabric_id));
+  return '<tr><td>'+esc(line.material)+'</td><td>'+esc(line.supplier_or_brand||'—')+'</td><td>'+br(line.physical_m,3)+' m</td><td>'+
+   (linked?esc(name):'<button type="button" data-faction-action="open-inventory" data-faction-id="'+index+'">Vincular e liberar saldo</button>')+'</td></tr>';
+ }).join('');
+ return '<section class="fw-panel"><h3>Saldo de abertura do inventário · '+esc(purchaseDate(inventory.counted_on))+'</h3>'+
+  '<p>Vincule cada linha a um tecido homologado para disponibilizar a metragem contada. Os recebimentos posteriores e os movimentos de corte compõem o saldo atual.</p>'+
+  '<div class="fw-table-scroll"><table><thead><tr><th>Tecido contado</th><th>Fornecedor ou marca</th><th>Saldo de abertura</th><th>Vínculo</th></tr></thead><tbody>'+rows+'</tbody></table></div></section>';
+}
 function factionAvailableStock(){
  if(!state.loaded)return '<p role="status">Carregando estoque de tecidos…</p>';
  if(state.factionStockError||(!state.factionStock&&state.factionCountsError))
@@ -1695,9 +1718,10 @@ function factionAvailableStock(){
  const current=latest?factionStockPosition(latest.lines.map(row=>({...row,source_key:latest.id,reported_on:latest.counted_on})),false,true):
   state.factionStock?factionStockPosition(state.factionStock.counts,false):factionStockPosition();
  return (state.canOperateFaction&&!state.factionInventoryError?'<div class="fw-tabs"><button type="button" data-faction-action="inventory">Lançar inventário</button></div>':'')+
-  current+lotsView+factionInventoryHistory();
+  (state.canManagePurchases?'<div class="fw-tabs"><button type="button" data-fw-tab="receipt">Receber nota fiscal de tecido</button></div>':'')+
+  current+factionOpeningView()+lotsView+factionInventoryHistory();
 }
-const factionWorkflow=createFactionWorkflow({state,esc,n,br,liveBalances:()=>liveBalances('cut'),historicalBalances:()=>liveBalances('confirm'),fabricMatches,internalName,physicalFactionMeters,orderStats,demandView,factionDesk,factionAvailableStock,factionInventoryForm,render,run,rpc,reload,uid,supplierOptionList,openFabricPurchaseDraft,submit,returnForm,syncOrderStatuses});
+const factionWorkflow=createFactionWorkflow({state,esc,n,br,liveBalances:()=>liveBalances('cut'),historicalBalances:()=>liveBalances('confirm'),factionOpeningInventory,fabricMatches,internalName,physicalFactionMeters,orderStats,demandView,factionDesk,factionAvailableStock,factionInventoryForm,render,run,rpc,reload,uid,supplierOptionList,openFabricPurchaseDraft,submit,returnForm,syncOrderStatuses});
 new MutationObserver(mount).observe(document.documentElement,{childList:true,subtree:true});
 setInterval(mount,900);
 })();
