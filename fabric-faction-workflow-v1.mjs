@@ -283,9 +283,12 @@ export function createFactionWorkflow({
           const values=Object.fromEntries(new FormData(form));
           const kind=form.dataset.factionForm;
           if(kind==='open-inventory') {
-            await rpc('fabric_faction_open_inventory',{
-              p_org:state.org,p_inventory:values.inventory,p_line:Number(values.line),p_fabric:values.fabric
-            });
+            const position={p_org:state.org,p_inventory:values.inventory,p_line:Number(values.line)};
+            if(values.fabric==='new-standard') {
+              await rpc('fabric_faction_open_inventory_new_standard',{...position,p_name:values.standard_name});
+            } else {
+              await rpc('fabric_faction_open_inventory',{...position,p_fabric:values.fabric});
+            }
           } else if(kind==='confirm-lot') {
             const lot=form.elements.lot.selectedOptions[0];
             await rpc('fabric_faction_confirm_lot',{
@@ -360,7 +363,7 @@ export function createFactionWorkflow({
           await reload();
           await syncOrderStatuses();
           await reload();
-          state.notice='Registro salvo.';
+          state.notice=kind==='open-inventory'?'Saldo de abertura liberado.':'Registro salvo.';
           dialog.close();
           render();
           window.dispatchEvent(new Event('gao-production-updated'));
@@ -588,17 +591,36 @@ export function createFactionWorkflow({
       const label=[internalName(f),qualityLabel,width,f.code,f.color_reference,supplier?.trade_name||supplier?.legal_name||f.supplier_name].filter(Boolean).join(' · ');
       return `<option value="${esc(f.id)}">${esc(label)}</option>`;
     }).join('');
-    openDialog('Vincular saldo de abertura',`<p><strong>${esc(line.material)}</strong> · ${esc(line.supplier_or_brand||'—')} · ${n(line.width_m)>0?br(line.width_m,3)+' m de largura · ':''}${meters(line.physical_m)}</p>
+    const createOption=state.canManagePurchases?'<option value="new-standard">Cadastrar tecido do inventário…</option>':'';
+    const dialog=openDialog('Vincular saldo de abertura',`<p><strong>${esc(line.material)}</strong> · ${esc(line.supplier_or_brand||'—')} · ${n(line.width_m)>0?br(line.width_m,3)+' m de largura · ':''}${meters(line.physical_m)}</p>
       <form data-faction-form="open-inventory">
        <input type="hidden" name="inventory" value="${esc(inventory.id)}">
        <input type="hidden" name="line" value="${index}">
        <label class="fw-field">Tecido contado<select name="fabric" required><option value="">Selecione o tecido correspondente</option>
         ${options?'<optgroup label="Referências comerciais homologadas">'+options+'</optgroup>':''}
-        ${internalOptions?'<optgroup label="Padrões GAO sem referência comercial homologada">'+internalOptions+'</optgroup>':''}</select></label>
-       <label class="fw-field"><input type="checkbox" required> Confirmo que a opção selecionada corresponde ao tecido contado.</label>
-       <p>Se o tecido contado não tiver uma opção correspondente, cadastre o tecido em Cadastros antes de liberar o saldo.</p>
-       <button type="submit"${options||internalOptions?'':' disabled'}>Liberar saldo de abertura</button>
+        ${internalOptions?'<optgroup label="Padrões GAO sem referência comercial homologada">'+internalOptions+'</optgroup>':''}
+        ${createOption}</select></label>
+       ${state.canManagePurchases?`<div data-opening-standard hidden>
+        <label class="fw-field">Nome do novo tecido<input name="standard_name" maxlength="120" minlength="2" value="${esc(line.material)}" disabled></label>
+        <p>O portal vai criar o código GAO e liberar os ${meters(line.physical_m)} desta contagem.</p>
+       </div>`:''}
+       <label class="fw-field"><input name="confirmed" type="checkbox" required> Conferi o tecido e a metragem desta contagem.</label>
+       <p data-opening-help>${createOption?'Se o tecido estiver faltando, escolha “Cadastrar tecido do inventário” na lista.':'Se o tecido estiver faltando, a gestão de estoque pode cadastrá-lo nesta janela.'}</p>
+       <button type="submit"${options||internalOptions||createOption?'':' disabled'}>Liberar saldo de abertura</button>
       </form>`);
+    const form=dialog.querySelector('form');
+    form.elements.fabric.onchange=()=>{
+      const creating=form.elements.fabric.value==='new-standard';
+      form.elements.confirmed.checked=false;
+      dialog.querySelector('[data-faction-error]').hidden=true;
+      if(form.elements.standard_name) {
+        form.elements.standard_name.disabled=!creating;
+        form.elements.standard_name.required=creating;
+        form.querySelector('[data-opening-standard]').hidden=!creating;
+        form.querySelector('[data-opening-help]').hidden=creating;
+      }
+      form.querySelector('button[type="submit"]').textContent=creating?'Cadastrar e liberar saldo':'Liberar saldo de abertura';
+    };
   }
 
   function handleAction(trigger) {
