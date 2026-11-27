@@ -14,7 +14,15 @@ const references = {
 
 export function mountAudit(root,history,downloadDocument,loadSource){
   const {records:data,indcom_audit:indcomAudit,billing_titles:billingTitles,documents:attachmentNames}=history;
-  root.innerHTML=`<div class="waste-audit-filters">
+  const annual=attachmentNames.annual2026;
+  root.innerHTML=`${annual?`<section class="waste-section" aria-labelledby="wa-annualTitle">
+    <h3 id="wa-annualTitle">Auditoria de resíduos de 2026</h3>
+    <p id="wa-annualCutoff" class="waste-sub"></p>
+    <div class="waste-audit-scroll" id="wa-annualMonths"></div>
+    <details><summary>Detalhar por semana ISO</summary><div class="waste-audit-scroll" id="wa-annualWeeks"></div></details>
+    <details><summary>Conferência dos MTRs da Indicom</summary><div class="waste-audit-scroll" id="wa-annualIndicom"></div></details>
+    <details><summary>Conferência da Bioreverse</summary><div class="waste-audit-scroll" id="wa-annualBio"></div></details>
+  </section>`:''}<div class="waste-audit-filters">
     <label>Mês <select id="wa-month"></select></label>
     <label>Semana ISO <select id="wa-week"></select></label>
     <div class="waste-audit-mode">
@@ -128,6 +136,25 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     }
     node.replaceChildren(t);
     return body;
+  }
+  function renderAnnual(){
+    if(!annual) return;
+    el('annualCutoff').textContent='Documentos disponíveis até '+date(annual.cutoff)+'. Os pesos em conferência aparecem nas colunas de pendências.';
+    const labels=['PDFs Indicom (kg)','Indicom · lote validado (kg)','Indicom · histórico anterior (kg)',
+      'Indicom · possível duplicidade (kg)','Bioreverse · fornecedor (kg)','Bioreverse · histórico ou MTR-GO recebido (kg)',
+      'Bioreverse · sem comprovante por coleta (kg)','PDFs Indicom indisponíveis','Registros somente GAO'];
+    const metrics=row=>[...row.slice(0,7).map(kg),...row.slice(7,9).map(String)];
+    const total=Array.from({length:9},(_,i)=>annual.months.reduce((sum,row)=>sum+(row[i+1]??0),0));
+    const monthly=table(el('annualMonths'),['Mês',...labels,'Cobertura'],[
+      ...annual.months.map(([month,...row])=>[monthName(month),...metrics(row),row[9]??'—']),
+      ['Acumulado',...metrics(total),'Até '+date(annual.cutoff)]
+    ]);
+    monthly.lastElementChild.className='total';
+    table(el('annualWeeks'),['Mês','Semana ISO',...labels],annual.weeks.map(([month,week,...row])=>[monthName(month),week,...metrics(row)]));
+    table(el('annualIndicom'),['Data','Semana ISO','MTR','OS','Peso (kg)','Conferência','PDF de origem'],
+      annual.indicom.map(([day,week,mtr,os,weight,status,file])=>[date(day),week,mtr,os??'—',kg(weight),status,file??'—']));
+    table(el('annualBio'),['Data','Semana ISO','NF','Peso do fornecedor (kg)','Conferência','Linha na planilha'],
+      annual.bioreverse.map(([day,week,nf,weight,status,line])=>[day?date(day):'—',week??'—',nf??'—',kg(weight),status,String(line)]));
   }
   function renderIndcom(){
     const month=el('month').value;
@@ -294,5 +321,5 @@ export function mountAudit(root,history,downloadDocument,loadSource){
   }
   el('monthly').onclick=()=>setMode('monthly');
   el('weekly').onclick=()=>setMode('weekly');
-  renderBioFinance();refreshWeeks();render();
+  renderAnnual();renderBioFinance();refreshWeeks();render();
 }
