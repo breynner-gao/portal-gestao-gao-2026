@@ -86,6 +86,8 @@ export function createFactionWorkflow({
   const activeOrders = orders => orders.filter(({order})=>order.status!=='CONCLUIDA');
   const product = row => `<strong>${esc(row.item.product_name)}</strong><small>OS ${esc(row.order.order_number)} · Ref. ${esc(row.item.product_reference)}</small>`;
   const maxInLot = (row,lot) => Math.min(row.remaining,Math.floor((Math.max(0,lot.mine-n(lot.committed))+0.000499)/row.unit));
+  const freeToRelease = lot => Math.max(0,round(lot.mine-lot.committed));
+  const mayRelease = () => state.canOperateFaction&&(state.canViewInventory||state.canReserveFaction);
   const stockOptions = (lots, measure, chosen = '') => lots.map(lot =>
     `<option value="${esc(lot.id)}" ${lot.id===chosen?'selected':''}>${esc(lot.lot_code)} · ${meters(measure(lot))}</option>`).join('');
 
@@ -105,7 +107,7 @@ export function createFactionWorkflow({
         <td><input type="number" data-provision-quantity="${esc(item.id)}" min="1" max="2147483647" step="1" value="${n(item.ordered_pieces)}" aria-label="Quantidade da ordem de ${esc(item.product_name)}" required></td><td>${esc(fabric?internalName(fabric):'Tecido a vincular')}<small>${esc([fabric?.color||fabric?.color_reference,supplier?.trade_name||supplier?.legal_name].filter(Boolean).join(' · '))}</small></td>
         <td>${br(unit,4)}</td><td data-provision-estimate data-unit="${unit}">${meters(n(item.ordered_pieces)*unit)}</td>
         <td>${physical===null?'Sem contagem vinculada':meters(physical)}<small>${meters(available)} livres em lotes para reserva</small></td>
-        <td>${meters(reserved)}<small>${meters(reserved-row.committed)} livres para novos lotes</small>${reserved>row.committed?button('Liberar reserva','release',item.id):''}</td>
+        <td>${meters(reserved)}<small>${meters(reserved-row.committed)} livres para novos lotes</small>${mayRelease()&&row.lots.some(lot=>freeToRelease(lot)>0)?button('Liberar reserva','release',item.id):''}</td>
         <td>${meters(Math.max(0,needed-reserved))}<small>${meters(row.incoming)} a receber por tecido</small><small>${meters(shortage)} estimados a solicitar</small></td>
         <td>${row.remaining===0?'Corte atendido':reserved>=needed?'Reservado':reserved>0?'Reserva parcial':'Aguardando reserva'}
         ${needed>reserved&&!state.factionInventories?.length&&state.canOperateFaction&&(state.canReserveFaction||state.canViewInventory)?button('Conferir rolo','confirm-lot',item.id):''}
@@ -132,6 +134,7 @@ export function createFactionWorkflow({
       const lot = lots.find(l=>l.id===stored.lot) || lots[0];
       const maximum = lot ? maxInLot(row,lot) : 0;
       const quantity = Math.min(stored.quantity||0,maximum);
+      const free = sum(row.lots,freeToRelease);
       return `<tr data-faction-line="${esc(row.item.id)}" data-unit="${row.unit}">
         <td><input type="checkbox" data-cut-select aria-label="Incluir ${esc(row.item.product_name)}" ${cutSelected.has(row.item.id)?'checked':''} ${maximum?'':'disabled'}></td><td>${product(row)}<small>${esc(row.fabric?internalName(row.fabric):'Tecido a vincular')}</small></td>
         <td>${pieces(row.item.ordered_pieces)}</td><td>${pieces(row.cut+row.cutting)}</td><td>${pieces(row.cutting)}</td><td>${pieces(row.cut)}</td><td>${pieces(row.remaining)}</td>
@@ -139,7 +142,7 @@ export function createFactionWorkflow({
           ${lot?stockOptions(lots,l=>round(l.mine-l.committed),lot.id):'<option>Sem reserva suficiente</option>'}
         </select></td>
         <td><input type="number" data-faction-cut-quantity min="1" max="${maximum}" step="1" inputmode="numeric" aria-label="Quantidade a cortar de ${esc(row.item.product_name)}" value="${quantity||''}" ${maximum?'':'disabled'}><small>Máx. com reserva: ${pieces(maximum)}</small></td>
-        <td data-faction-estimate>${meters(quantity*row.unit)}</td><td>${meters(round(sum(row.lots,l=>l.mine-l.committed)))}</td></tr>`;
+        <td data-faction-estimate>${meters(quantity*row.unit)}</td><td>${meters(round(free))}${mayRelease()&&free>0?'<div>'+button('Cancelar reserva','release',row.item.id)+'</div>':''}</td></tr>`;
     }).join('');
     const lots = orders.flatMap(row=>row.cuts.map(cut=>`<tr><td>${button(esc(cut.id.slice(0,8)),'map',cut.id)}<small>${dateLabel(cut.created_at)}</small></td>
       <td>${product(row)}</td><td>${pieces(cut.produced_pieces)}</td><td>${meters(cut.consumed_m)}</td><td>${cut.sent_date?'Enviado à facção':'Corte concluído'}</td></tr>`)).join('');
@@ -348,6 +351,10 @@ export function createFactionWorkflow({
             form.dataset.fwForm=kind;
             try {await submit(form);}
             finally {delete form.dataset.fwForm;}
+            if(kind==='release') {
+              draft.delete(values.order_item_id);
+              cutSelected.delete(values.order_item_id);
+            }
           }
           recorded=true;
           await reload();
@@ -568,21 +575,29 @@ export function createFactionWorkflow({
     const inventory=factionOpeningInventory(),line=inventory?.lines[index];
     if(!line||!(n(line.physical_m)>0))return;
     const choices=state.fabric.filter(f=>f.active&&f.homologated&&f.standard_link_approved&&!f.internal_only);
+    const commercialStandards=new Set(choices.map(f=>f.standard_id));
+    const internalOptions=state.standards.filter(s=>s.active&&s.material_kind==='TECIDO'&&!commercialStandards.has(s.id)).map(s=>{
+      const width=n(s.width_m)>0?' · '+br(s.width_m,3)+' m de largura':'';
+      return `<option value="${esc(s.id)}">${esc(s.code+' • '+s.name+width)}</option>`;
+    }).join('');
     const options=choices.map(f=>{
       const supplier=state.suppliers.find(row=>row.id===f.supplier_id);
       const quality=String(f.quality_code??'').trim();
       const qualityLabel=quality&&quality!=='N/D'?'Q'+quality.replace(/^Q/i,''):'Qualidade não informada';
       const width=n(f.width_m)>0?br(f.width_m,3)+' m de largura':'';
-      const label=[internalName(f),qualityLabel,width,f.code,f.color_reference,supplier?.trade_name||supplier?.legal_name].filter(Boolean).join(' · ');
+      const label=[internalName(f),qualityLabel,width,f.code,f.color_reference,supplier?.trade_name||supplier?.legal_name||f.supplier_name].filter(Boolean).join(' · ');
       return `<option value="${esc(f.id)}">${esc(label)}</option>`;
     }).join('');
-    openDialog('Vincular saldo de abertura',`<p><strong>${esc(line.material)}</strong> · ${esc(line.supplier_or_brand||'—')} · ${meters(line.physical_m)}</p>
+    openDialog('Vincular saldo de abertura',`<p><strong>${esc(line.material)}</strong> · ${esc(line.supplier_or_brand||'—')} · ${n(line.width_m)>0?br(line.width_m,3)+' m de largura · ':''}${meters(line.physical_m)}</p>
       <form data-faction-form="open-inventory">
        <input type="hidden" name="inventory" value="${esc(inventory.id)}">
        <input type="hidden" name="line" value="${index}">
-       <label class="fw-field">Referência homologada<select name="fabric" required><option value="">Selecione o tecido correspondente</option>${options}</select></label>
-       <label class="fw-field"><input type="checkbox" required> Confirmo que a referência corresponde ao tecido contado.</label>
-       <button type="submit">Liberar saldo de abertura</button>
+       <label class="fw-field">Tecido contado<select name="fabric" required><option value="">Selecione o tecido correspondente</option>
+        ${options?'<optgroup label="Referências comerciais homologadas">'+options+'</optgroup>':''}
+        ${internalOptions?'<optgroup label="Padrões GAO sem referência comercial homologada">'+internalOptions+'</optgroup>':''}</select></label>
+       <label class="fw-field"><input type="checkbox" required> Confirmo que a opção selecionada corresponde ao tecido contado.</label>
+       <p>Se o tecido contado não tiver uma opção correspondente, cadastre o tecido em Cadastros antes de liberar o saldo.</p>
+       <button type="submit"${options||internalOptions?'':' disabled'}>Liberar saldo de abertura</button>
       </form>`);
   }
 
@@ -683,9 +698,28 @@ export function createFactionWorkflow({
     if(action==='request'&&row.shortage>0&&row.fabric)return openFabricPurchaseDraft({fabric:row.fabric,missing:row.shortage},{
       source_item:row.order.order_number,product_name:row.item.product_name
     });
-    if(action==='release')return openDialog('Liberar reserva da ordem',`<form data-faction-form="release"><input type="hidden" name="order_item_id" value="${esc(id)}">
-      <label class="fw-field">Rolo reservado<select name="lot_id" required>${stockOptions(row.lots.filter(l=>l.mine>l.committed),l=>round(l.mine-l.committed))}</select></label>
-      <label class="fw-field">Metros a liberar<input name="quantity_m" type="number" min=".001" step=".001" max="${round(row.reserved-row.committed)}" required></label><button>Liberar reserva</button></form>`);
+    if(action==='release'&&mayRelease()) {
+      const lots=row.lots.filter(lot=>freeToRelease(lot)>0);
+      if(!lots.length)return;
+      const currentRoll=trigger.closest('tr')?.querySelector('[data-faction-roll]')?.value;
+      const dialog=openDialog('Cancelar reserva',`<form data-faction-form="release">
+        <input type="hidden" name="order_item_id" value="${esc(id)}">
+        <input type="hidden" name="request" value="${esc(uid())}">
+        <p>${product(row)}</p>
+        <p>A metragem informada volta ao estoque disponível. A ordem e os lotes de corte ficam preservados.</p>
+        <label class="fw-field">Rolo reservado<select name="lot_id" required>${stockOptions(lots,freeToRelease,currentRoll)}</select></label>
+        <label class="fw-field">Metros a liberar<input name="quantity_m" type="number" min=".001" step=".001" required></label>
+        <button type="submit">Confirmar liberação do tecido</button></form>`);
+      const fields=dialog.querySelector('form').elements;
+      const update=()=>{
+        const lot=lots.find(lot=>lot.id===fields.lot_id.value);
+        fields.quantity_m.max=freeToRelease(lot);
+        fields.quantity_m.value=fields.quantity_m.max;
+      };
+      fields.lot_id.onchange=update;
+      update();
+      return;
+    }
     if(action==='map') {
       const lot=state.lots.find(l=>l.id===cut.lot_id);
       return openDialog('Mapa de corte · '+esc(cut.id.slice(0,8)),`<p>${product(row)}</p><dl>
