@@ -3,7 +3,7 @@ const colors=['#79baff','#54d9b1','#f7c66a'];
 const sources={
   forms:{label:'Forms · peso coletado',indices:[1,2]},
   semand:{label:'SEMAND · peso considerado',indices:[3,4]},
-  pdf:{label:'PDFs · peso dos manifestos',indices:[6,10]},
+  pdf:{label:'Documentos · peso apurado',indices:[6,10]},
 };
 const units={month:'mês',week:'semana ISO',day:'dia'};
 const money=new Intl.NumberFormat('pt-BR',{maximumFractionDigits:2});

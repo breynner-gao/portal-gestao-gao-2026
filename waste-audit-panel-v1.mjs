@@ -1,4 +1,4 @@
-import { mountWasteChart } from './waste-audit-chart-v1.mjs?v=3';
+import { mountWasteChart } from './waste-audit-chart-v1.mjs?v=4';
 
 const references = {
   workbook:'Planilha de auditoria',
@@ -76,7 +76,7 @@ export function mountAudit(root,history,downloadDocument,loadSource){
   const date=s=>s.split('-').reverse().join('/');
   const monthName=s=>new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(s+'-01T12:00:00Z'));
   const months=[...new Set(data.map(r=>r.d.slice(0,7)))];
-  const columns=['Triagem','Forms INDCOM','Forms BIOREVERSE','Forms total','SEMAND INDCOM','SEMAND BIOREVERSE','SEMAND total','MTR cancelado','PDFs INDCOM','Triagem − Forms','PDFs BIOREVERSE','PDFs total'];
+  const columns=['Triagem','Forms INDCOM','Forms BIOREVERSE','Forms total','SEMAND INDCOM','SEMAND BIOREVERSE','SEMAND total','MTR cancelado','PDFs INDCOM','Triagem − Forms','Documentos BIOREVERSE','Documentos total'];
   const options=(node,items)=>node.replaceChildren(...items.map(([val,label])=>new Option(label,val)));
   options(el('month'),[['all','Todos os meses · junho a novembro de 2026'],...months.map(m=>[m,monthName(m)+(m<'2026-08'?' · histórico':'')])]);
   let mode='monthly';
@@ -161,7 +161,7 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     const additional = bioTitles.filter(row=>!row[3]).reduce((total,row)=>total+row[2],0);
     lines.push(['Total anterior','','R$ '+kg(original),estimate(original),'','','']);
     lines.push(['Títulos adicionais','','R$ '+kg(additional),estimate(additional),'','','']);
-    const body=table(el('bioFinance'),['Competência','Vencimento','Valor do título','Estimado (kg)','PDFs (kg)','Base da competência','Composição do total'],lines);
+    const body=table(el('bioFinance'),['Competência','Vencimento','Valor do título','Estimado (kg)','Peso documental (kg)','Base da competência','Composição do total'],lines);
     body.rows[body.rows.length-2].className='total';
     body.lastElementChild.className='total';
   }
@@ -249,9 +249,16 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     const bioCents = bioPeriod.reduce((total,[,,cents]) => total + cents,0);
     el('bioTitle').textContent='Títulos BIOREVERSE · '+(bioPeriod.length?kg(bioCents/1.70)+' kg estimados':'sem título no mês');
     updateChart(selected);
+    const bioEvidence=r=>{
+      const link=evidence(bioArchiveByMonth[r.d.slice(0,7)],r.bio[0]);
+      if(!r.bio_correction)return link;
+      const cell=document.createElement('span');
+      cell.append(document.createTextNode(r.bio_correction.source+' · '+r.bio_correction.reference+' · PDF original '+kg(r.bio_correction.original_centi_kg)+' kg ('),link,document.createTextNode(')'));
+      return cell;
+    };
     const pdfs=()=>selected.flatMap(r=>[
       ...r.pdf.map(([n,os,p])=>[date(r.d),r.w,'INDCOM',evidence('indcom',n),os,kg(p)]),
-      ...(r.bio?[[date(r.d),r.w,'BIOREVERSE',evidence(bioArchiveByMonth[r.d.slice(0,7)],r.bio[0]),'—',kg(r.bio[1])]]:[])
+      ...(r.bio?[[date(r.d),r.w,'BIOREVERSE',bioEvidence(r),'—',kg(r.bio[1])]]:[])
     ]);
     el('cards').replaceChildren(...[0,3,6,8,10,9].map(i=>{
       const card=document.createElement('button');
