@@ -33,11 +33,13 @@ export function mountAudit(root,history,downloadDocument,loadSource){
       <details><summary>Conferir a escala e os pesos dia a dia</summary><div class="waste-audit-scroll" id="wa-scheduleDays"></div></details>
     </section>`:''}
     ${crmTriage?`<section aria-labelledby="wa-ratesTitle">
-      <h4 id="wa-ratesTitle">Percentuais sobre o peso total triado</h4>
-      <p class="waste-sub">Peso de cada origem ÷ peso total triado no CRM GAO no mesmo recorte × 100. Indicom usa os PDFs auditados e Bioreverse usa os pesos do fornecedor.</p>
+      <h4 id="wa-ratesTitle">Fechamento das coletoras · tolerância de ±5%</h4>
+      <div class="waste-grid" id="wa-closureCards"></div>
+      <p id="wa-closureRange" class="waste-sub"></p>
+      <p class="waste-sub">Os percentuais de lixo e coleta usam o peso total triado no CRM. O desvio usa o peso do lixo GAO: (Indicom + Bioreverse − lixo GAO) ÷ lixo GAO × 100.</p>
       <div class="waste-audit-scroll" id="wa-ratesMonths"></div>
       <details><summary>Percentuais por semana ISO</summary><div class="waste-audit-scroll" id="wa-ratesWeeks"></div></details>
-      <p id="wa-wasteComparison" class="waste-sub"></p>
+      <p class="waste-sub">Dias sem documento e pesos em conferência podem afetar o fechamento. Pesos já registrados na soma das coletoras entram uma única vez.</p>
     </section>`:''}
     <div class="waste-audit-scroll" id="wa-annualMonths"></div>
     <details><summary>Detalhar por semana ISO</summary><div class="waste-audit-scroll" id="wa-annualWeeks"></div></details>
@@ -241,13 +243,46 @@ export function mountAudit(root,history,downloadDocument,loadSource){
       return measured.length?measured.reduce((a,b)=>a+b,0):null;
     };
     const percent=(value,base)=>value!=null&&base>0?nf.format(value/base*100)+'%':'—';
-    const metrics=(days,indicom,bioreverse)=>{
-      const base=weight(days,1);
-      return [kg(base),percent(weight(days,0),base),percent(bioreverse,base),percent(indicom,base)];
+    const signed=(value,format)=>value==null?'—':(value>0?'+':'')+format(value);
+    const closure=(days,indicom,bioreverse)=>{
+      const waste=weight(days,0),base=weight(days,1);
+      const collected=indicom==null&&bioreverse==null?null:(indicom??0)+(bioreverse??0);
+      const delta=waste!=null&&collected!=null?collected-waste:null;
+      const partial=indicom==null||bioreverse==null;
+      const within=waste>0&&delta!=null&&Math.abs(delta)*100<=waste*5;
+      const status=waste==null||collected==null?'Sem base para comparar':waste<=0?'Lixo GAO zerado'
+        :partial?'Conferência parcial':within?'Dentro da tolerância':'Fora da tolerância';
+      return {waste,base,collected,delta,status};
     };
-    const labels=['Peso total triado (kg)','Lixo GAO','Bioreverse','Indicom'];
-    const sumDocumentColumn=i=>annual.months.reduce((total,row)=>total+(row[i]??0),0);
+    const metrics=(days,indicom,bioreverse)=>{
+      const {waste,base,collected,delta,status}=closure(days,indicom,bioreverse);
+      return [kg(base),percent(waste,base),percent(bioreverse,base),percent(indicom,base),percent(collected,base),
+        signed(delta,kg),signed(delta,value=>percent(value,waste)),status];
+    };
+    const labels=['Peso total triado (kg)','Lixo GAO','Bioreverse','Indicom','Soma das coletoras','Diferença (kg)','Desvio sobre lixo GAO','Situação'];
+    const sumDocumentColumn=i=>{
+      const weights=annual.months.map(row=>row[i]).filter(weight=>weight!=null);
+      return weights.length?weights.reduce((total,weight)=>total+weight,0):null;
+    };
     const indicom=sumDocumentColumn(1),bioreverse=sumDocumentColumn(5);
+    const summary=closure(crmDays,indicom,bioreverse);
+    const cards=[
+      ['Lixo triado GAO',kg(summary.waste)+' kg'],
+      ['Indicom + Bioreverse',kg(summary.collected)+' kg'],
+      ['Desvio sobre lixo GAO',signed(summary.delta,value=>percent(value,summary.waste))],
+      ['Fechamento',summary.status]
+    ];
+    el('closureCards').replaceChildren(...cards.map(([label,value])=>{
+      const card=document.createElement('div');
+      card.className='waste-kpi';
+      const caption=document.createElement('span');
+      caption.textContent=label;
+      const amount=document.createElement('strong');
+      amount.textContent=value;
+      card.append(caption,amount);
+      return card;
+    }));
+    el('closureRange').textContent=summary.waste>0?'Acumulado até '+date(end)+' · Faixa aceitável de '+kg(summary.waste*.95)+' a '+kg(summary.waste*1.05)+' kg.':'';
     const monthly=table(el('ratesMonths'),['Mês',...labels],[
       ...annual.months.map(row=>[monthName(row[0]),...metrics(crmDays.filter(day=>day.d.startsWith(row[0])),row[1],row[5])]),
       ['Acumulado até '+date(end),...metrics(crmDays,indicom,bioreverse)]
@@ -256,9 +291,6 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     table(el('ratesWeeks'),['Mês','Semana ISO',...labels],annual.weeks.map(row=>[
       monthName(row[0]),row[1],...metrics(crmDays.filter(day=>day.d.startsWith(row[0])&&day.w===row[1]),row[2],row[6])
     ]));
-    const waste=weight(crmDays,0);
-    el('wasteComparison').textContent='Sobre o peso do lixo triado (outra base), Bioreverse equivale a '+percent(bioreverse,waste)
-      +' e Indicom a '+percent(indicom,waste)+'. Comparação de pesos, sujeita à diferença de datas entre triagem e coleta.';
   }
   function renderAnnual(){
     if(!annual) return;
