@@ -9,14 +9,14 @@ let context=null,model=null,loading=false,tab='users',notice='',dirty=new Map(),
 const isClientRegistry=()=>/^\/(?:admin\/?$|administracao\/clientes\/?$)/.test(location.pathname)||location.hash==='#administracao-clientes';
 const isAdminRoute=()=>/^\/admin(?:istracao)?(?:\/|$)/.test(location.pathname)||/^#administracao(?:-papeis|-clientes)?$/.test(location.hash);
 function token(){if(window.GAO_AUTH_SESSION?.access_token)return window.GAO_AUTH_SESSION.access_token;for(const k of Object.keys(localStorage))if(k.startsWith('sb-')&&k.endsWith('-auth-token'))try{const x=JSON.parse(localStorage.getItem(k));if(x?.access_token)return x.access_token;}catch{}return '';}
-async function api(path,body){const t=token();if(!t)throw Error('Entre no Portal para administrar os acessos.');let r=await fetch(SB+path,{method:body?'POST':'GET',...(!body?{signal:AbortSignal.timeout(12000)}:{}),headers:{apikey:KEY,Authorization:'Bearer '+t,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});if(r.status===401&&window.GAO_REFRESH_SESSION){try{await window.GAO_REFRESH_SESSION();}catch(error){if(error.status===400)error.status=401;throw error;}r=await fetch(SB+path,{method:body?'POST':'GET',...(!body?{signal:AbortSignal.timeout(12000)}:{}),headers:{apikey:KEY,Authorization:'Bearer '+token(),'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});}const v=await r.json().catch(()=>({}));if(!r.ok){
+async function api(path,body){const t=token();if(!t)throw Error('Entre no Portal para administrar os acessos.');const authUser=path==='/auth/v1/user';let r=await fetch(SB+path,{method:body?'POST':'GET',...(!body?{signal:AbortSignal.timeout(12000)}:{}),headers:{apikey:KEY,Authorization:'Bearer '+t,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});if((r.status===401||(authUser&&r.status===403))&&window.GAO_REFRESH_SESSION){await window.GAO_REFRESH_SESSION();r=await fetch(SB+path,{method:body?'POST':'GET',...(!body?{signal:AbortSignal.timeout(12000)}:{}),headers:{apikey:KEY,Authorization:'Bearer '+token(),'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});}const v=await r.json().catch(()=>({}));if(!r.ok){
   const invalidEmail=path==='/functions/v1/admin-users'&&r.status===400&&v.details?.fieldErrors?.input?.includes('Invalid email address');
   if(invalidEmail)throw Error('Informe um e-mail de acesso válido no formato nome@dominio.com.');
   throw Object.assign(Error(v.message||v.error||'Não foi possível salvar.'),{status:r.status});
 }return v;}
 const rpc=(action,data)=>api('/rest/v1/rpc/gao_access_roles_manage',{p_org:context.org,p_action:action,p_data:data});
 const edge=(action,input)=>api('/functions/v1/admin-users',{action,...(input?{input}:{})});
-async function ownContext(){const user=await api('/auth/v1/user');const ms=await api('/rest/v1/memberships?select=id,organization_id,role_name,active,all_units&active=eq.true&profile_id=eq.'+user.id);const m=ms[0];if(!m)throw Object.assign(Error('Esta conta não possui vínculo ativo.'),{status:403});const ps=await api('/rest/v1/member_permissions?select=permission_code,allowed&membership_id=eq.'+m.id);return {org:m.organization_id,mid:m.id,uid:user.id,email:user.email,admin:m.role_name==='Administrador Geral',permissions:new Set(ps.filter(p=>p.allowed).map(p=>p.permission_code)),membership:m};}
+async function ownContext(){const user=await api('/auth/v1/user');const ms=await api('/rest/v1/memberships?select=id,organization_id,role_name,active,all_units&active=eq.true&profile_id=eq.'+user.id);const m=ms[0];if(!m)throw Object.assign(Error('Esta conta não possui vínculo ativo.'),{status:403,noMembership:true});const ps=await api('/rest/v1/member_permissions?select=permission_code,allowed&membership_id=eq.'+m.id);return {org:m.organization_id,mid:m.id,uid:user.id,email:user.email,admin:m.role_name==='Administrador Geral',permissions:new Set(ps.filter(p=>p.allowed).map(p=>p.permission_code)),membership:m};}
 const can=code=>!!context&&(context.admin||context.permissions.has(code));
 async function load(){if(loading)return;loading=true;try{context=await ownContext();if(!can('admin.users.view')&&!can('admin.users.manage')&&!can('admin.permissions.manage'))throw Error('Seu papel não permite administrar usuários e permissões.');const [catalog,roles,users,units,clients]=await Promise.all([api('/rest/v1/permission_catalog?select=*&order=module,resource,action'),api('/rest/v1/access_roles?select=*,access_role_permissions(permission_code)&organization_id=eq.'+context.org+'&order=protected.desc,name'),can('admin.users.view')||can('admin.users.manage')?edge('list'):[],api('/rest/v1/units?select=id,name&organization_id=eq.'+context.org+'&order=name'),api('/rest/v1/laundry_clients?select=id,name&active=eq.true&order=name')]);model={catalog,roles:roles.map(r=>({...r,permissions:r.access_role_permissions.map(p=>p.permission_code)})),users:(Array.isArray(users)?users:users.users||[]).filter(u=>u.organizationId===context.org),units,clients};dirty.clear();render();enforceNavigation();}catch(e){showError(e.message);}finally{loading=false;}}
 function showError(message){const main=document.querySelector('.gao-main');if(!main)return;main.innerHTML='<section id="gao-access" class="ga-access"><h1>Administração de acessos</h1><p role="alert">'+esc(message)+'</p><button data-retry>Tentar novamente</button></section>';main.querySelector('[data-retry]').onclick=load;}
@@ -127,7 +127,8 @@ function accessStatus(reconnecting){
 }
 async function refresh(){
  if(refreshing)return;
- if(!token())return;
+ const sessionToken=token();
+ if(!sessionToken)return;
  refreshing=true;
  clearTimeout(retryTimer);retryTimer=null;
  try{
@@ -139,7 +140,7 @@ async function refresh(){
   enforceNavigation();
  }catch(error){
   context=null;
-  const transient=!error.status||error.status===408||error.status===429||error.status>=500;
+  const transient=error.status!==401&&!error.noMembership;
   accessPending=transient;
   accessStatus(transient);
   if(transient){
@@ -151,9 +152,16 @@ async function refresh(){
     main.classList.add('ga-route-denied');
     let box=main.querySelector('[data-access-denied]');
     if(!box){box=document.createElement('section');box.dataset.accessDenied='1';main.appendChild(box);}
-    box.textContent=error.status===401?'Sua sessão expirou. Entre novamente no Portal.':'Seu acesso não está autorizado. Consulte o administrador.';
+    box.textContent=error.noMembership?'Esta conta não possui vínculo ativo. Consulte o administrador.':'Sua sessão expirou.';
+    if(error.status===401){
+     const button=document.createElement('button');
+     button.type='button';
+     button.textContent='Entrar novamente';
+     button.onclick=()=>window.GAO_REAUTHENTICATE?.(sessionToken);
+     box.append(' ',button);
+    }
    }
   }
  }finally{refreshing=false;}
 }
-if(typeof window!=='undefined'){document.addEventListener('click',e=>{const a=e.target.closest?.('.gao-nav a');if(a&&linkModule(a)==='administracao'&&a.dataset.accessTab!=='clients'&&!a.hasAttribute('data-gao-submenu-toggle')&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey){e.preventDefault();e.stopImmediatePropagation();tab=a.dataset.accessTab||'users';history.pushState({},'',tab==='roles'?'/#administracao-papeis':'/#administracao');if(model)render();mount();}},true);window.addEventListener('hashchange',mount);window.addEventListener('popstate',mount);window.addEventListener('focus',refresh);window.addEventListener('online',refresh);let queued=false;new MutationObserver(()=>{if(queued)return;queued=true;setTimeout(()=>{queued=false;mount();},80);}).observe(document.body,{childList:true,subtree:true});(async()=>{await window.GAO_AUTH_READY;await refresh();mount();})();setInterval(refresh,30000);window.addEventListener('beforeunload',e=>{if(dirty.size){e.preventDefault();e.returnValue='';}});}
+if(typeof window!=='undefined'){document.addEventListener('click',e=>{const a=e.target.closest?.('.gao-nav a');if(a&&linkModule(a)==='administracao'&&a.dataset.accessTab!=='clients'&&!a.hasAttribute('data-gao-submenu-toggle')&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey){e.preventDefault();e.stopImmediatePropagation();tab=a.dataset.accessTab||'users';history.pushState({},'',tab==='roles'?'/#administracao-papeis':'/#administracao');if(model)render();mount();}},true);window.addEventListener('hashchange',mount);window.addEventListener('popstate',mount);window.addEventListener('focus',refresh);window.addEventListener('online',refresh);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refresh();});let queued=false;new MutationObserver(()=>{if(queued)return;queued=true;setTimeout(()=>{queued=false;mount();},80);}).observe(document.body,{childList:true,subtree:true});(async()=>{await window.GAO_AUTH_READY;await refresh();mount();})();setInterval(refresh,30000);window.addEventListener('beforeunload',e=>{if(dirty.size){e.preventDefault();e.returnValue='';}});}

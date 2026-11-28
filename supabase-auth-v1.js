@@ -5,6 +5,7 @@
   let resolveReady;
   let booted=false;
   let refreshPromise=null;
+  let restoreDelay=2000;
   window.GAO_AUTH_READY=new Promise(resolve=>{resolveReady=resolve});
 
   const read=()=>{
@@ -23,19 +24,52 @@
   const request=async(path,body)=>{
     const response=await fetch(SB+path,{method:'POST',headers:{apikey:KEY,'Content-Type':'application/json'},signal:AbortSignal.timeout(15000),body:JSON.stringify(body)});
     const data=await response.json().catch(()=>({}));
-    if(!response.ok)throw Object.assign(Error(data.error_description||data.msg||data.message||'Não foi possível autenticar.'),{status:response.status});
+    if(!response.ok)throw Object.assign(Error(data.error_description||data.msg||data.message||'Não foi possível autenticar.'),{status:response.status,code:data.error_code||data.code||data.error});
     return data;
+  };
+  const expiredSession=error=>error?.status===401||['refresh_token_not_found','refresh_token_already_used','invalid_grant','session_not_found','session_expired','user_not_found','user_banned'].includes(error?.code);
+  const renew=async initial=>{
+    const current=read();
+    if(!current?.refresh_token||signingOut)throw Object.assign(Error('A sessão expirou. Entre novamente no Portal.'),{status:401});
+    if(current.access_token!==initial.access_token&&(current.expires_at||0)*1000>Date.now()+30000){
+      window.GAO_AUTH_SESSION=current;
+      return current;
+    }
+    let refreshed;
+    try{
+      refreshed=await request('/auth/v1/token?grant_type=refresh_token',{refresh_token:current.refresh_token});
+    }catch(error){
+      const latest=read();
+      if(!signingOut&&latest&&latest.access_token!==current.access_token){
+        window.GAO_AUTH_SESSION=latest;
+        return latest;
+      }
+      if(expiredSession(error))error.status=401;
+      throw error;
+    }
+    const latest=read();
+    if(signingOut||!latest)throw Object.assign(Error('A sessão foi encerrada.'),{status:401});
+    if(latest.access_token!==current.access_token){
+      window.GAO_AUTH_SESSION=latest;
+      return latest;
+    }
+    return save(refreshed);
   };
   window.GAO_REFRESH_SESSION=async()=>{
     if(refreshPromise)return refreshPromise;
-    refreshPromise=(async()=>{
-      const current=read()||window.GAO_AUTH_SESSION;
-      if(!current?.refresh_token)throw Object.assign(Error('A sessão expirou. Entre novamente no Portal.'),{status:401});
-      const refreshed=await request('/auth/v1/token?grant_type=refresh_token',{refresh_token:current.refresh_token});
-      if(signingOut||!read())throw Error('A sessão foi encerrada.');
-      return save(refreshed);
-    })();
+    const initial=window.GAO_AUTH_SESSION||read();
+    if(!initial)throw Object.assign(Error('A sessão expirou. Entre novamente no Portal.'),{status:401});
+    const locks=window.navigator.locks;
+    refreshPromise=locks?locks.request(STORAGE,()=>renew(initial)):renew(initial);
     try{return await refreshPromise}finally{refreshPromise=null}
+  };
+  window.GAO_REAUTHENTICATE=expectedToken=>{
+    const current=read();
+    if(!current||current.access_token===expectedToken){
+      clear();
+      delete window.GAO_AUTH_SESSION;
+    }
+    location.reload();
   };
   const showGate=()=>{
     if(document.getElementById('gao-supabase-auth-gate'))return;
@@ -136,10 +170,14 @@
   };
 
   window.addEventListener('storage',event=>{
-    if(event.key===STORAGE&&!event.newValue&&window.GAO_AUTH_SESSION&&!signingOut){
+    if(event.key!==STORAGE||signingOut) return;
+    const latest=read(),current=window.GAO_AUTH_SESSION;
+    if(current&&(!latest||latest.user?.id!==current.user?.id)){
       signingOut=true;
       delete window.GAO_AUTH_SESSION;
       location.reload();
+    }else if(current&&latest){
+      window.GAO_AUTH_SESSION=latest;
     }
   });
   const restore=async()=>{
@@ -149,7 +187,15 @@
     if(session&&session.expires_at&&session.expires_at*1000<Date.now()+30000){
       try{
         session=await window.GAO_REFRESH_SESSION();
-      }catch{clear();session=null}
+      }catch(error){
+        if(expiredSession(error)){clear();session=null}
+        else{
+          booted=false;
+          setTimeout(restore,restoreDelay);
+          restoreDelay=Math.min(restoreDelay*2,30000);
+          return;
+        }
+      }
     }
     if(session){
       window.GAO_AUTH_SESSION=session;

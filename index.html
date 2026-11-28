@@ -42,7 +42,7 @@
 </head>
   <body>
     <div id="root"></div>
-    <script src="/supabase-auth-v1.js?v=7"></script>
+    <script src="/supabase-auth-v1.js?v=8"></script>
     <script src="/laundry-access-bootstrap-v60.js?v=62"></script>
     <script type="module" src="/admin-delete-addon.js"></script>
     <script type="module" src="/laundry-structure-v45.js"></script>
@@ -94,7 +94,7 @@
   const started=Date.now(), key='gao-auth-recovery-once';
   const check=()=>{
     const loading=[...document.querySelectorAll('.route-loading')].find(x=>/Carregando acesso/i.test(x.textContent||''));
-    if(!loading)return;
+    if(!loading||document.getElementById('gao-supabase-auth-gate')){document.getElementById('gao-auth-timeout')?.remove();return;}
     if(Date.now()-started<12000)return;
     if(!sessionStorage.getItem(key)){sessionStorage.setItem(key,'1');}
     if(!document.getElementById('gao-auth-timeout')){
@@ -151,7 +151,7 @@
   <script src="/src/rouparia-operations-v2.js?v=3"></script>
   <script src="/src/gao-ui-fix-v1.js?v=10"></script>
 <script src="/chemicals-sidebar-v1.js?v=2"></script>
-<script type="module" src="/admin-access-v1.mjs?v=13"></script>
+<script type="module" src="/admin-access-v1.mjs?v=14"></script>
 <script type="module" src="/linen-operations-ui-v1.mjs?v=15"></script>
 <link rel="stylesheet" href="/linen-management-v1.css?v=5">
 <script type="module" src="/chemical-analysis-ui-v1.mjs?v=2"></script>
