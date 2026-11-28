@@ -23,9 +23,13 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     ${crmTriage?`<section aria-labelledby="wa-scheduleTitle">
       <h4 id="wa-scheduleTitle">Conciliação por dia de coleta</h4>
       <p class="waste-sub">Escala informada: Indicom às segundas, quartas e sextas. Bioreverse às terças, quintas e sábados.</p>
-      <p class="waste-sub">O cruzamento usa a data que consta no PDF da Indicom ou na planilha da Bioreverse. O peso triado do dia serve de referência e pode incluir material coletado em outra data.</p>
+      <p class="waste-sub">A data do documento é a data da coleta. Quando falta peso na Bioreverse em um dia previsto, a tabela mostra a primeira coleta documentada da Indicom no mesmo dia ou depois para conferir a cobertura.</p>
       <label>Mês da conciliação <select id="wa-scheduleMonth"></select></label>
       <div class="waste-audit-scroll" id="wa-scheduleSummary"></div>
+      <details><summary id="wa-scheduleGapTitle">Lacunas da Bioreverse</summary>
+        <p class="waste-sub">Uma lacuna sinaliza falta de peso positivo no registro da Bioreverse. A coleta da Indicom é uma referência de cobertura. Uma mesma coleta pode aparecer para mais de uma lacuna e seu peso deve ser contado uma única vez.</p>
+        <div class="waste-audit-scroll" id="wa-scheduleGaps"></div>
+      </details>
       <details><summary>Conferir a escala e os pesos dia a dia</summary><div class="waste-audit-scroll" id="wa-scheduleDays"></div></details>
     </section>`:''}
     ${crmTriage?`<section aria-labelledby="wa-ratesTitle">
@@ -179,6 +183,12 @@ export function mountAudit(root,history,downloadDocument,loadSource){
       const dayNumber=row.calendarDay.getUTCDay();
       row.expected=dayNumber===0?null:(dayNumber%2===1?0:1);
     }
+    let nextIndicom=null;
+    for(let i=days.length-1;i>=0;i--){
+      const row=days[i];
+      if(row.documented[0]>0) nextIndicom=row;
+      if(row.expected===1&&!(row.documented[1]>0)) row.coverage=nextIndicom;
+    }
     options(monthFilter,[['all','Todos os meses'],...annual.months.map(([month])=>[month,monthName(month)])]);
     const sumWeights=values=>{
       const available=values.filter(value=>value!=null);
@@ -193,6 +203,17 @@ export function mountAudit(root,history,downloadDocument,loadSource){
         return [company,String(on.length),String(off.length),kg(sumWeights(on.map(row=>row.documented[index]))),kg(sumWeights(off.map(row=>row.documented[index]))),
           kg(sumWeights(pairs.map(row=>row.triaged))),kg(sumWeights(pairs.map(row=>row.documented[index])))];
       }));
+      const gaps=scoped.filter(row=>row.expected===1&&!(row.documented[1]>0));
+      el('scheduleGapTitle').textContent='Lacunas da Bioreverse · '+gaps.length+' dias';
+      if(gaps.length){
+        table(el('scheduleGaps'),['Data prevista','Semana ISO','Triagem GAO (kg)','Registro da Bioreverse','Coleta Indicom para conferir','Peso dessa coleta Indicom (kg)'],gaps.map(row=>[
+          date(row.day),row.week,kg(row.triaged),row.documented[1]===0?'Peso zero':'Sem registro',
+          row.coverage?date(row.coverage.day)+(row.coverage.day===row.day?' · mesmo dia':''):'Sem coleta Indicom posterior no recorte',
+          kg(row.coverage?.documented[0]??null)
+        ]));
+      }else{
+        el('scheduleGaps').textContent='Nenhuma lacuna no recorte.';
+      }
       table(el('scheduleDays'),['Data','Semana ISO','Dia','Coletora prevista','Triagem GAO (kg)','Indicom · PDF (kg)','Bioreverse · planilha (kg)','Coletora prevista − triagem (kg)','Conferência'],scoped.map(row=>{
         const off=row.documented.flatMap((value,index)=>index!==row.expected&&value>0?[companies[index]]:[]);
         const expectedWeight=row.expected==null?null:row.documented[row.expected];
@@ -200,7 +221,10 @@ export function mountAudit(root,history,downloadDocument,loadSource){
         const notes=[];
         if(off.length) notes.push('Fora da escala: '+off.join(', '));
         if(row.triaged==null) notes.push('Sem peso de triagem');
-        if(row.expected!=null&&!(expectedWeight>0)) notes.push('Sem peso positivo da coletora prevista');
+        if(row.expected===1&&!(expectedWeight>0)){
+          notes.push(row.documented[1]===0?'Bioreverse com peso zero':'Bioreverse sem registro');
+          if(row.coverage) notes.push('Conferir cobertura Indicom em '+date(row.coverage.day));
+        }else if(row.expected===0&&!(expectedWeight>0)) notes.push('Indicom sem peso positivo');
         return [date(row.day),row.week,weekday.format(row.calendarDay),companies[row.expected]??'Sem coleta prevista',kg(row.triaged),...row.documented.map(kg),
           kg(delta),notes.join(' · ')||'Data coincidente'];
       }));
