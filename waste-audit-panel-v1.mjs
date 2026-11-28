@@ -22,16 +22,27 @@ function sumRecorded(values){
   return recorded.length?recorded.reduce((total,value)=>total+value,0):null;
 }
 
+const costCompanies=[
+  {key:'indcom',label:'Indicom',evidence:'indcomFinance'},
+  {key:'bioreverse',label:'Bioreverse',evidence:'bioFinance'},
+];
+const totalCostSeries=costCompanies.length;
+const costSeriesLabel=index=>costCompanies[index]?.label??'Indicom + Bioreverse';
+const perSeries=(metrics,index)=>index===totalCostSeries
+  ?{paid:metrics.totalPaid,cost:metrics.totalCost,titles:metrics.companies.flatMap(company=>company.titles)}
+  :metrics.companies[index];
+
 export function operatingMetrics(rows,payments,weekly){
   const triaged=sumRecorded(rows.map(row=>row.crm_triage?.[1]));
   const months=new Set(rows.filter(row=>row.crm_triage?.[1]!=null).map(row=>row.d.slice(0,7)));
-  const companies=['indcom','bioreverse'].map((company,index)=>{
+  const companies=costCompanies.map((company,index)=>{
     const waste=sumRecorded(rows.map(row=>row.documentWeights?.[index]));
-    const titles=weekly?[]:(payments?.[company]??[]).filter(([due])=>months.has(competenceFor(due)));
+    const titles=weekly?[]:(payments?.[company.key]??[]).filter(([due])=>months.has(competenceFor(due)));
     const paid=sumRecorded(titles.map(([,cents])=>cents));
     return {
       rate:waste!=null&&triaged>0?waste/triaged:null,
       paid,
+      titles:titles.map(([due,cents])=>({company,due,cents})),
       cost:paid!=null&&triaged>0?paid/triaged:null,
       months:new Set(titles.map(([due])=>competenceFor(due))).size,
     };
@@ -59,6 +70,17 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     </div>
   </div>
   <section class="waste-section wa-chart" id="wa-chart" aria-label="Gráfico por coletora"></section>
+  <section class="waste-section wa-chart" id="wa-costChart" hidden tabindex="-1">
+    <div class="wa-chart-head">
+      <h3 id="wa-costChartTitle">Custo por kg de roupa triada</h3>
+      <div class="waste-audit-mode">
+        <button type="button" id="wa-costChartAudit">Auditar período</button>
+        <button type="button" id="wa-costChartClose">Voltar ao gráfico de resíduos</button>
+      </div>
+    </div>
+    <p class="waste-sub">Clique em uma competência para conferir o cálculo e abrir os documentos.</p>
+    <div id="wa-costBars"></div>
+  </section>
   <section class="waste-section" aria-labelledby="wa-operatingTitle">
     <h3 id="wa-operatingTitle">Triagem, coleta e custo</h3>
     <div id="wa-operatingCards" class="waste-grid"></div>
@@ -467,37 +489,163 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     return card;
   }
 
+  const perKg=cost=>cost==null?'—':costFormat.format(cost)+'/kg';
+  const paidText=paid=>paid==null?'—':currency.format(paid/100);
+  let activeCostSeries=null;
+  function costPeriods(rows){
+    return group(rows,row=>row.d.slice(0,7)).sort(([a],[b])=>a.localeCompare(b));
+  }
+
+  function openCostAudit(rows,series,period){
+    ++detailRequest;
+    const audit=operatingMetrics(rows,payments,false);
+    const {paid,cost,titles}=perSeries(audit,series);
+    const target=el('detailRows');
+    el('detailTitle').textContent=costSeriesLabel(series)+' · '+perKg(cost);
+    el('detailPeriod').textContent=period;
+    el('detailStatus').textContent='Valor pago '+paidText(paid)+' ÷ '+kg(audit.triaged)+' kg de roupa triada.';
+    el('detailFilter').hidden=true;
+    el('detailSearch').value='';
+    target.replaceChildren();
+
+    const addTable=(heading,headers,lines)=>{
+      const title=document.createElement('h4');
+      title.textContent=heading;
+      const wrap=document.createElement('div');
+      wrap.className='waste-audit-scroll';
+      table(wrap,headers,lines);
+      target.append(title,wrap);
+    };
+    addTable('Cálculo por competência',['Competência','Roupa triada (kg)','Valor pago','Custo por kg'],costPeriods(rows).map(([month,days])=>{
+      const metrics=operatingMetrics(days,payments,false);
+      const values=perSeries(metrics,series);
+      return [monthName(month),kg(metrics.triaged),paidText(values.paid),perKg(values.cost)];
+    }));
+    addTable('Pagamentos incluídos',['Competência','Empresa','Vencimento do título','Valor da baixa','Documento de origem'],
+      titles.length?titles.map(({company,due,cents})=>[
+        monthName(competenceFor(due)),company.label,date(due),paidText(cents),evidence(company.evidence,'Abrir extrato financeiro')
+      ]):[['—','—','—','—','Sem baixa confirmada no recorte']]);
+
+    const triage=document.createElement('details');
+    const heading=document.createElement('summary');
+    heading.textContent='Conferir os pesos diários da triagem';
+    const crm=document.createElement('a');
+    crm.href='https://crm.gao.com.br/';
+    crm.target='_blank';
+    crm.rel='noopener noreferrer';
+    crm.textContent='Abrir CRM GAO para conferir na aba Triagem';
+    const daily=document.createElement('div');
+    daily.className='waste-audit-scroll';
+    table(daily,['Data','Semana ISO','Roupa triada (kg)'],rows.filter(row=>row.crm_triage?.[1]!=null)
+      .map(row=>[date(row.d),row.w,kg(row.crm_triage[1])]));
+    triage.append(heading,crm,daily);
+    target.append(triage);
+    el('detail').showModal();
+  }
+
+  function showCostChart(rows,series,period,focus=false){
+    activeCostSeries=series;
+    const chart=el('costChart'),bars=el('costBars');
+    el('costChartTitle').textContent='Custo por kg de roupa triada · '+costSeriesLabel(series);
+    const points=costPeriods(rows).map(([month,days])=>({
+      month,days,cost:perSeries(operatingMetrics(days,payments,false),series).cost
+    }));
+    const max=Math.max(0,...points.map(point=>point.cost??0))||1;
+    bars.replaceChildren(...points.map(({month,days,cost})=>{
+      const bar=document.createElement('button');
+      bar.type='button';
+      bar.className='waste-kpi waste-audit-detail-card';
+      bar.style.cssText='display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;align-items:center;gap:8px;width:100%;margin-bottom:5px';
+      const label=document.createElement('span');
+      label.textContent=monthName(month);
+      const meter=document.createElement('progress');
+      meter.style.width='100%';
+      meter.max=max;
+      meter.value=cost??0;
+      meter.setAttribute('aria-hidden','true');
+      meter.style.visibility=cost==null?'hidden':'visible';
+      const value=document.createElement('strong');
+      value.textContent=perKg(cost);
+      bar.setAttribute('aria-label',label.textContent+' · '+(cost==null?'Sem custo confirmado':value.textContent)+' · Auditar');
+      bar.onclick=()=>openCostAudit(days,series,label.textContent);
+      bar.append(label,meter,value);
+      return bar;
+    }));
+    if(!points.length) bars.textContent='Sem registros no período selecionado.';
+    el('costChartAudit').onclick=()=>openCostAudit(rows,series,period);
+    el('chart').hidden=true;
+    chart.hidden=false;
+    if(focus){
+      chart.focus({preventScroll:true});
+      chart.scrollIntoView({block:'start'});
+    }
+  }
+
+  function closeCostChart(){
+    activeCostSeries=null;
+    el('costChart').hidden=true;
+    el('chart').hidden=false;
+  }
+  el('costChartClose').onclick=closeCostChart;
+
   function renderOperatingCards(month,week){
     const rows=(annual&&(month==='all'||month.startsWith('2026-'))?documented:data)
       .filter(row=>(month==='all'||row.d.startsWith(month))&&(week==='all'||row.w===week));
     const {triaged,companies,totalPaid,totalCost}=operatingMetrics(rows,payments,week!=='all');
-    const card=(title,value,details=[])=>{
+    const period=month==='all'?'Todos os meses':monthName(month);
+    if(week!=='all'&&activeCostSeries!==null) closeCostChart();
+    if(activeCostSeries!==null) showCostChart(rows,activeCostSeries,period);
+    const card=(title,value,details=[],series=null)=>{
       const node=document.createElement('div');
       node.className='waste-kpi';
       const label=document.createElement('span');
       label.textContent=title;
       const main=document.createElement('strong');
       main.textContent=value;
-      node.append(label,main);
+      if(series!==null&&week==='all'){
+        const chartLink=document.createElement('a');
+        chartLink.href='#wa-costChart';
+        const chartCaption=document.createElement('small');
+        chartCaption.textContent='Ver no gráfico';
+        chartCaption.style.display='block';
+        chartLink.append(main,chartCaption);
+        chartLink.setAttribute('aria-label',title+' · '+value+' · Ver gráfico');
+        chartLink.onclick=event=>{
+          event.preventDefault();
+          showCostChart(rows,series,period,true);
+        };
+        node.append(label,chartLink);
+      }else node.append(label,main);
       for(const detail of details){
         const line=document.createElement('small');
         line.style.display='block';
         line.textContent=detail;
         node.append(line);
       }
+      if(series!==null&&week==='all'){
+        const auditLink=document.createElement('a');
+        auditLink.href='#wa-detail';
+        auditLink.className='waste-audit-card-action';
+        auditLink.textContent='Auditar custo';
+        auditLink.setAttribute('aria-label','Auditar custo · '+costSeriesLabel(series));
+        auditLink.onclick=event=>{
+          event.preventDefault();
+          openCostAudit(rows,series,period);
+        };
+        node.append(auditLink);
+      }
       return node;
     };
-    const perKg=cost=>cost==null?'—':costFormat.format(cost)+'/kg';
     el('operatingCards').replaceChildren(
       card('Roupa triada · CRM GAO',triaged==null?'Sem dados':kg(triaged)+' kg'),
       ...companies.map(({rate,paid,cost,months},index)=>card(
         (index===0?'Indicom':'Bioreverse')+' · custo por kg de roupa triada',perKg(cost),
         ['Percentual sobre a roupa triada: '+(rate==null?'—':rateFormat.format(rate)),
           'Valor pago: '+(paid==null?'—':currency.format(paid/100)),
-          ...(months>0?['Pagamentos confirmados em '+months+(months===1?' competência':' competências')]:[])]
+          ...(months>0?['Pagamentos confirmados em '+months+(months===1?' competência':' competências')]:[])],index
       )),
       card('Indicom + Bioreverse · custo por kg de roupa triada',perKg(totalCost),
-        ['Total pago confirmado: '+(totalPaid==null?'—':currency.format(totalPaid/100))])
+        ['Total pago confirmado: '+paidText(totalPaid)],totalCostSeries)
     );
     el('operatingNote').textContent=week!=='all'
       ?'O financeiro está disponível por competência mensal. Selecione todas as semanas para ver os valores.'
