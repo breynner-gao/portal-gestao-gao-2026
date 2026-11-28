@@ -87,6 +87,7 @@ export function createFactionWorkflow({
   const product = row => `<strong>${esc(row.item.product_name)}</strong><small>OS ${esc(row.order.order_number)} · Ref. ${esc(row.item.product_reference)}</small>`;
   const maxInLot = (row,lot) => Math.min(row.remaining,Math.floor((Math.max(0,lot.mine-n(lot.committed))+0.000499)/row.unit));
   const freeToRelease = lot => Math.max(0,round(lot.mine-lot.committed));
+  const cutQueue = orders => activeOrders(orders).filter(row=>row.remaining>0&&row.lots.some(lot=>freeToRelease(lot)>0));
   const mayRelease = () => state.canOperateFaction&&(state.canViewInventory||state.canReserveFaction);
   const stockOptions = (lots, measure, chosen = '') => lots.map(lot =>
     `<option value="${esc(lot.id)}" ${lot.id===chosen?'selected':''}>${esc(lot.lot_code)} · ${meters(measure(lot))}</option>`).join('');
@@ -128,7 +129,8 @@ export function createFactionWorkflow({
   }
 
   function cutView(orders) {
-    const rows = activeOrders(orders).map(row=>{
+    const queue = cutQueue(orders);
+    const rows = queue.map(row=>{
       const stored = draft.get(row.item.id) || {};
       const lots = row.lots.filter(lot=>maxInLot(row,lot)>0);
       const lot = lots.find(l=>l.id===stored.lot) || lots[0];
@@ -136,13 +138,13 @@ export function createFactionWorkflow({
       const quantity = Math.min(stored.quantity||0,maximum);
       const free = sum(row.lots,freeToRelease);
       return `<tr data-faction-line="${esc(row.item.id)}" data-unit="${row.unit}">
-        <td><input type="checkbox" data-cut-select aria-label="Incluir ${esc(row.item.product_name)}" ${cutSelected.has(row.item.id)?'checked':''} ${maximum?'':'disabled'}></td><td>${product(row)}<small>${esc(row.fabric?internalName(row.fabric):'Tecido a vincular')}</small></td>
+        <td><input type="checkbox" data-cut-select aria-label="Incluir ${esc(row.item.product_name)}" ${cutSelected.has(row.item.id)?'checked':''} ${maximum?'':'disabled'}></td><td>${product(row)}<small>${esc(row.fabric?internalName(row.fabric):'Tecido a vincular')}</small>${mayRelease()?button('Retirar do corte','release-cut-queue',row.item.id,state.cutPlansError):''}</td>
         <td>${pieces(row.item.ordered_pieces)}</td><td>${pieces(row.cut+row.cutting)}</td><td>${pieces(row.cutting)}</td><td>${pieces(row.cut)}</td><td>${pieces(row.remaining)}</td>
         <td><select data-faction-roll aria-label="Rolo de ${esc(row.item.product_name)}" ${lot?'':'disabled'}>
           ${lot?stockOptions(lots,l=>round(l.mine-l.committed),lot.id):'<option>Sem reserva suficiente</option>'}
         </select></td>
         <td><input type="number" data-faction-cut-quantity min="1" max="${maximum}" step="1" inputmode="numeric" aria-label="Quantidade a cortar de ${esc(row.item.product_name)}" value="${quantity||''}" ${maximum?'':'disabled'}><small>Máx. com reserva: ${pieces(maximum)}</small></td>
-        <td data-faction-estimate>${meters(quantity*row.unit)}</td><td>${meters(round(free))}${mayRelease()&&free>0?'<div>'+button('Cancelar reserva','release',row.item.id)+'</div>':''}</td></tr>`;
+        <td data-faction-estimate>${meters(quantity*row.unit)}</td><td>${meters(round(free))}</td></tr>`;
     }).join('');
     const lots = orders.flatMap(row=>row.cuts.map(cut=>`<tr><td>${button(esc(cut.id.slice(0,8)),'map',cut.id)}<small>${dateLabel(cut.created_at)}</small></td>
       <td>${product(row)}</td><td>${pieces(cut.produced_pieces)}</td><td>${meters(cut.consumed_m)}</td><td>${cut.sent_date?'Enviado à facção':'Corte concluído'}</td></tr>`)).join('');
@@ -162,8 +164,8 @@ export function createFactionWorkflow({
       return `<tr><td>${button(esc(id.slice(0,8)),'group-map',id)}</td><td>${group[0].status==='FRACIONADO'?'Substituído por fracionamento':'Cancelado'}</td><td>${pieces(sum(group,line=>line.pieces))}</td></tr>`;
     }).join(''),'Nenhum lote arquivado.')):'';
     return (state.cutPlansError?'<p role="alert">Não foi possível carregar o planejamento de corte. Atualize os dados.</p>':'')+
-      metrics([['Em lotes abertos',pieces(sum(orders,r=>r.cutting)),'Peças planejadas ou com corte iniciado'],['Cortadas',pieces(sum(orders,r=>r.cut)),'Peças em lotes concluídos'],['Saldo para novos lotes',pieces(sum(orders,r=>r.remaining)),'Peças ainda disponíveis para corte']]) +
-      panel('Quantidade que cabe neste corte',table(['Selecionar','Produto / tecido','Ordem','Distribuídas','Corte aberto','Cortadas','Saldo','Rolo reservado','Quantidade a cortar neste lote','Consumo previsto','Reserva livre'],rows,'Reserve tecido em Provisão Facção para começar.'),button('Gerar mapa e lote de corte','group-plan','',state.cutPlansError)) +
+      metrics([['Em lotes abertos',pieces(sum(orders,r=>r.cutting)),'Peças planejadas ou com corte iniciado'],['Cortadas',pieces(sum(orders,r=>r.cut)),'Peças em lotes concluídos'],['Saldo para novos lotes',pieces(sum(queue,r=>r.remaining)),'Saldo das ordens com reserva livre']]) +
+      panel('Quantidade que cabe neste corte',table(['Selecionar','Produto / tecido','Ordem','Distribuídas','Corte aberto','Cortadas','Saldo','Rolo reservado','Quantidade a cortar neste lote','Consumo previsto','Reserva livre'],rows,'Nenhum item com reserva livre. Use Reservar para corte na Provisão Facção.'),button('Gerar mapa e lote de corte','group-plan','',state.cutPlansError||!queue.length)) +
       panel('Lotes de corte',table(['Lote / origem','Produto','Peças','Reserva','Situação','Ação'],pending,'Nenhum lote planejado.')) +
       history+section('Cortes concluídos',table(['Lote / data','Produto','Peças cortadas','Consumo real','Situação'],lots,'Nenhum lote concluído.'));
 
@@ -302,6 +304,12 @@ export function createFactionWorkflow({
             selected.delete(values.id);
             draft.delete(values.id);
             cutSelected.delete(values.id);
+          } else if(kind==='release-cut-queue') {
+            await rpc('fabric_faction_release_cut_queue',{
+              p_org:state.org,p_item:values.id,p_request:values.request,p_lines:JSON.parse(values.lines)
+            });
+            draft.delete(values.id);
+            cutSelected.delete(values.id);
           } else if(kind==='faction-delivery') {
             await reload();
             const row=getOrders().find(row=>row.item.id===values.id);
@@ -363,7 +371,7 @@ export function createFactionWorkflow({
           await reload();
           await syncOrderStatuses();
           await reload();
-          state.notice=kind==='open-inventory'?'Saldo de abertura liberado.':'Registro salvo.';
+          state.notice=kind==='open-inventory'?'Saldo de abertura liberado.':kind==='release-cut-queue'?'Reserva livre devolvida ao estoque. Consulte a ordem em Provisão Facção.':'Registro salvo.';
           dialog.close();
           render();
           window.dispatchEvent(new Event('gao-production-updated'));
@@ -382,7 +390,7 @@ export function createFactionWorkflow({
   }
 
   function groupPlan(orders) {
-    const selectedOrders=activeOrders(orders);
+    const selectedOrders=cutQueue(orders);
     const choices=selectedOrders.flatMap(row=>row.lots.filter(lot=>maxInLot(row,lot)>0).map(lot=>({
       value:row.item.id+':'+lot.id, label:row.item.product_name+' · '+lot.lot_code, maximum:maxInLot(row,lot), unit:row.unit
     })));
@@ -720,6 +728,18 @@ export function createFactionWorkflow({
     if(action==='request'&&row.shortage>0&&row.fabric)return openFabricPurchaseDraft({fabric:row.fabric,missing:row.shortage},{
       source_item:row.order.order_number,product_name:row.item.product_name
     });
+    if(action==='release-cut-queue'&&mayRelease()&&!state.cutPlansError) {
+      if(!cutQueue([row]).length)return;
+      const lines=row.lots.filter(lot=>freeToRelease(lot)>0).map(lot=>({lot_id:lot.id,meters:freeToRelease(lot)}));
+      const total=sum(lines,line=>line.meters);
+      return openDialog('Retirar item da fila de corte',`<form data-faction-form="release-cut-queue">
+        <input type="hidden" name="id" value="${esc(id)}">
+        <input type="hidden" name="request" value="${esc(uid())}">
+        <input type="hidden" name="lines" value="${esc(JSON.stringify(lines))}">
+        <p>${product(row)}</p>
+        <p>${meters(total)} de reserva livre voltam ao estoque. A ordem continua na Provisão e os lotes já gerados são preservados.</p>
+        <button type="submit">Retirar do corte</button></form>`);
+    }
     if(action==='release'&&mayRelease()) {
       const lots=row.lots.filter(lot=>freeToRelease(lot)>0);
       if(!lots.length)return;
