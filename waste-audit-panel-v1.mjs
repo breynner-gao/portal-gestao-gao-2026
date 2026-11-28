@@ -20,6 +20,13 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     <h3 id="wa-annualTitle">Auditoria de resíduos de 2026</h3>
     <p id="wa-annualCutoff" class="waste-sub"></p>
     <p id="wa-annualTriage" class="waste-sub"></p>
+    ${crmTriage?`<section aria-labelledby="wa-ratesTitle">
+      <h4 id="wa-ratesTitle">Percentuais sobre o peso total triado</h4>
+      <p class="waste-sub">Peso de cada origem ÷ peso total triado no CRM GAO no mesmo recorte × 100. Indicom usa os PDFs auditados e Bioreverse usa os pesos do fornecedor.</p>
+      <div class="waste-audit-scroll" id="wa-ratesMonths"></div>
+      <details><summary>Percentuais por semana ISO</summary><div class="waste-audit-scroll" id="wa-ratesWeeks"></div></details>
+      <p id="wa-wasteComparison" class="waste-sub"></p>
+    </section>`:''}
     <div class="waste-audit-scroll" id="wa-annualMonths"></div>
     <details><summary>Detalhar por semana ISO</summary><div class="waste-audit-scroll" id="wa-annualWeeks"></div></details>
     <details><summary>Conferência dos MTRs da Indicom</summary><div class="waste-audit-scroll" id="wa-annualIndicom"></div></details>
@@ -139,8 +146,37 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     node.replaceChildren(t);
     return body;
   }
+  function renderTriageRates(){
+    if(!annual||!crmTriage) return;
+    const end=annual.cutoff<crmTriage.cutoff?annual.cutoff:crmTriage.cutoff;
+    const crmDays=data.filter(row=>row.crm_triage&&row.d>=crmTriage.start&&row.d<=end);
+    const weight=(rows,index)=>{
+      const measured=rows.map(row=>row.crm_triage[index]).filter(value=>value!=null);
+      return measured.length?measured.reduce((a,b)=>a+b,0):null;
+    };
+    const percent=(value,base)=>value!=null&&base>0?nf.format(value/base*100)+'%':'—';
+    const metrics=(days,indicom,bioreverse)=>{
+      const base=weight(days,1);
+      return [kg(base),percent(weight(days,0),base),percent(bioreverse,base),percent(indicom,base)];
+    };
+    const labels=['Peso total triado (kg)','Lixo GAO','Bioreverse','Indicom'];
+    const sumDocumentColumn=i=>annual.months.reduce((total,row)=>total+(row[i]??0),0);
+    const indicom=sumDocumentColumn(1),bioreverse=sumDocumentColumn(5);
+    const monthly=table(el('ratesMonths'),['Mês',...labels],[
+      ...annual.months.map(row=>[monthName(row[0]),...metrics(crmDays.filter(day=>day.d.startsWith(row[0])),row[1],row[5])]),
+      ['Acumulado até '+date(end),...metrics(crmDays,indicom,bioreverse)]
+    ]);
+    monthly.lastElementChild.className='total';
+    table(el('ratesWeeks'),['Mês','Semana ISO',...labels],annual.weeks.map(row=>[
+      monthName(row[0]),row[1],...metrics(crmDays.filter(day=>day.d.startsWith(row[0])&&day.w===row[1]),row[2],row[6])
+    ]));
+    const waste=weight(crmDays,0);
+    el('wasteComparison').textContent='Sobre o peso do lixo triado (outra base), Bioreverse equivale a '+percent(bioreverse,waste)
+      +' e Indicom a '+percent(indicom,waste)+'. Comparação de pesos, sujeita à diferença de datas entre triagem e coleta.';
+  }
   function renderAnnual(){
     if(!annual) return;
+    renderTriageRates();
     el('annualCutoff').textContent='Documentos disponíveis até '+date(annual.cutoff)+'. Os pesos em conferência aparecem nas colunas de pendências.';
     const triaged=data.filter(row=>row.d.startsWith('2026-')&&row.v[0]!=null);
     const totalTriaged=sum(triaged,0);
