@@ -92,9 +92,20 @@ export function createFactionWorkflow({
   const stockOptions = (lots, measure, chosen = '') => lots.map(lot =>
     `<option value="${esc(lot.id)}" ${lot.id===chosen?'selected':''}>${esc(lot.lot_code)} · ${meters(measure(lot))}</option>`).join('');
 
-  function hasProductionHistory(id) {
-    return [state.moves,state.cuts,state.returns,plans()].some(rows=>rows.some(record=>record.order_item_id===id))||
-      (state.enfestos||[]).some(record=>record.outputs?.some(output=>output.source_type==='os'&&output.source_id===id));
+  function canRemoveProvisionItem(row) {
+    const id=row.item.id;
+    if(!state.canOperateFaction||!['ABERTA','PARCIAL','ENVIADA'].includes(row.order.status))return false;
+    if([state.cuts,state.returns,plans()].some(rows=>rows.some(record=>record.order_item_id===id))||
+      (state.enfestos||[]).some(record=>record.outputs?.some(output=>output.source_type==='os'&&output.source_id===id)))return false;
+    const moves=state.moves.filter(record=>record.order_item_id===id);
+    if(!moves.length)return true;
+    if(state.items.some(item=>item.order_id===row.order.id&&item.id!==id))return false;
+    const byLot=new Map();
+    for(const move of moves){
+      if(!['RESERVA','LIBERA_RESERVA'].includes(move.movement_type)||n(move.stock_delta_m)!==0)return false;
+      byLot.set(move.lot_id,(byLot.get(move.lot_id)||0)+n(move.reserved_delta_m));
+    }
+    return [...byLot.values()].every(balance=>round(balance)===0);
   }
   const isManual=order=>String(order.idempotency_key||'').startsWith('manual:');
 
@@ -113,7 +124,7 @@ export function createFactionWorkflow({
         <td>${row.remaining===0?'Corte atendido':reserved>=needed?'Reservado':reserved>0?'Reserva parcial':'Aguardando reserva'}
         ${needed>reserved&&!state.factionInventories?.length&&state.canOperateFaction&&(state.canReserveFaction||state.canViewInventory)?button('Conferir rolo','confirm-lot',item.id):''}
         ${shortage>0?button('Solicitar faltante','request',item.id,!fabric):''}
-        ${state.canOperateFaction&&!hasProductionHistory(item.id)?button('Excluir item','remove-item',item.id):''}</td></tr>`;
+        ${canRemoveProvisionItem(row)?button('Excluir item','remove-item',item.id):''}</td></tr>`;
     }).join('');
     const ordersTable = table(['<input type="checkbox" data-faction-select-all aria-label="Selecionar todas as ordens">','Produto / origem','Peças','Tecido','m/peça','Estimado total',state.factionInventories?.[0]?'Inventário físico':'Físico do tecido','Reserva da ordem','Falta reservar','Situação'],rows,'Adicione um produto manualmente ou gere a ordem pelo mapa de necessidades.');
     const requests = table(['Pedido / tecido','Solicitado','A receber','Situação'],state.purchaseItems.flatMap(item=>{
@@ -708,7 +719,7 @@ export function createFactionWorkflow({
     }
     const row=orders.find(o=>o.item.id===id||o.cuts.some(cut=>cut.id===id));
     if(!row)return;
-    if(action==='remove-item'&&state.canOperateFaction&&!hasProductionHistory(row.item.id)){
+    if(action==='remove-item'&&canRemoveProvisionItem(row)){
       return openDialog('Excluir item da provisão',`<form data-faction-form="remove-item">
         <input type="hidden" name="id" value="${esc(row.item.id)}">
         <p>${product(row)}</p><p>Confirme a exclusão deste item da programação. O Portal preserva o registro da exclusão para auditoria.</p>
