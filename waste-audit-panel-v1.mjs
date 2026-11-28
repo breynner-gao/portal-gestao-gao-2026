@@ -1,4 +1,4 @@
-import { mountWasteChart } from './waste-audit-chart-v1.mjs?v=7';
+import { mountWasteChart } from './waste-audit-chart-v1.mjs?v=8';
 
 const references = {
   workbook:'Planilha de auditoria',
@@ -16,7 +16,17 @@ export function mountAudit(root,history,downloadDocument,loadSource){
   const {records:data,indcom_audit:indcomAudit,billing_titles:billingTitles,documents:attachmentNames}=history;
   const annual=attachmentNames.annual2026;
   const crmTriage=attachmentNames.crm_triage_2026;
-  root.innerHTML=`${annual?`<section class="waste-section" aria-labelledby="wa-annualTitle">
+  root.innerHTML=`<div class="waste-audit-filters">
+    <label>Mês <select id="wa-month"></select></label>
+    <label>Semana ISO <select id="wa-week"></select></label>
+    <div class="waste-audit-mode">
+      <button type="button" id="wa-monthly" aria-pressed="true">Por mês</button>
+      <button type="button" id="wa-weekly" aria-pressed="false">Por semana ISO</button>
+    </div>
+  </div>
+  <section class="waste-section wa-chart" id="wa-chart" aria-label="Gráfico por coletora"></section>
+  <div id="wa-cards" class="waste-grid"></div>
+  ${annual?`<section class="waste-section" aria-labelledby="wa-annualTitle">
     <h3 id="wa-annualTitle">Auditoria de resíduos de 2026</h3>
     <p id="wa-annualCutoff" class="waste-sub"></p>
     <p id="wa-annualTriage" class="waste-sub"></p>
@@ -45,16 +55,7 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     <details><summary>Detalhar por semana ISO</summary><div class="waste-audit-scroll" id="wa-annualWeeks"></div></details>
     <details><summary>Conferência dos MTRs da Indicom</summary><div class="waste-audit-scroll" id="wa-annualIndicom"></div></details>
     <details><summary>Conferência da Bioreverse</summary><div class="waste-audit-scroll" id="wa-annualBio"></div></details>
-  </section>`:''}<div class="waste-audit-filters">
-    <label>Mês <select id="wa-month"></select></label>
-    <label>Semana ISO <select id="wa-week"></select></label>
-    <div class="waste-audit-mode">
-      <button type="button" id="wa-monthly" aria-pressed="true">Por mês</button>
-      <button type="button" id="wa-weekly" aria-pressed="false">Por semana ISO</button>
-    </div>
-  </div>
-  <div id="wa-cards" class="waste-grid"></div>
-  <section class="waste-section wa-chart" id="wa-chart" aria-label="Gráfico por coletora"></section>
+  </section>`:''}
   <dialog id="wa-detail" class="waste-audit-dialog" aria-labelledby="wa-detailTitle">
     <div class="waste-audit-dialog-head"><div><h3 id="wa-detailTitle"></h3><p id="wa-detailPeriod"></p></div>
     <form method="dialog"><button type="submit" aria-label="Fechar detalhamento">Fechar</button></form></div>

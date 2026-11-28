@@ -98,7 +98,7 @@ function draw(canvas,points,source){
   canvas.width=Math.round(width*scale);canvas.height=Math.round(height*scale);
   const ctx=canvas.getContext('2d');
   ctx.scale(scale,scale);
-  const left=62,right=12,top=14,bottom=224;
+  const left=62,right=12,top=80,bottom=224;
   const span=(width-left-right)/Math.max(1,points.length);
   const x=index=>left+(index+.5)*span;
   const plotted=points.map(point=>({
@@ -118,12 +118,13 @@ function draw(canvas,points,source){
     ctx.fillStyle='#b1c1d4';ctx.fillText(money.format(value/100),left-7,row+4);
   }
   const bar=Math.max(2,Math.min(18,span*.17));
+  const barCenter=(index,series)=>x(index)+(source==='triage'?0:(series-1.5)*1.25*bar);
   colors.forEach((color,series)=>{
     ctx.fillStyle=color;
     for(const [index,point] of plotted.entries()){
       const value=point.weights[series];
       if(value===null) continue;
-      const center=x(index)+(source==='triage'?0:(series-1.5)*1.25*bar);
+      const center=barCenter(index,series);
       ctx.globalAlpha=point.partial ? .48 : .85;
       ctx.fillRect(center-bar/2,y(value),bar,Math.max(1,bottom-y(value)));
     }
@@ -135,6 +136,24 @@ function draw(canvas,points,source){
     ctx.moveTo(x(trend[0].index),y(trend[0].value));ctx.lineTo(x(trend[1].index),y(trend[1].value));ctx.stroke();
   });
   ctx.setLineDash([]);
+  ctx.font='600 11px system-ui';
+  ctx.textAlign='left';
+  ctx.textBaseline='middle';
+  ctx.strokeStyle='#17212f';
+  ctx.lineWidth=3;
+  for(const [index,point] of plotted.entries()){
+    point.weights.forEach((value,series)=>{
+      if(value==null) return;
+      ctx.save();
+      ctx.translate(barCenter(index,series),y(value)-5);
+      ctx.rotate(-Math.PI/2);
+      ctx.fillStyle=colors[series];
+      const label=money.format(value/100);
+      ctx.strokeText(label,0,0);
+      ctx.fillText(label,0,0);
+      ctx.restore();
+    });
+  }
 }
 function button(label,onClick){
   const node=document.createElement('button');node.type='button';node.textContent=label;node.onclick=onClick;return node;
@@ -167,6 +186,7 @@ export function mountWasteChart(root,records,annual){
       const scroll=document.createElement('div');scroll.className='wa-chart-scroll';
       const plot=document.createElement('div');plot.className='wa-chart-plot';
       plot.style.setProperty('--wa-points',points.length);
+      plot.style.minWidth='max(100%, '+(74+points.length*(triageOnly?54:96))+'px)';
       const canvas=document.createElement('canvas');canvas.setAttribute('aria-hidden','true');
       const actions=document.createElement('div');actions.className='wa-chart-actions';
       const labels=document.createElement('div');labels.className='wa-chart-axis';
