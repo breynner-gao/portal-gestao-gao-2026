@@ -1,6 +1,6 @@
 export function createFactionWorkflow({
   state, esc, n, br, liveBalances, historicalBalances, factionOpeningInventory, fabricMatches, internalName, physicalFactionMeters,
-  orderStats, demandView, factionDesk, factionAvailableStock, factionInventoryForm, render, run, rpc, reload, uid,
+  orderStats, demandView, factionDesk, factionAvailableStock, factionInventoryForm, render, run, rpc, reload, reloadReservations = reload, uid,
   supplierOptionList, openFabricPurchaseDraft, submit, returnForm, syncOrderStatuses
 }) {
   const stages = [
@@ -85,7 +85,7 @@ export function createFactionWorkflow({
   }
   const activeOrders = orders => orders.filter(({order})=>order.status!=='CONCLUIDA');
   const product = row => `<strong>${esc(row.item.product_name)}</strong><small>OS ${esc(row.order.order_number)} · Ref. ${esc(row.item.product_reference)}</small>`;
-  const maxInLot = (row,lot) => Math.min(row.remaining,Math.floor((Math.max(0,lot.mine-n(lot.committed))+0.000499)/row.unit));
+  const maxInLot = (row,lot) => row.unit>0?Math.min(row.remaining,Math.floor((Math.max(0,lot.mine-n(lot.committed))+0.000499)/row.unit)):0;
   const freeToRelease = lot => Math.max(0,round(lot.mine-lot.committed));
   const cutQueue = orders => activeOrders(orders).filter(row=>row.remaining>0&&row.lots.some(lot=>freeToRelease(lot)>0));
   const mayRelease = () => state.canOperateFaction&&(state.canViewInventory||state.canReserveFaction);
@@ -272,12 +272,17 @@ export function createFactionWorkflow({
 
   }
 
+  function showResult(title,message,failed=false) {
+    return openDialog(title,`<p role="${failed?'alert':'status'}">${esc(message)}</p><button type="button" data-faction-result-close>Fechar</button>`);
+  }
+
   function openDialog(title, contents, extraClass='') {
     const dialog=document.createElement('dialog');
     dialog.className='fw-recipe-dialog '+extraClass;
     dialog.setAttribute('aria-labelledby','faction-dialog-title');
     dialog.innerHTML=`<header class="fw-modal-head"><h2 id="faction-dialog-title">${title}</h2><button type="button" aria-label="Fechar" data-faction-close>×</button></header><div class="fw-panel"><p data-faction-error role="alert" hidden></p>${contents}</div>`;
     dialog.querySelector('[data-faction-close]').onclick=()=>dialog.close();
+    dialog.querySelector('[data-faction-result-close]')?.addEventListener('click',()=>dialog.close());
     dialog.querySelectorAll('[data-fw-tab]').forEach(button=>button.addEventListener('click',()=>dialog.close()));
     dialog.addEventListener('close',()=>dialog.remove(),{once:true});
     const form=dialog.querySelector('[data-faction-form]');
@@ -291,6 +296,10 @@ export function createFactionWorkflow({
         form.dataset.saving='true';
         buttons.forEach(button=>{button.disabled=true;});
         error.hidden=true;
+        const progress=document.createElement('p');
+        progress.setAttribute('role','status');
+        progress.textContent='Salvando…';
+        form.append(progress);
         let recorded=false;
         try {
           const values=Object.fromEntries(new FormData(form));
@@ -379,17 +388,25 @@ export function createFactionWorkflow({
             }
           }
           recorded=true;
-          await reload();
-          await syncOrderStatuses();
-          await reload();
-          state.notice=kind==='open-inventory'?'Saldo de abertura liberado.':kind==='release-cut-queue'?'Reserva livre devolvida ao estoque. Consulte a ordem em Provisão Facção.':'Registro salvo.';
+          const stockOnly=kind==='release'||kind==='release-cut-queue';
+          if(stockOnly)await reloadReservations();
+          else {
+            await reload();
+            await syncOrderStatuses();
+          }
+          const message=kind==='release'
+            ?`${meters(Number(values.quantity_m))} voltaram ao estoque disponível.`
+            :kind==='open-inventory'?'Saldo de abertura liberado.'
+            :kind==='release-cut-queue'?'Reserva livre devolvida ao estoque. Consulte a ordem em Provisão Facção.':'Registro salvo.';
           dialog.close();
           render();
+          showResult(kind==='release'?'Reserva liberada':'Operação concluída',message);
           window.dispatchEvent(new Event('gao-production-updated'));
         } catch (failure) {
-          error.textContent=recorded?'Registro salvo. Feche a janela e atualize os dados.':failure.message;
+          error.textContent=recorded?'Registro salvo. Feche a janela e clique em Atualizar dados para conferir.':failure.message;
           error.hidden=false;
         } finally {
+          progress.remove();
           form.dataset.saving='false';
           buttons.forEach(button=>{button.disabled=recorded&&button.type==='submit';});
         }
@@ -430,45 +447,83 @@ export function createFactionWorkflow({
   }
 
   async function reserve() {
-    await run(async()=>{
-      if(!selected.size)throw Error('Selecione as ordens que deseja reservar.');
-      await reload();
-      const rows=activeOrders(getOrders()).filter(row=>selected.has(row.item.id));
+    if(!selected.size)return showResult('Selecione as ordens','Marque as ordens que deseja reservar na Provisão.',true);
+    if(state.busy)return;
+    state.busy=true;
+    state.error='';
+    const progress=openDialog('Reservando tecido','<p role="status">Aguarde enquanto o portal atualiza os saldos.</p>');
+    progress.querySelector('[data-faction-close]').disabled=true;
+    progress.addEventListener('cancel',event=>event.preventDefault());
+    const requested=new Set(selected);
+    let posted=0;
+    let refreshed=false;
+    let writeAttempted=false;
+    let title='Reserva concluída';
+    let message;
+    let failed=false;
+    try {
+      await reloadReservations();
+      const rows=activeOrders(getOrders()).filter(row=>requested.has(row.item.id));
+      if(!rows.length)throw Error('As ordens selecionadas não estão mais disponíveis. Confira a Provisão.');
       const free=new Map(rows.flatMap(row=>row.lots.map(lot=>[lot.id,lot.free])));
-      let posted=0;
-      try {
-        for(const row of rows) {
-          let remaining=round(row.needed-row.reserved);
-          for(const lot of row.lots) {
-            const qty=round(Math.min(remaining,free.get(lot.id)));
-            if(qty<=0)continue;
-            const revision=state.moves.filter(move=>move.order_item_id===row.item.id&&move.lot_id===lot.id).length;
-            const key='faction-reserve:'+row.item.id+':'+lot.id+':'+revision+':'+qty;
-            const result=state.canReserveFaction?await rpc('fabric_faction_reservation',{
-              p_org:state.org,p_lot:lot.id,p_item:row.item.id,p_action:'RESERVA',p_meters:qty,p_key:key
-            }):await rpc('fabric_post_stock_movement',{
-              p_organization_id:state.org,p_lot_id:lot.id,p_movement_type:'RESERVA',p_quantity_m:qty,
-              p_order_item_id:row.item.id,p_idempotency_key:key,p_notes:'Reserva para corte no Portal da Facção'
-            });
-            remaining=round(remaining-qty);
-            free.set(lot.id,round(free.get(lot.id)-qty));
-            if(result?.created!==false)posted=round(posted+qty);
-          }
+      for(const row of rows) {
+        let remaining=round(row.needed-row.reserved);
+        for(const lot of row.lots) {
+          const qty=round(Math.min(remaining,free.get(lot.id)));
+          if(qty<=0)continue;
+          const revision=state.moves.filter(move=>move.order_item_id===row.item.id&&move.lot_id===lot.id).length;
+          const key='faction-reserve:'+row.item.id+':'+lot.id+':'+revision+':'+qty;
+          writeAttempted=true;
+          const result=state.canReserveFaction?await rpc('fabric_faction_reservation',{
+            p_org:state.org,p_lot:lot.id,p_item:row.item.id,p_action:'RESERVA',p_meters:qty,p_key:key
+          }):await rpc('fabric_post_stock_movement',{
+            p_organization_id:state.org,p_lot_id:lot.id,p_movement_type:'RESERVA',p_quantity_m:qty,
+            p_order_item_id:row.item.id,p_idempotency_key:key,p_notes:'Reserva para corte no Portal da Facção'
+          });
+          remaining=round(remaining-qty);
+          free.set(lot.id,round(free.get(lot.id)-qty));
+          if(result?.created!==false)posted=round(posted+qty);
         }
-      } catch (error) {
-        await reload();
-        throw Error(posted?`${meters(posted)} processados antes da interrupção. ${error.message}`:error.message);
       }
-      if(!posted){
-        if(rows.some(row=>row.needed>row.reserved))
-          throw Error(state.factionInventories?.length?
-            'Sem saldo livre. Em Estoque de tecido disponível, vincule o saldo de abertura ao tecido da ordem ou confira o recebimento da NF.':
-            'Sem saldo livre em rolos. Use Conferir rolo para conferir um lote antigo.');
-        throw Error('As ordens selecionadas já estão cobertas.');
+      if(writeAttempted)await reloadReservations();
+      refreshed=true;
+      const updated=activeOrders(getOrders()).filter(row=>requested.has(row.item.id));
+      const ready=cutQueue(updated).filter(row=>row.lots.some(lot=>maxInLot(row,lot)>0));
+      const pending=updated.length-ready.length;
+      if(!ready.length&&!posted&&updated.some(row=>row.needed>row.reserved)){
+        throw Error('Sem tecido livre para as ordens selecionadas. Confira o estoque disponível e o vínculo do tecido.');
       }
-      selected.clear();
-      state.notice='Reserva processada. Confira os saldos por ordem.';
-    });
+      if(ready.length){
+        stage='cut';
+        for(const row of ready){cutSelected.add(row.item.id);selected.delete(row.item.id);}
+      }
+      if(posted){
+        message=`${meters(posted)} reservados. `+(ready.length
+          ?`Ordens disponíveis no Corte: ${ready.length}.`
+          :'A metragem livre ainda não cobre uma peça inteira ou está vinculada a um lote.');
+      }else {
+        message=ready.length?'As ordens já tinham reserva. Abra o planejamento na tela de Corte.':'As ordens selecionadas já estão cobertas por reservas ou lotes.';
+      }
+      if(ready.length&&pending)message+=` Ordens sem saldo para um novo corte: ${pending}.`;
+    }catch(error){
+      if(writeAttempted&&!refreshed){
+        try{await reloadReservations();refreshed=true;}catch{/* A mensagem abaixo orienta a conferir a gravação. */}
+      }
+      failed=true;
+      title=posted?'Reserva parcialmente processada':'Não foi possível concluir a reserva';
+      message=(posted?`${meters(posted)} confirmados. `:'')+error.message;
+      if(writeAttempted&&!refreshed)message+=' Use Atualizar dados para conferir as reservas gravadas antes de tentar novamente.';
+    }finally{
+      state.busy=false;
+      progress.close();
+      render();
+      const result=showResult(title,message,failed);
+      if(stage==='cut')result.addEventListener('close',()=>{
+        const cutHeading=document.querySelector('.fw-faction-page .fw-faction-heading');
+        cutHeading?.scrollIntoView({block:'start'});
+      },{once:true});
+      if(writeAttempted)window.dispatchEvent(new Event('gao-production-updated'));
+    }
   }
 
   function download(content,name,type) {
@@ -759,17 +814,28 @@ export function createFactionWorkflow({
         <input type="hidden" name="order_item_id" value="${esc(id)}">
         <input type="hidden" name="request" value="${esc(uid())}">
         <p>${product(row)}</p>
-        <p>A metragem informada volta ao estoque disponível. A ordem e os lotes de corte ficam preservados.</p>
+        <p>A metragem informada volta ao estoque disponível.</p>
+        <p>Estoque físico do tecido: <strong>${row.physical===null?'Sem contagem vinculada':meters(row.physical)}</strong>. Livre nos rolos: <strong>${meters(row.available)}</strong>.</p>
+        <p data-release-stock aria-live="polite"></p>
         <label class="fw-field">Rolo reservado<select name="lot_id" required>${stockOptions(lots,freeToRelease,currentRoll)}</select></label>
         <label class="fw-field">Metros a liberar<input name="quantity_m" type="number" min=".001" step=".001" required></label>
         <button type="submit">Confirmar liberação do tecido</button></form>`);
       const fields=dialog.querySelector('form').elements;
+      const stock=dialog.querySelector('[data-release-stock]');
+      const updateStock=()=>{
+        const lot=lots.find(lot=>lot.id===fields.lot_id.value);
+        const quantity=Number(fields.quantity_m.value);
+        const after=quantity>0&&quantity<=freeToRelease(lot)?meters(lot.free+quantity):'—';
+        stock.textContent=`Saldo físico do rolo: ${meters(lot.onhand)} · Livre agora: ${meters(lot.free)} · Livre após liberar: ${after}`;
+      };
       const update=()=>{
         const lot=lots.find(lot=>lot.id===fields.lot_id.value);
         fields.quantity_m.max=freeToRelease(lot);
         fields.quantity_m.value=fields.quantity_m.max;
+        updateStock();
       };
       fields.lot_id.onchange=update;
+      fields.quantity_m.oninput=updateStock;
       update();
       return;
     }

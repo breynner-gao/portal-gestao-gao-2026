@@ -3,7 +3,7 @@ import {createTextileCostDashboard} from '/textile-cost-dashboard-v1.mjs?v=5';
 import {groupPurchaseCards,supplierCards} from '/fabric-purchase-cards-v1.mjs?v=1';
 import { purchaseReportStatuses, renderPurchaseReport, formatPurchasePaymentDays } from '/fabric-purchase-report-v1.mjs?v=6';
 import { openReport as openPurchaseReportWindow } from '/relave-report-export-v1.mjs?v=1';
-import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=21';
+import {createFactionWorkflow} from '/fabric-faction-workflow-v1.mjs?v=22';
 import {createFactionDesk} from '/fabric-faction-portal-v1.mjs?v=2';
 import {createFabricWorkbookImport} from '/fabric-workbook-import-v1.mjs?v=1';
 import {buildPendingProductionCoverage,applyPendingProductionCoverage,compactDimensionKey} from '/linen-risk-rules-v150.mjs?v=230';
@@ -146,6 +146,17 @@ async function reload(){
  state.factionOpeningLots=state.canViewInventory||state.canReserveFaction?
   await loadTable('fabric_faction_opening_lots','activated_at',false):[];
  state.loaded=true;
+}
+async function reloadFactionReservations(){
+ const [inventory,plans,orders,items]=await Promise.all([
+  state.canReserveFaction?rpc('fabric_faction_reservation_stock',{p_org:state.org}):
+   Promise.all([loadTable('fabric_lots','created_at'),loadTable('fabric_stock_movements','created_at')]).then(([lots,moves])=>({lots,moves})),
+  loadTable('fabric_faction_cut_plans','created_at'),
+  loadTable('fabric_production_orders','created_at'),
+  loadTable('fabric_production_order_items','created_at')
+ ]);
+ if(state.canReserveFaction)state.factionReservationStock=inventory;
+ Object.assign(state,{lots:inventory.lots,moves:inventory.moves,cutPlans:plans,cutPlansError:false,orders,items});
 }
 async function loadTable(table,order,hasId=true){
  const rows=[],limit=500;
@@ -1590,8 +1601,8 @@ document.addEventListener('change',event=>{
 });
 document.addEventListener('change',e=>{if(e.target.matches('[data-fw-budget-month]')&&e.target.value){state.budgetMonth=e.target.value;render();document.querySelector('[data-fw-budget-month]')?.focus();}});
 document.addEventListener('submit',async e=>{const form=e.target.closest('[data-fw-form]');if(!form)return;e.preventDefault();const standardDialog=form.closest('[data-fw-standard-dialog]');if(standardDialog){if(standardDialog.dataset.saving==='true')return;standardDialog.dataset.saving='true';const buttons=[...standardDialog.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);try{await submit(form);await reload();render();const supplierId=standardDialog.dataset.fwSupplierEditor;standardDialog.close();standardDialog.remove();if(supplierId){for(const list of document.querySelectorAll('[data-fw-buy-dialog] [data-fw-supplier-list]'))list.outerHTML=supplierListView();openStandardWindow('supplier',supplierId);}}catch(err){const box=standardDialog.querySelector('[data-fw-standard-error]');box.textContent=err.message||String(err);box.hidden=false;}finally{standardDialog.dataset.saving='false';buttons.forEach(b=>b.disabled=false);}return;}if(form.closest('[data-fw-recipe-dialog]')){await saveRecipeDialog(form);return;}await run(async()=>{if(form.dataset.fwForm==='qualityBatch')await saveQualityBatch(form);else await submit(form);form.reset();await reload()})});
-async function syncOrderStatuses(){for(const o of state.orders.filter(x=>['ABERTA','PARCIAL','ENVIADA'].includes(x.status))){const items=state.items.filter(i=>i.order_id===o.id);if(!items.length)continue;const done=items.every(i=>orderStats(i).accepted+orderStats(i).rejected>=n(i.ordered_pieces));const any=items.some(i=>orderStats(i).accepted+orderStats(i).rejected>0);const sent=items.some(i=>orderStats(i).issued>0);const status=done?'CONCLUIDA':any?'PARCIAL':sent?'ENVIADA':'ABERTA';if(status!==o.status)await api('/rest/v1/fabric_production_orders?id=eq.'+o.id,{method:'PATCH',body:JSON.stringify({status,updated_at:new Date().toISOString()})})}}
-async function run(fn){if(state.busy)return;state.busy=true;state.error='';render();try{await fn();await reload();await syncOrderStatuses();await reload()}catch(err){state.error=err.message||String(err)}finally{state.busy=false;render();window.dispatchEvent(new Event('gao-production-updated'))}}
+async function syncOrderStatuses(){for(const o of state.orders.filter(x=>['ABERTA','PARCIAL','ENVIADA'].includes(x.status))){const items=state.items.filter(i=>i.order_id===o.id);if(!items.length)continue;const done=items.every(i=>orderStats(i).accepted+orderStats(i).rejected>=n(i.ordered_pieces));const any=items.some(i=>orderStats(i).accepted+orderStats(i).rejected>0);const sent=items.some(i=>orderStats(i).issued>0);const status=done?'CONCLUIDA':any?'PARCIAL':sent?'ENVIADA':'ABERTA';if(status!==o.status){const updated_at=new Date().toISOString();await api('/rest/v1/fabric_production_orders?id=eq.'+o.id,{method:'PATCH',body:JSON.stringify({status,updated_at})});Object.assign(o,{status,updated_at});}}}
+async function run(fn){if(state.busy)return;state.busy=true;state.error='';render();try{await fn();await reload();await syncOrderStatuses()}catch(err){state.error=err.message||String(err)}finally{state.busy=false;render();window.dispatchEvent(new Event('gao-production-updated'))}}
 function mount(){
  const path=location.pathname.replace(/\/+$/,'');const route=path==='/enxoval-tecidos'||location.hash==='#enxoval'||location.hash==='#enxoval-tecidos'||directFactionRoute;if(!route){document.querySelector('#gao-fabric-flow')?.remove();return}
  const shell=document.querySelector('#gao-linen-risk-shell');if(!shell)return;if(shell.classList.contains('fw-mode')!==state.mode)shell.classList.toggle('fw-mode',state.mode);
@@ -1721,7 +1732,7 @@ function factionAvailableStock(){
   (state.canManagePurchases?'<div class="fw-tabs"><button type="button" data-fw-tab="receipt">Receber nota fiscal de tecido</button></div>':'')+
   current+factionOpeningView()+lotsView+factionInventoryHistory();
 }
-const factionWorkflow=createFactionWorkflow({state,esc,n,br,liveBalances:()=>liveBalances('cut'),historicalBalances:()=>liveBalances('confirm'),factionOpeningInventory,fabricMatches,internalName,physicalFactionMeters,orderStats,demandView,factionDesk,factionAvailableStock,factionInventoryForm,render,run,rpc,reload,uid,supplierOptionList,openFabricPurchaseDraft,submit,returnForm,syncOrderStatuses});
+const factionWorkflow=createFactionWorkflow({state,esc,n,br,liveBalances:()=>liveBalances('cut'),historicalBalances:()=>liveBalances('confirm'),factionOpeningInventory,fabricMatches,internalName,physicalFactionMeters,orderStats,demandView,factionDesk,factionAvailableStock,factionInventoryForm,render,run,rpc,reload,reloadReservations:reloadFactionReservations,uid,supplierOptionList,openFabricPurchaseDraft,submit,returnForm,syncOrderStatuses});
 new MutationObserver(mount).observe(document.documentElement,{childList:true,subtree:true});
 setInterval(mount,900);
 })();
