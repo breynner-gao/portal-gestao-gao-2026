@@ -1,4 +1,4 @@
-import { mountWasteChart } from './waste-audit-chart-v1.mjs?v=9';
+import { annualChartRows, mountWasteChart } from './waste-audit-chart-v1.mjs?v=9';
 
 const references = {
   workbook:'Planilha de auditoria',
@@ -12,10 +12,46 @@ const references = {
   bioFinance:'Financeiro BIOREVERSE',
 };
 
+function competenceFor(due){
+  const [year,month]=due.split('-').map(Number);
+  return new Date(Date.UTC(year,month-2,1)).toISOString().slice(0,7);
+}
+
+function sumRecorded(values){
+  const recorded=values.filter(value=>value!=null);
+  return recorded.length?recorded.reduce((total,value)=>total+value,0):null;
+}
+
+export function operatingMetrics(rows,payments,weekly){
+  const triagedByMonth=new Map();
+  for(const row of rows){
+    const weight=row.crm_triage?.[1];
+    if(weight==null) continue;
+    const month=row.d.slice(0,7);
+    triagedByMonth.set(month,(triagedByMonth.get(month)??0)+weight);
+  }
+  const triaged=sumRecorded([...triagedByMonth.values()]);
+  const allPaidMonths=new Set();
+  const companies=['indcom','bioreverse'].map((company,index)=>{
+    const waste=sumRecorded(rows.map(row=>row.documentWeights?.[index]));
+    const titles=weekly?[]:(payments?.[company]??[]).filter(([due])=>triagedByMonth.has(competenceFor(due)));
+    const paid=sumRecorded(titles.map(([,cents])=>cents));
+    const paidMonths=new Set(titles.map(([due])=>competenceFor(due)));
+    for(const month of paidMonths) allPaidMonths.add(month);
+    const costBase=sumRecorded([...paidMonths].map(month=>triagedByMonth.get(month)));
+    return {rate:waste!=null&&triaged>0?waste/triaged:null,paid,cost:paid!=null&&costBase>0?paid/costBase:null,months:paidMonths.size};
+  });
+  const totalPaid=sumRecorded(companies.map(company=>company.paid));
+  const totalCostBase=sumRecorded([...allPaidMonths].map(month=>triagedByMonth.get(month)));
+  return {triaged,companies,totalPaid,totalCost:totalPaid!=null&&totalCostBase>0?totalPaid/totalCostBase:null};
+}
+
 export function mountAudit(root,history,downloadDocument,loadSource){
   const {records:data,indcom_audit:indcomAudit,billing_titles:billingTitles,documents:attachmentNames}=history;
   const annual=attachmentNames.annual2026;
   const crmTriage=attachmentNames.crm_triage_2026;
+  const payments=attachmentNames.confirmedPayments2026;
+  const documented=annual?annualChartRows(data,annual):[];
   root.innerHTML=`<div class="waste-audit-filters">
     <label>Mês <select id="wa-month"></select></label>
     <label>Semana ISO <select id="wa-week"></select></label>
@@ -25,6 +61,11 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     </div>
   </div>
   <section class="waste-section wa-chart" id="wa-chart" aria-label="Gráfico por coletora"></section>
+  <section class="waste-section" aria-labelledby="wa-operatingTitle">
+    <h3 id="wa-operatingTitle">Triagem, coleta e custo</h3>
+    <div id="wa-operatingCards" class="waste-grid"></div>
+    <p id="wa-operatingNote" class="waste-sub"></p>
+  </section>
   <div id="wa-cards" class="waste-grid"></div>
   ${annual?`<section class="waste-section" aria-labelledby="wa-annualTitle">
     <h3 id="wa-annualTitle">Auditoria de resíduos de 2026</h3>
@@ -104,6 +145,9 @@ export function mountAudit(root,history,downloadDocument,loadSource){
   };
 
   const nf=new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const currency=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
+  const costFormat=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',minimumFractionDigits:4,maximumFractionDigits:4});
+  const rateFormat=new Intl.NumberFormat('pt-BR',{style:'percent',minimumFractionDigits:2,maximumFractionDigits:2});
   const kg=x=>x===null?'—':nf.format(x/100);
   const date=s=>s.split('-').reverse().join('/');
   const monthName=s=>new Intl.DateTimeFormat('pt-BR',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(s+'-01T12:00:00Z'));
@@ -336,11 +380,7 @@ export function mountAudit(root,history,downloadDocument,loadSource){
       delta.className=delta.textContent.startsWith('+')?'pos':delta.textContent.startsWith('-')?'neg':'';
     }
   }
-  const bioTitles = billingTitles.map(([due,cents,inOriginalTotal])=>{
-    const [year,month] = due.split('-').map(Number);
-    const competence = new Date(Date.UTC(year,month-2,1)).toISOString().slice(0,7);
-    return [competence,due,cents,inOriginalTotal];
-  });
+  const bioTitles=billingTitles.map(([due,cents,inOriginalTotal])=>[competenceFor(due),due,cents,inOriginalTotal]);
   function renderBioFinance(){
     const estimate = cents => kg(cents / 1.70);
     const lines = bioTitles.map(([month,due,cents,inOriginalTotal])=>{
@@ -429,11 +469,50 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     return card;
   }
 
+  function renderOperatingCards(month,week){
+    const rows=(annual&&(month==='all'||month.startsWith('2026-'))?documented:data)
+      .filter(row=>(month==='all'||row.d.startsWith(month))&&(week==='all'||row.w===week));
+    const {triaged,companies,totalPaid,totalCost}=operatingMetrics(rows,payments,week!=='all');
+    const card=(title,value,details=[])=>{
+      const node=document.createElement('div');
+      node.className='waste-kpi';
+      const label=document.createElement('span');
+      label.textContent=title;
+      const main=document.createElement('strong');
+      main.textContent=value;
+      node.append(label,main);
+      for(const detail of details){
+        const line=document.createElement('small');
+        line.style.display='block';
+        line.textContent=detail;
+        node.append(line);
+      }
+      return node;
+    };
+    el('operatingCards').replaceChildren(
+      card('Roupa triada · CRM GAO',triaged==null?'Sem dados':kg(triaged)+' kg'),
+      ...companies.map(({rate,paid,cost,months},index)=>card(
+        index===0?'Indicom':'Bioreverse',rate==null?'Sem percentual':rateFormat.format(rate),
+        ['Peso coletado ÷ roupa triada',
+          'Valor pago: '+(paid==null?'—':currency.format(paid/100)),
+          'Custo por kg de roupa triada: '+(cost==null?'—':costFormat.format(cost)+'/kg'),
+          ...(months>0?['Pagamentos confirmados em '+months+(months===1?' competência':' competências')]:[])]
+      )),
+      card('Custo total por kg de roupa triada',totalCost==null?'—':costFormat.format(totalCost)+'/kg',
+        ['Total pago confirmado: '+(totalPaid==null?'—':currency.format(totalPaid/100))])
+    );
+    el('operatingNote').textContent=week!=='all'
+      ?'O financeiro está disponível por competência mensal. Selecione todas as semanas para ver os valores.'
+      :'Competência financeira: mês anterior ao vencimento. O custo por kg usa a roupa triada nos meses com pagamento confirmado.'+
+        (payments?.snapshot?' Baixas conferidas em '+date(payments.snapshot)+'.':'');
+  }
+
   function render(){
     renderIndcom();
     const selected=inMonth().filter(r=>el('week').value==='all'||r.w===el('week').value);
     const totals=values(selected);
     const month = el('month').value;
+    renderOperatingCards(month,el('week').value);
     const bioPeriod = bioTitles.filter(([competence]) =>
       month === 'all' ? months.includes(competence) : competence === month
     );
