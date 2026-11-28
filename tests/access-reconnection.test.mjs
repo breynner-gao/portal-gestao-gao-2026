@@ -23,7 +23,7 @@ function setup(outcomes) {
     querySelector: selector => selector === '.gao-main' ? main : nav,
     getElementById: id => banners.find(item => item.id === id),
     createElement() {
-      const element = {dataset: {}, setAttribute() {}, remove() {banners.splice(banners.indexOf(element), 1);}};
+      const element = {dataset: {}, setAttribute() {}, append(...nodes) {this.children=nodes;}, remove() {banners.splice(banners.indexOf(element), 1);}};
       return element;
     },
     body: {appendChild: element => banners.push(element)}
@@ -79,14 +79,23 @@ test('falha de rede e limite de requisições repetem com intervalo crescente at
 
 test('sessão inválida e vínculo revogado bloqueiam acesso imediatamente', async () => {
   for (const status of [401, 403]) {
-    const app = setup([Object.assign(new Error('Acesso recusado'), {status})]);
+    const app = setup([Object.assign(new Error('Acesso recusado'), {status, noMembership: status===403})]);
     await app.refresh();
     assert.equal(app.sandbox.context, null);
     assert.equal(app.classes.has('ga-route-denied'), true);
     assert.equal(app.scheduled.length, 0);
     assert.equal(app.banners.length, 1);
-    assert.match(app.banners[0].textContent, status === 401 ? /sessão expirou/ : /não está autorizado/);
+    assert.match(app.banners[0].textContent, status === 401 ? /sessão expirou/ : /não possui vínculo ativo/);
   }
+});
+
+test('falha ao verificar acesso com HTTP 403 mantém a recuperação ativa', async () => {
+  const app = setup([Object.assign(new Error('Validação indisponível'), {status: 403}), {uid: 'same-user'}]);
+  await app.refresh();
+  assert.equal(app.main.inert, true);
+  assert.equal(app.classes.has('ga-route-denied'), false);
+  await app.scheduled[0].callback();
+  assert.equal(app.main.inert, false);
 });
 
 test('verificações simultâneas compartilham a consulta em andamento', async () => {

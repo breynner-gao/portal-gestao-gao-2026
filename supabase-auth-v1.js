@@ -60,7 +60,16 @@
     const initial=window.GAO_AUTH_SESSION||read();
     if(!initial)throw Object.assign(Error('A sessão expirou. Entre novamente no Portal.'),{status:401});
     const locks=window.navigator.locks;
-    refreshPromise=locks?locks.request(STORAGE,()=>renew(initial)):renew(initial);
+    if(locks){
+      const controller=new AbortController();
+      const timer=setTimeout(()=>controller.abort(),8000);
+      refreshPromise=locks.request(STORAGE,{signal:controller.signal},()=>{
+        clearTimeout(timer);
+        return renew(initial);
+      }).finally(()=>clearTimeout(timer));
+    }else{
+      refreshPromise=renew(initial);
+    }
     try{return await refreshPromise}finally{refreshPromise=null}
   };
   window.GAO_REAUTHENTICATE=expectedToken=>{
