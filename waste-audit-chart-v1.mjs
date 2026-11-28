@@ -7,12 +7,16 @@ const sources={
 };
 const units={month:'mês',week:'semana ISO',day:'dia'};
 const money=new Intl.NumberFormat('pt-BR',{maximumFractionDigits:2});
+const percent=new Intl.NumberFormat('pt-BR',{style:'percent',minimumFractionDigits:2,maximumFractionDigits:2});
 const shortDate=new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'2-digit',timeZone:'UTC'});
 const shortMonth=new Intl.DateTimeFormat('pt-BR',{month:'short',year:'numeric',timeZone:'UTC'});
 const asDate=value=>new Date(value+'T12:00:00Z');
 const iso=date=>date.toISOString().slice(0,10);
 const shift=(date,n)=>{const result=new Date(date);result.setUTCDate(result.getUTCDate()+n);return result;};
 const formatKg=value=>value==null?'Sem registro':money.format(value/100)+' kg';
+
+const formatRate=(weight,base)=>weight!=null&&base>0?percent.format(weight/base):'—';
+const formatDetail=(weight,base)=>weight==null?formatKg(weight):formatKg(weight)+' ('+formatRate(weight,base)+')';
 
 function periodLabel(key,level){
   if(level==='month') return shortMonth.format(asDate(key+'-01'));
@@ -54,6 +58,7 @@ export function seriesFor(records,source,level){
     const values=source==='triage'?[[],[]]:sources[source].indices.map((index,company)=>rows.map(r=>source==='pdf'&&r.documentWeights?r.documentWeights[company]:index===10?r.bio?.[1]??null:r.v[index]));
     const triage=rows.map(row=>row.v[0]).filter(value=>value!==null);
     return {
+      totalSorted:rows.reduce((sum,row)=>sum+(row.crm_triage?.[1]??0),0),
       triaged:triage.length?triage.reduce((sum,value)=>sum+value,0):null,
       triageComplete:triage.length===expected,
       key,rows,label:periodLabel(key,level),partial:rows.length<expected,
@@ -148,7 +153,7 @@ function draw(canvas,points,source){
       ctx.translate(barCenter(index,series),y(value)-5);
       ctx.rotate(-Math.PI/2);
       ctx.fillStyle=colors[series];
-      const label=money.format(value/100);
+      const label=formatRate(value,point.totalSorted);
       ctx.strokeText(label,0,0);
       ctx.fillText(label,0,0);
       ctx.restore();
@@ -164,6 +169,7 @@ export function mountWasteChart(root,records,annual){
   root.innerHTML=`<div class="wa-chart-head"><div><h3>Lixo triado e volume por coletora · kg</h3><p class="waste-sub" data-wa-chart-path></p></div>
     <label>Fonte <select data-wa-chart-source></select></label></div>
     <div class="wa-chart-legend"><span>INDCOM</span><span>BIOREVERSE</span><span class="wa-chart-total">Total das coletoras</span><span class="wa-chart-triage">Lixo triado</span><small>Linha tracejada · tendência</small></div>
+    <p class="waste-sub">Rótulos em % do peso total triado no CRM GAO no período. — indica base indisponível.</p>
     <div data-wa-chart-content></div><div data-wa-chart-forecast></div>`;
   const get=name=>root.querySelector('[data-wa-chart-'+name+']');
   const sourceInput=get('source');
@@ -193,7 +199,7 @@ export function mountWasteChart(root,records,annual){
       const details=document.createElement('p');details.className='waste-sub';details.setAttribute('role','status');
       details.textContent=level==='week'?'Clique na semana para ver os dias.':'Selecione um período para conferir os pesos.';
       for(const point of points){
-        const summary=triageOnly?point.label+' · Triagem GAO: '+formatKg(point.triaged):point.label+' · '+companies.map((name,i)=>name+': '+formatKg(point.weights[i])).join(' · ')+' · Total das coletoras: '+formatKg(totalCollected(point.weights))+(point.weights.filter(value=>value!==null).length===1?' (uma coletora com dados)':'')+' · Lixo triado: '+formatKg(point.triaged)+(point.partial?' · período parcial':'');
+        const summary=triageOnly?point.label+' · Triagem GAO: '+formatDetail(point.triaged,point.totalSorted):point.label+' · '+companies.map((name,i)=>name+': '+formatDetail(point.weights[i],point.totalSorted)).join(' · ')+' · Total das coletoras: '+formatDetail(totalCollected(point.weights),point.totalSorted)+(point.weights.filter(value=>value!==null).length===1?' (uma coletora com dados)':'')+' · Lixo triado: '+formatDetail(point.triaged,point.totalSorted)+(point.partial?' · período parcial':'');
         const action=button('',()=>{
           if(level==='month'){month=point.key;render();}
           else if(level==='week'){week=point.key;render();}
