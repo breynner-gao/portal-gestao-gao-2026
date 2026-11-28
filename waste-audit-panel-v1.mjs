@@ -23,27 +23,25 @@ function sumRecorded(values){
 }
 
 export function operatingMetrics(rows,payments,weekly){
-  const triagedByMonth=new Map();
-  for(const row of rows){
-    const weight=row.crm_triage?.[1];
-    if(weight==null) continue;
-    const month=row.d.slice(0,7);
-    triagedByMonth.set(month,(triagedByMonth.get(month)??0)+weight);
-  }
-  const triaged=sumRecorded([...triagedByMonth.values()]);
-  const allPaidMonths=new Set();
+  const triaged=sumRecorded(rows.map(row=>row.crm_triage?.[1]));
+  const months=new Set(rows.filter(row=>row.crm_triage?.[1]!=null).map(row=>row.d.slice(0,7)));
   const companies=['indcom','bioreverse'].map((company,index)=>{
     const waste=sumRecorded(rows.map(row=>row.documentWeights?.[index]));
-    const titles=weekly?[]:(payments?.[company]??[]).filter(([due])=>triagedByMonth.has(competenceFor(due)));
+    const titles=weekly?[]:(payments?.[company]??[]).filter(([due])=>months.has(competenceFor(due)));
     const paid=sumRecorded(titles.map(([,cents])=>cents));
-    const paidMonths=new Set(titles.map(([due])=>competenceFor(due)));
-    for(const month of paidMonths) allPaidMonths.add(month);
-    const costBase=sumRecorded([...paidMonths].map(month=>triagedByMonth.get(month)));
-    return {rate:waste!=null&&triaged>0?waste/triaged:null,paid,cost:paid!=null&&costBase>0?paid/costBase:null,months:paidMonths.size};
+    return {
+      rate:waste!=null&&triaged>0?waste/triaged:null,
+      paid,
+      cost:paid!=null&&triaged>0?paid/triaged:null,
+      months:new Set(titles.map(([due])=>competenceFor(due))).size,
+    };
   });
-  const totalPaid=sumRecorded(companies.map(company=>company.paid));
-  const totalCostBase=sumRecorded([...allPaidMonths].map(month=>triagedByMonth.get(month)));
-  return {triaged,companies,totalPaid,totalCost:totalPaid!=null&&totalCostBase>0?totalPaid/totalCostBase:null};
+  return {
+    triaged,
+    companies,
+    totalPaid:sumRecorded(companies.map(company=>company.paid)),
+    totalCost:sumRecorded(companies.map(company=>company.cost)),
+  };
 }
 
 export function mountAudit(root,history,downloadDocument,loadSource){
@@ -489,21 +487,21 @@ export function mountAudit(root,history,downloadDocument,loadSource){
       }
       return node;
     };
+    const perKg=cost=>cost==null?'—':costFormat.format(cost)+'/kg';
     el('operatingCards').replaceChildren(
       card('Roupa triada · CRM GAO',triaged==null?'Sem dados':kg(triaged)+' kg'),
       ...companies.map(({rate,paid,cost,months},index)=>card(
-        index===0?'Indicom':'Bioreverse',rate==null?'Sem percentual':rateFormat.format(rate),
-        ['Peso coletado ÷ roupa triada',
+        (index===0?'Indicom':'Bioreverse')+' · custo por kg de roupa triada',perKg(cost),
+        ['Percentual sobre a roupa triada: '+(rate==null?'—':rateFormat.format(rate)),
           'Valor pago: '+(paid==null?'—':currency.format(paid/100)),
-          'Custo por kg de roupa triada: '+(cost==null?'—':costFormat.format(cost)+'/kg'),
           ...(months>0?['Pagamentos confirmados em '+months+(months===1?' competência':' competências')]:[])]
       )),
-      card('Custo total por kg de roupa triada',totalCost==null?'—':costFormat.format(totalCost)+'/kg',
+      card('Indicom + Bioreverse · custo por kg de roupa triada',perKg(totalCost),
         ['Total pago confirmado: '+(totalPaid==null?'—':currency.format(totalPaid/100))])
     );
     el('operatingNote').textContent=week!=='all'
       ?'O financeiro está disponível por competência mensal. Selecione todas as semanas para ver os valores.'
-      :'Competência financeira: mês anterior ao vencimento. O custo por kg usa a roupa triada nos meses com pagamento confirmado.'+
+      :'Cada custo divide o valor pago pelo total de roupa triada no período selecionado. O total soma os dois custos antes do arredondamento. Os pagamentos seguem a competência do mês anterior ao vencimento.'+
         (payments?.snapshot?' Baixas conferidas em '+date(payments.snapshot)+'.':'');
   }
 
