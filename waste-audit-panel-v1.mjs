@@ -20,6 +20,14 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     <h3 id="wa-annualTitle">Auditoria de resíduos de 2026</h3>
     <p id="wa-annualCutoff" class="waste-sub"></p>
     <p id="wa-annualTriage" class="waste-sub"></p>
+    ${crmTriage?`<section aria-labelledby="wa-scheduleTitle">
+      <h4 id="wa-scheduleTitle">Conciliação por dia de coleta</h4>
+      <p class="waste-sub">Escala informada: Indicom às segundas, quartas e sextas. Bioreverse às terças, quintas e sábados.</p>
+      <p class="waste-sub">O cruzamento usa a data que consta no PDF da Indicom ou na planilha da Bioreverse. O peso triado do dia serve de referência e pode incluir material coletado em outra data.</p>
+      <label>Mês da conciliação <select id="wa-scheduleMonth"></select></label>
+      <div class="waste-audit-scroll" id="wa-scheduleSummary"></div>
+      <details><summary>Conferir a escala e os pesos dia a dia</summary><div class="waste-audit-scroll" id="wa-scheduleDays"></div></details>
+    </section>`:''}
     ${crmTriage?`<section aria-labelledby="wa-ratesTitle">
       <h4 id="wa-ratesTitle">Percentuais sobre o peso total triado</h4>
       <p class="waste-sub">Peso de cada origem ÷ peso total triado no CRM GAO no mesmo recorte × 100. Indicom usa os PDFs auditados e Bioreverse usa os pesos do fornecedor.</p>
@@ -146,6 +154,60 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     node.replaceChildren(t);
     return body;
   }
+  function renderCollectionSchedule(){
+    if(!annual||!crmTriage) return;
+    const monthFilter=el('scheduleMonth');
+    const companies=['Indicom','Bioreverse'];
+    const weekday=new Intl.DateTimeFormat('pt-BR',{weekday:'short',timeZone:'UTC'});
+    const end=annual.cutoff<crmTriage.cutoff?annual.cutoff:crmTriage.cutoff;
+    const dayMap=new Map(data.filter(row=>row.crm_triage&&row.d>=crmTriage.start&&row.d<=end).map(row=>[row.d,{
+      day:row.d,week:row.w,triaged:row.crm_triage[0],documented:[null,null]
+    }]));
+    for(const [index,source] of [annual.indicom,annual.bioreverse].entries()){
+      for(const entry of source){
+        const [day,week]=entry;
+        const amount=index===0?entry[4]:entry[3];
+        if(!day||day<crmTriage.start||day>end||amount==null) continue;
+        if(!dayMap.has(day)) dayMap.set(day,{day,week,triaged:null,documented:[null,null]});
+        const weights=dayMap.get(day).documented;
+        weights[index]=(weights[index]??0)+amount;
+      }
+    }
+    const days=[...dayMap.values()].sort((a,b)=>a.day.localeCompare(b.day));
+    for(const row of days){
+      row.calendarDay=new Date(row.day+'T12:00:00Z');
+      const dayNumber=row.calendarDay.getUTCDay();
+      row.expected=dayNumber===0?null:(dayNumber%2===1?0:1);
+    }
+    options(monthFilter,[['all','Todos os meses'],...annual.months.map(([month])=>[month,monthName(month)])]);
+    const sumWeights=values=>{
+      const available=values.filter(value=>value!=null);
+      return available.length?available.reduce((a,b)=>a+b,0):null;
+    };
+    const renderSchedule=()=>{
+      const scoped=days.filter(row=>monthFilter.value==='all'||row.day.startsWith(monthFilter.value));
+      table(el('scheduleSummary'),['Coletora','Dias com peso na escala','Dias com peso fora da escala','Peso na escala (kg)','Peso fora da escala (kg)','Triagem nos dias coincidentes (kg)','Coletora nos dias coincidentes (kg)'],companies.map((company,index)=>{
+        const on=scoped.filter(row=>row.expected===index&&row.documented[index]>0);
+        const off=scoped.filter(row=>row.expected!==index&&row.documented[index]>0);
+        const pairs=on.filter(row=>row.triaged!=null);
+        return [company,String(on.length),String(off.length),kg(sumWeights(on.map(row=>row.documented[index]))),kg(sumWeights(off.map(row=>row.documented[index]))),
+          kg(sumWeights(pairs.map(row=>row.triaged))),kg(sumWeights(pairs.map(row=>row.documented[index])))];
+      }));
+      table(el('scheduleDays'),['Data','Semana ISO','Dia','Coletora prevista','Triagem GAO (kg)','Indicom · PDF (kg)','Bioreverse · planilha (kg)','Coletora prevista − triagem (kg)','Conferência'],scoped.map(row=>{
+        const off=row.documented.flatMap((value,index)=>index!==row.expected&&value>0?[companies[index]]:[]);
+        const expectedWeight=row.expected==null?null:row.documented[row.expected];
+        const delta=row.triaged!=null&&expectedWeight>0?expectedWeight-row.triaged:null;
+        const notes=[];
+        if(off.length) notes.push('Fora da escala: '+off.join(', '));
+        if(row.triaged==null) notes.push('Sem peso de triagem');
+        if(row.expected!=null&&!(expectedWeight>0)) notes.push('Sem peso positivo da coletora prevista');
+        return [date(row.day),row.week,weekday.format(row.calendarDay),companies[row.expected]??'Sem coleta prevista',kg(row.triaged),...row.documented.map(kg),
+          kg(delta),notes.join(' · ')||'Data coincidente'];
+      }));
+    };
+    monthFilter.onchange=renderSchedule;
+    renderSchedule();
+  }
   function renderTriageRates(){
     if(!annual||!crmTriage) return;
     const end=annual.cutoff<crmTriage.cutoff?annual.cutoff:crmTriage.cutoff;
@@ -177,6 +239,7 @@ export function mountAudit(root,history,downloadDocument,loadSource){
   function renderAnnual(){
     if(!annual) return;
     renderTriageRates();
+    renderCollectionSchedule();
     el('annualCutoff').textContent='Documentos disponíveis até '+date(annual.cutoff)+'. Os pesos em conferência aparecem nas colunas de pendências.';
     const triaged=data.filter(row=>row.d.startsWith('2026-')&&row.v[0]!=null);
     const totalTriaged=sum(triaged,0);
