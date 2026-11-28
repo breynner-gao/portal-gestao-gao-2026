@@ -15,6 +15,7 @@ const references = {
 export function mountAudit(root,history,downloadDocument,loadSource){
   const {records:data,indcom_audit:indcomAudit,billing_titles:billingTitles,documents:attachmentNames}=history;
   const annual=attachmentNames.annual2026;
+  const crmTriage=attachmentNames.crm_triage_2026;
   root.innerHTML=`${annual?`<section class="waste-section" aria-labelledby="wa-annualTitle">
     <h3 id="wa-annualTitle">Auditoria de resíduos de 2026</h3>
     <p id="wa-annualCutoff" class="waste-sub"></p>
@@ -144,7 +145,7 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     const triaged=data.filter(row=>row.d.startsWith('2026-')&&row.v[0]!=null);
     const totalTriaged=sum(triaged,0);
     el('annualTriage').textContent=triaged.length
-      ?'Triagem GAO: '+kg(totalTriaged)+' kg registrados de '+date(triaged[0].d)+' a '+date(triaged.at(-1).d)+'.'
+      ?(crmTriage?'CRM GAO · Triagem: ':'Triagem GAO: ')+kg(totalTriaged)+' kg registrados de '+date(triaged[0].d)+' a '+date(triaged.at(-1).d)+(crmTriage?'. Consulta até '+date(crmTriage.cutoff)+'.':'.')
       :'Sem dados de triagem GAO no ano.';
     const monthWeight=key=>sum(triaged.filter(row=>row.d.startsWith(key)),0);
     const labels=['Triagem GAO (kg)','PDFs Indicom (kg)','Indicom · lote validado (kg)','Indicom · histórico anterior (kg)',
@@ -230,7 +231,14 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     try{
       let headers,lines;
       const source=sourceDetails[id];
-      if(source){
+      if(id===0&&crmTriage){
+        headers=['Data','Semana ISO','Lixo triado (kg)','Total da triagem (kg)','% de lixo','Situação'];
+        lines=selected.filter(row=>row.crm_triage).map(row=>{
+          const [waste,total]=row.crm_triage;
+          return [date(row.d),row.w,kg(waste),kg(total),waste!==null&&total>0?nf.format(waste/total*100)+'%':'—',
+            waste===null?'Sem lançamento no CRM':'CRM GAO · Triagem'];
+        });
+      }else if(source){
         const dates=new Set(selected.map(r=>r.d));
         headers=source.headers;
         lines=(await sourceRecords(source.name)).filter(r=>dates.has(r[0])&&(!source.include||source.include(r))).map(source.row);
@@ -301,7 +309,7 @@ export function mountAudit(root,history,downloadDocument,loadSource){
     const lines=groups.map(([k,rs])=>[weekly?k:monthName(k),interval(rs),...visibleMetrics.map(i=>kg(values(rs)[i]))]);
     const linkedColumns=columns.map((label,column)=>{
       const index=visibleMetrics[column];
-      if(index===8) return label;
+      if(index===8||(index===0&&crmTriage)) return label;
       if(index===10||index===11) {
         const link=document.createElement('a');
         link.href='#wa-refsTitle';
